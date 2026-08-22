@@ -1,0 +1,26 @@
+[
+  {
+    "key": "codigo_prod",
+    "productCount": 2,
+    "examples": [
+      {
+        "woocommerce_id": 102,
+        "value": "7801234560012"
+      },
+      {
+        "woocommerce_id": 114,
+        "value": "7801234560145"
+      }
+    ]
+  },
+  {
+    "key": "isbn_interno",
+    "productCount": 1,
+    "examples": [
+      {
+        "woocommerce_id": 106,
+        "value": "978-950-04-0000-0"
+      }
+    ]
+  }
+]

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Librería Central — Panel</title>
+
+  <!-- Evita el "flash" del tema equivocado: aplica la preferencia guardada
+       antes de que se pinte la página. La versión completa (con listeners)
+       vive en js/theme.js. -->
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem("lc_theme") || "auto";
+        var dark = pref === "dark" || (pref === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+      } catch (e) {}
+    })();
+  </script>
+
+  <!-- Tailwind CDN: esta página se abre como un archivo local normal en el
+       navegador del dueño (servida por un servidor estático propio), no
+       dentro de un visor con restricciones de red — por eso puede cargar
+       este script externo sin problema. -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Si el CDN no llegó a cargar (sin internet, red restringida), no
+    // rompemos el resto de la página por un script de configuración.
+    if (window.tailwind) {
+      tailwind.config = { darkMode: "class" };
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="min-h-screen w-full bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200">
+
+  <!-- ============ TOASTS ============ -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-[70] flex flex-col gap-2 items-end pointer-events-none"></div>
+  <div id="modal-root"></div>
+
+  <!-- ============ AUTH SCREENS ============ -->
+  <div id="auth-screens" class="hidden min-h-screen w-full flex items-center justify-center px-4 py-10">
+    <div class="w-full max-w-md">
+      <div class="flex items-center justify-center gap-2 mb-8">
+        <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-semibold">LC</div>
+        <span class="text-lg font-semibold">Librería Central</span>
+      </div>
+
+      <!-- ---- LOGIN ---- -->
+      <div id="screen-login" class="auth-card">
+        <h1 class="text-xl font-semibold mb-1">Iniciar sesión</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Entra a tu panel de Librería Central.</p>
+
+        <form id="login-form" class="space-y-4" novalidate>
+          <div>
+            <label class="form-label" for="login-email">Email</label>
+            <input id="login-email" type="email" required autocomplete="email" placeholder="tu@correo.cl" class="form-input" />
+          </div>
+          <div>
+            <label class="form-label" for="login-password">Contraseña</label>
+            <div class="relative">
+              <input id="login-password" type="password" required autocomplete="current-password" placeholder="••••••••" class="form-input form-input--icon-right" />
+              <button type="button" id="login-toggle-password" class="password-toggle" aria-label="Mostrar contraseña">👁️</button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="login-remember" class="form-checkbox" checked />
+              <span class="text-slate-600 dark:text-slate-300">Recordarme</span>
+            </label>
+            <button type="button" id="login-forgot" class="text-indigo-600 dark:text-indigo-400 hover:underline">¿Olvidaste tu contraseña?</button>
+          </div>
+          <p id="login-error" class="hidden text-sm text-red-600 dark:text-red-400"></p>
+          <button type="submit" class="btn-primary w-full justify-center">Iniciar sesión</button>
+        </form>
+
+        <p class="text-sm text-center text-slate-500 dark:text-slate-400 mt-6">
+          ¿No tienes cuenta?
+          <a href="#/signup" class="text-indigo-600 dark:text-indigo-400 font-medium hover:underline">Crear cuenta</a>
+        </p>
+        <p class="text-xs text-center text-slate-400 dark:text-slate-500 mt-4">
+          Modo demostración — cualquier email y contraseña funcionan. Esta cuenta no se guarda en ningún servidor real.
+        </p>
+      </div>
+
+      <!-- ---- SIGNUP ---- -->
+      <div id="screen-signup" class="auth-card hidden">
+        <h1 class="text-xl font-semibold mb-1">Crear cuenta</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Prueba Librería Central sin compromiso.</p>
+
+        <form id="signup-form" class="space-y-4" novalidate>
+          <div>
+            <label class="form-label" for="signup-name">Nombre</label>
+            <input id="signup-name" type="text" required autocomplete="name" placeholder="Tu nombre" class="form-input" />
+          </div>
+          <div>
+            <label class="form-label" for="signup-email">Email</label>
+            <input id="signup-email" type="email" required autocomplete="email" placeholder="tu@correo.cl" class="form-input" />
+          </div>
+          <div>
+            <label class="form-label" for="signup-password">Contraseña</label>
+            <div class="relative">
+              <input id="signup-password" type="password" required autocomplete="new-password" placeholder="••••••••" class="form-input form-input--icon-right" />
+              <button type="button" id="signup-toggle-password" class="password-toggle" aria-label="Mostrar contraseña">👁️</button>
+            </div>
+          </div>
+          <div>
+            <label class="form-label" for="signup-password-confirm">Confirmar contraseña</label>
+            <input id="signup-password-confirm" type="password" required autocomplete="new-password" placeholder="••••••••" class="form-input" />
+          </div>
+          <label class="flex items-start gap-2 text-sm cursor-pointer select-none">
+            <input type="checkbox" id="signup-terms" class="form-checkbox mt-0.5" />
+            <span class="text-slate-600 dark:text-slate-300">
+              Acepto los <button type="button" id="signup-terms-link" class="text-indigo-600 dark:text-indigo-400 hover:underline">términos de servicio</button>
+            </span>
+          </label>
+          <p id="signup-error" class="hidden text-sm text-red-600 dark:text-red-400"></p>
+          <button type="submit" class="btn-primary w-full justify-center">Crear cuenta</button>
+        </form>
+
+        <p class="text-sm text-center text-slate-500 dark:text-slate-400 mt-6">
+          ¿Ya tienes cuenta?
+          <a href="#/login" class="text-indigo-600 dark:text-indigo-400 font-medium hover:underline">Iniciar sesión</a>
+        </p>
+        <p class="text-xs text-center text-slate-400 dark:text-slate-500 mt-4">
+          Modo demostración — esta cuenta se guarda solo en tu navegador, no en un servidor real.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ APP SHELL ============ -->
+  <div id="app-shell" class="hidden h-screen w-screen overflow-hidden">
+    <div class="flex h-full w-full relative">
+
+      <div id="sidebar-overlay" class="hidden fixed inset-0 bg-slate-900/40 z-30 md:hidden"></div>
+
+      <!-- Sidebar -->
+      <aside id="sidebar" class="sidebar-panel fixed md:static z-40 -translate-x-full md:translate-x-0 w-72 shrink-0 h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-transform duration-200">
+        <div class="h-16 flex items-center gap-2 px-5 border-b border-slate-200 dark:border-slate-800 shrink-0">
+          <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-semibold text-sm">LC</div>
+          <div>
+            <p class="text-sm font-semibold leading-tight">Librería Central</p>
+            <p class="text-xs text-slate-400 dark:text-slate-500 leading-tight">Panel interno</p>
+          </div>
+          <button id="sidebar-close-btn" class="ml-auto md:hidden text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none" aria-label="Cerrar menú">✕</button>
+        </div>
+
+        <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto" id="sidebar-nav">
+          <a href="#/dashboard" data-route="dashboard" class="nav-link">
+            <span class="nav-icon">📊</span> Dashboard
+          </a>
+          <a href="#/productos" data-route="productos" class="nav-link">
+            <span class="nav-icon">📦</span> Productos
+          </a>
+          <a href="#/mercadolibre" data-route="mercadolibre" class="nav-link">
+            <span class="nav-icon">🛒</span> Mercado Libre
+          </a>
+          <a href="#/sincronizacion" data-route="sincronizacion" class="nav-link">
+            <span class="nav-icon">🔄</span> Sincronización
+          </a>
+          <a href="#/suscripcion" data-route="suscripcion" class="nav-link">
+            <span class="nav-icon">💳</span> Suscripción
+          </a>
+          <a href="#/configuracion" data-route="configuracion" class="nav-link">
+            <span class="nav-icon">⚙️</span> Configuración
+          </a>
+        </nav>
+
+        <div class="px-4 py-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-400 dark:text-slate-500 shrink-0">
+          Librería Central · Fase 3
+        </div>
+      </aside>
+
+      <!-- Main -->
+      <div class="flex-1 flex flex-col min-w-0">
+        <header class="h-16 shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-6 gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <button id="hamburger-btn" class="md:hidden text-slate-500 dark:text-slate-300 text-xl leading-none" aria-label="Abrir menú">☰</button>
+            <h1 id="page-title" class="text-lg font-semibold truncate">Dashboard</h1>
+          </div>
+
+          <div class="flex items-center gap-2 md:gap-3 shrink-0">
+            <span class="demo-pill hidden sm:inline-flex items-center gap-1.5">● Modo demostración</span>
+
+            <button id="theme-toggle-btn" class="icon-btn" aria-label="Cambiar tema" title="Cambiar tema">
+              <span id="theme-toggle-icon">🌙</span>
+            </button>
+
+            <div class="relative">
+              <button id="user-menu-btn" class="flex items-center gap-2 pl-1 pr-2 py-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                <span id="user-avatar" class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-200 flex items-center justify-center text-xs font-semibold">JR</span>
+                <span id="user-name-label" class="hidden sm:inline text-sm font-medium text-slate-700 dark:text-slate-200">Joaquín Ruiz</span>
+                <span class="text-slate-400 text-xs">▾</span>
+              </button>
+              <div id="user-menu-dropdown" class="hidden absolute right-0 mt-2 w-52 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg py-1.5 z-50">
+                <button data-action="account" class="dropdown-item">Mi cuenta</button>
+                <button data-action="subscription" class="dropdown-item">Suscripción</button>
+                <button data-action="settings" class="dropdown-item">Configuración</button>
+                <div class="my-1 border-t border-slate-100 dark:border-slate-700"></div>
+                <button data-action="logout" class="dropdown-item dropdown-item--danger">Cerrar sesión</button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main id="main-content" class="flex-1 overflow-y-auto"></main>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/ui.js"></script>
+  <script src="js/theme.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/chart.js"></script>
+  <script src="js/demoData.js"></script>
+  <script src="js/dataSource.js"></script>
+  <script src="js/backendApi.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/router.js"></script>
+</body>
+</html>

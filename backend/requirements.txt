@@ -1,0 +1,23 @@
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+httpx==0.28.1
+pydantic==2.13.4
+pydantic-settings==2.15.0
+
+# Base de datos propia del sistema (Fase 3 — ver backend/DATABASE.md):
+# SQLAlchemy + Alembic funcionan igual contra SQLite (desarrollo/pruebas) y
+# PostgreSQL (producción) sin cambiar código, solo la URL de conexión.
+sqlalchemy==2.0.52
+alembic==1.13.3
+# Hash de contraseñas — nunca se guarda ni se puede reconstruir la
+# contraseña original (ver app/domain/security.py).
+bcrypt==4.3.0
+
+# Necesario solo si DATABASE_URL apunta a PostgreSQL en producción — no
+# hace falta para desarrollo/pruebas (que usan SQLite, incluido en Python).
+# psycopg[binary]==3.2.*
+
+# Dependencias solo para desarrollo/tests (no hacen falta para correr la app):
+pytest==9.1.1
+pytest-asyncio==1.4.0
+respx==0.23.1

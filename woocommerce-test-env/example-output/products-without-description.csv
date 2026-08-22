@@ -1,0 +1,2 @@
+woocommerce_id,sku,nombre,estado,precio,precio_regular,stock_gestionado,stock_cantidad,stock_estado,categorias,cantidad_imagenes,tiene_descripcion,fecha_creacion,fecha_modificacion
+108,LIB-0008,Resma Papel Carta,publish,4490,4490,true,30,instock,Artículos de oficina,1,false,2026-08-19T00:00:00,2026-08-19T00:00:00

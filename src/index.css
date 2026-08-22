@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@theme {
+  /* Brand: a bookstore's ledger — navy trust, gold-foil accent, warm paper ground */
+  --color-ink-950: #0F2438;
+  --color-ink-900: #16324D;
+  --color-ink-800: #1E3F5F;
+  --color-ink-700: #2A5378;
+  --color-ink-600: #3B6A93;
+  --color-ink-100: #E7EEF4;
+  --color-ink-50: #F3F6F9;
+
+  --color-paper: #FAF8F4;
+  --color-paper-dim: #F1EDE4;
+
+  --color-gold-600: #A9791F;
+  --color-gold-500: #C4922E;
+  --color-gold-400: #D9AC55;
+  --color-gold-100: #F6ECD6;
+
+  --color-ok-600: #2F7A4F;
+  --color-ok-100: #E3F3E8;
+  --color-warn-600: #B8791A;
+  --color-warn-100: #FBEED9;
+  --color-err-600: #B23A34;
+  --color-err-100: #FBE7E5;
+  --color-neutral-600: #6B7280;
+  --color-neutral-100: #EEF0F2;
+
+  --font-display: "Source Serif 4", "Georgia", serif;
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+
+  --radius-card: 14px;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-paper);
+  color: var(--color-ink-950);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* Visible keyboard focus everywhere, per accessibility floor */
+:focus-visible {
+  outline: 2px solid var(--color-gold-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-100);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

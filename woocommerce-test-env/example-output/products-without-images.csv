@@ -1,0 +1,2 @@
+woocommerce_id,sku,nombre,estado,precio,precio_regular,stock_gestionado,stock_cantidad,stock_estado,categorias,cantidad_imagenes,tiene_descripcion,fecha_creacion,fecha_modificacion
+107,LIB-0007,Calculadora Casio,publish,12990,12990,true,10,instock,Calculadoras,0,true,2026-08-19T00:00:00,2026-08-19T00:00:00

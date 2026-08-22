@@ -1,0 +1,761 @@
+[
+  {
+    "id": 101,
+    "sku": "LIB-0001",
+    "name": "Cuaderno Torre 100 hojas",
+    "slug": "cuaderno-torre-100-hojas",
+    "status": "publish",
+    "price": "3990",
+    "regular_price": "3990",
+    "sale_price": "",
+    "description": "Cuaderno universitario de 100 hojas, cuadro grande, tapa dura.",
+    "short_description": "",
+    "stock_quantity": 25,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 1,
+        "name": "Cuadernos",
+        "slug": "cuadernos"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/cuaderno.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1001,
+        "key": "_lc_test_case",
+        "value": "control (sin defectos)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 102,
+    "sku": "LIB-0002",
+    "name": "Lápiz Bic HB",
+    "slug": "lápiz-bic-hb",
+    "status": "publish",
+    "price": "590",
+    "regular_price": "590",
+    "sale_price": "",
+    "description": "Lápiz grafito HB, caja de 12 unidades.",
+    "short_description": "",
+    "stock_quantity": 120,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 2,
+        "name": "Escritura",
+        "slug": "escritura"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/lapiz.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1,
+        "key": "codigo_prod",
+        "value": "7801234560012"
+      },
+      {
+        "id": 1002,
+        "key": "_lc_test_case",
+        "value": "control (sin defectos) — con meta_data candidata a código de barras"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 103,
+    "sku": "LIB-0003",
+    "name": "Mochila Head",
+    "slug": "mochila-head",
+    "status": "publish",
+    "price": "24990",
+    "regular_price": "24990",
+    "sale_price": "",
+    "description": "Mochila reforzada con compartimento para notebook.",
+    "short_description": "",
+    "stock_quantity": 8,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 3,
+        "name": "Mochilas",
+        "slug": "mochilas"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/mochila-1.png"
+      },
+      {
+        "id": 501,
+        "src": "http://mock.test/mochila-2.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1003,
+        "key": "_lc_test_case",
+        "value": "múltiples imágenes"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 104,
+    "sku": "LIB-0003",
+    "name": "Mochila Head",
+    "slug": "mochila-head",
+    "status": "publish",
+    "price": "24990",
+    "regular_price": "24990",
+    "sale_price": "",
+    "description": "Mochila reforzada con compartimento para notebook (publicación duplicada).",
+    "short_description": "",
+    "stock_quantity": 3,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 3,
+        "name": "Mochilas",
+        "slug": "mochilas"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/mochila-1.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1004,
+        "key": "_lc_test_case",
+        "value": "SKU duplicado (mismo SKU que el producto anterior, woocommerce_id distinto)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 105,
+    "sku": "LIB-0005",
+    "name": "Carpeta Oficio",
+    "slug": "carpeta-oficio",
+    "status": "publish",
+    "price": "1490",
+    "regular_price": "1490",
+    "sale_price": "",
+    "description": "Carpeta plástica tamaño oficio con broche.",
+    "short_description": "",
+    "stock_quantity": 40,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 4,
+        "name": "Carpetas",
+        "slug": "carpetas"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/carpeta.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1005,
+        "key": "_lc_test_case",
+        "value": "control (sin defectos)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 106,
+    "sku": "LIB-0006",
+    "name": "Libro El Principito",
+    "slug": "libro-el-principito",
+    "status": "publish",
+    "price": "8990",
+    "regular_price": "8990",
+    "sale_price": "",
+    "description": "Edición ilustrada de El Principito, tapa blanda.",
+    "short_description": "",
+    "stock_quantity": 15,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 5,
+        "name": "Libros",
+        "slug": "libros"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/libro.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1,
+        "key": "isbn_interno",
+        "value": "978-950-04-0000-0"
+      },
+      {
+        "id": 1006,
+        "key": "_lc_test_case",
+        "value": "control — con meta_data candidata a ISBN"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 107,
+    "sku": "LIB-0007",
+    "name": "Calculadora Casio",
+    "slug": "calculadora-casio",
+    "status": "publish",
+    "price": "12990",
+    "regular_price": "12990",
+    "sale_price": "",
+    "description": "Calculadora científica de 240 funciones.",
+    "short_description": "",
+    "stock_quantity": 10,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 6,
+        "name": "Calculadoras",
+        "slug": "calculadoras"
+      }
+    ],
+    "images": [],
+    "meta_data": [
+      {
+        "id": 1007,
+        "key": "_lc_test_case",
+        "value": "sin imagen"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 108,
+    "sku": "LIB-0008",
+    "name": "Resma Papel Carta",
+    "slug": "resma-papel-carta",
+    "status": "publish",
+    "price": "4490",
+    "regular_price": "4490",
+    "sale_price": "",
+    "description": "",
+    "short_description": "",
+    "stock_quantity": 30,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 7,
+        "name": "Artículos de oficina",
+        "slug": "artículos de oficina"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/dibujo.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1008,
+        "key": "_lc_test_case",
+        "value": "descripción vacía"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 109,
+    "sku": "",
+    "name": "Estuche Triple",
+    "slug": "estuche-triple",
+    "status": "publish",
+    "price": "5990",
+    "regular_price": "5990",
+    "sale_price": "",
+    "description": "Estuche escolar de tres pisos.",
+    "short_description": "",
+    "stock_quantity": 12,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 8,
+        "name": "Artículos escolares",
+        "slug": "artículos escolares"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/carpeta.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1009,
+        "key": "_lc_test_case",
+        "value": "sin SKU (caso 1)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 110,
+    "sku": "LIB-0010",
+    "name": "Set de Escuadras",
+    "slug": "set-de-escuadras",
+    "status": "publish",
+    "price": "2990",
+    "regular_price": "2990",
+    "sale_price": "",
+    "description": "Set de dos escuadras plásticas 45°/60°.",
+    "short_description": "",
+    "stock_quantity": null,
+    "manage_stock": false,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 8,
+        "name": "Artículos escolares",
+        "slug": "artículos escolares"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/regla.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1010,
+        "key": "_lc_test_case",
+        "value": "gestión de stock desactivada (manage_stock=false)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 111,
+    "sku": "LIB-0011",
+    "name": "Aquarela Pro Arte",
+    "slug": "aquarela-pro-arte",
+    "status": "publish",
+    "price": "6990",
+    "regular_price": "6990",
+    "sale_price": "",
+    "description": "Set de acuarelas 12 colores.",
+    "short_description": "",
+    "stock_quantity": 18,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 9,
+        "name": "Arte",
+        "slug": "arte"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/aquarela.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1,
+        "key": "cod_barra_prov",
+        "value": "7802345671123"
+      },
+      {
+        "id": 1011,
+        "key": "_lc_test_case",
+        "value": "categoría distinta a las 8 del prototipo (\"Arte\")"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 112,
+    "sku": "",
+    "name": "Témpera",
+    "slug": "témpera",
+    "status": "publish",
+    "price": "3490",
+    "regular_price": "3490",
+    "sale_price": "",
+    "description": "Set de témperas 6 colores.",
+    "short_description": "",
+    "stock_quantity": 22,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 9,
+        "name": "Arte",
+        "slug": "arte"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/aquarela.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1012,
+        "key": "_lc_test_case",
+        "value": "sin SKU (caso 2)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 113,
+    "sku": "LIB-0013",
+    "name": "Marcadores",
+    "slug": "marcadores",
+    "status": "publish",
+    "price": "2990",
+    "regular_price": "2990",
+    "sale_price": "",
+    "description": "Set de marcadores de colores, punta fina.",
+    "short_description": "",
+    "stock_quantity": 0,
+    "manage_stock": true,
+    "stock_status": "outofstock",
+    "categories": [
+      {
+        "id": 2,
+        "name": "Escritura",
+        "slug": "escritura"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/lapiz.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1013,
+        "key": "_lc_test_case",
+        "value": "sin stock (agotado)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 114,
+    "sku": "LIB-0014",
+    "name": "Croquera",
+    "slug": "croquera",
+    "status": "publish",
+    "price": "4990",
+    "regular_price": "4990",
+    "sale_price": "",
+    "description": "Croquera tapa dura 80 hojas.",
+    "short_description": "",
+    "stock_quantity": 14,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 9,
+        "name": "Arte",
+        "slug": "arte"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/croquera.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1,
+        "key": "codigo_prod",
+        "value": "7801234560145"
+      },
+      {
+        "id": 1014,
+        "key": "_lc_test_case",
+        "value": "control — con meta_data candidata a código de barras"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 115,
+    "sku": "LIB-0015",
+    "name": "Block de dibujo",
+    "slug": "block-de-dibujo",
+    "status": "publish",
+    "price": "3990",
+    "regular_price": "3990",
+    "sale_price": "",
+    "description": "Block de dibujo 20 hojas tamaño oficio.",
+    "short_description": "",
+    "stock_quantity": 20,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 9,
+        "name": "Arte",
+        "slug": "arte"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/dibujo.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1015,
+        "key": "_lc_test_case",
+        "value": "control (sin defectos)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 116,
+    "sku": "LIB-0016",
+    "name": "Regla",
+    "slug": "regla",
+    "status": "publish",
+    "price": "590",
+    "regular_price": "590",
+    "sale_price": "",
+    "description": "Regla plástica 30 cm.",
+    "short_description": "",
+    "stock_quantity": 60,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 8,
+        "name": "Artículos escolares",
+        "slug": "artículos escolares"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/regla.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1016,
+        "key": "_lc_test_case",
+        "value": "control (sin defectos)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 117,
+    "sku": "LIB-0017",
+    "name": "Compás",
+    "slug": "compás",
+    "status": "publish",
+    "price": "2490",
+    "regular_price": "2490",
+    "sale_price": "",
+    "description": "Compás metálico de precisión.",
+    "short_description": "",
+    "stock_quantity": 16,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 8,
+        "name": "Artículos escolares",
+        "slug": "artículos escolares"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/compas.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1017,
+        "key": "_lc_test_case",
+        "value": "control (sin defectos)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 118,
+    "sku": "LIB-0018",
+    "name": "Tijera",
+    "slug": "tijera",
+    "status": "publish",
+    "price": "1990",
+    "regular_price": "1990",
+    "sale_price": "",
+    "description": "Tijera escolar punta roma.",
+    "short_description": "",
+    "stock_quantity": 35,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 8,
+        "name": "Artículos escolares",
+        "slug": "artículos escolares"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/tijera.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1018,
+        "key": "_lc_test_case",
+        "value": "control (sin defectos)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 119,
+    "sku": "LIB-0019",
+    "name": "Pegamento",
+    "slug": "pegamento",
+    "status": "publish",
+    "price": "990",
+    "regular_price": "990",
+    "sale_price": "",
+    "description": "Pegamento en barra 21 g.",
+    "short_description": "",
+    "stock_quantity": 50,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 8,
+        "name": "Artículos escolares",
+        "slug": "artículos escolares"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/pegamento.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1019,
+        "key": "_lc_test_case",
+        "value": "control (sin defectos)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  },
+  {
+    "id": 120,
+    "sku": "LIB-0020",
+    "name": "Agenda",
+    "slug": "agenda",
+    "status": "publish",
+    "price": "5990",
+    "regular_price": "5990",
+    "sale_price": "",
+    "description": "Agenda anual tapa dura.",
+    "short_description": "",
+    "stock_quantity": 9,
+    "manage_stock": true,
+    "stock_status": "instock",
+    "categories": [
+      {
+        "id": 7,
+        "name": "Artículos de oficina",
+        "slug": "artículos de oficina"
+      }
+    ],
+    "images": [
+      {
+        "id": 500,
+        "src": "http://mock.test/agenda.png"
+      }
+    ],
+    "meta_data": [
+      {
+        "id": 1020,
+        "key": "_lc_test_case",
+        "value": "control (sin defectos)"
+      }
+    ],
+    "date_created": "2026-08-19T00:00:00",
+    "date_modified": "2026-08-19T00:00:00"
+  }
+]

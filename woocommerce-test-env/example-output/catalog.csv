@@ -1,0 +1,21 @@
+woocommerce_id,sku,nombre,estado,precio,precio_regular,stock_gestionado,stock_cantidad,stock_estado,categorias,cantidad_imagenes,tiene_descripcion,fecha_creacion,fecha_modificacion
+101,LIB-0001,Cuaderno Torre 100 hojas,publish,3990,3990,true,25,instock,Cuadernos,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+102,LIB-0002,Lápiz Bic HB,publish,590,590,true,120,instock,Escritura,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+103,LIB-0003,Mochila Head,publish,24990,24990,true,8,instock,Mochilas,2,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+104,LIB-0003,Mochila Head,publish,24990,24990,true,3,instock,Mochilas,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+105,LIB-0005,Carpeta Oficio,publish,1490,1490,true,40,instock,Carpetas,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+106,LIB-0006,Libro El Principito,publish,8990,8990,true,15,instock,Libros,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+107,LIB-0007,Calculadora Casio,publish,12990,12990,true,10,instock,Calculadoras,0,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+108,LIB-0008,Resma Papel Carta,publish,4490,4490,true,30,instock,Artículos de oficina,1,false,2026-08-19T00:00:00,2026-08-19T00:00:00
+109,,Estuche Triple,publish,5990,5990,true,12,instock,Artículos escolares,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+110,LIB-0010,Set de Escuadras,publish,2990,2990,false,,instock,Artículos escolares,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+111,LIB-0011,Aquarela Pro Arte,publish,6990,6990,true,18,instock,Arte,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+112,,Témpera,publish,3490,3490,true,22,instock,Arte,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+113,LIB-0013,Marcadores,publish,2990,2990,true,0,outofstock,Escritura,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+114,LIB-0014,Croquera,publish,4990,4990,true,14,instock,Arte,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+115,LIB-0015,Block de dibujo,publish,3990,3990,true,20,instock,Arte,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+116,LIB-0016,Regla,publish,590,590,true,60,instock,Artículos escolares,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+117,LIB-0017,Compás,publish,2490,2490,true,16,instock,Artículos escolares,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+118,LIB-0018,Tijera,publish,1990,1990,true,35,instock,Artículos escolares,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+119,LIB-0019,Pegamento,publish,990,990,true,50,instock,Artículos escolares,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00
+120,LIB-0020,Agenda,publish,5990,5990,true,9,instock,Artículos de oficina,1,true,2026-08-19T00:00:00,2026-08-19T00:00:00

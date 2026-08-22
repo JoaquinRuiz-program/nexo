@@ -1,0 +1,35 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+*.lnk
+
+# Variables de entorno (credenciales) — nunca se suben a Git.
+.env
+.env.*
+!.env.example
+
+# Reportes generados por la auditoría de WooCommerce (datos regenerables,
+# no código). El ejemplo ilustrativo en woocommerce-test-env/example-output/
+# sí se versiona porque es documentación, no una corrida real.
+reports/
+
+# Entornos virtuales de Python (backend/ ya tiene su propio .gitignore con
+# esto mismo, pero se repite acá como red de seguridad si se crea un .venv
+# en otro lugar del proyecto).
+.venv/
+venv/
+
+# Bases de datos locales (SQLite u otras) — nunca se suben, son datos, no código.
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Credenciales, claves y tokens sueltos, sea cual sea su nombre o extensión.
+*.pem
+*.key
+*credentials*
+*secret*
+*token*

@@ -1,0 +1,71 @@
+name: libreria-central-woocommerce-test
+
+# Entorno WooCommerce de PRUEBA para desarrollar y verificar la integración
+# de lectura de Librería Central. No tiene ninguna relación ni conexión con
+# el WooCommerce real de la librería (lalibreriaonlineoficial.cl).
+#
+# Uso:
+#   docker compose up -d          # levanta WordPress + MariaDB
+#   ./init.sh                     # instala WordPress, WooCommerce y los 20 productos de prueba (una sola vez)
+#   docker compose down           # detiene los contenedores, conserva los datos
+#   docker compose down -v        # detiene y BORRA todos los datos (reinicio limpio)
+#
+# Puertos: WordPress queda disponible solo en localhost, puerto 8087 por
+# defecto (configurable con la variable WP_PORT). No se expone a internet.
+
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: wordpress
+      MARIADB_ROOT_PASSWORD: wordpress_root
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  wordpress:
+    image: wordpress:php8.3-apache
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WP_PORT:-8087}:80"
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_TABLE_PREFIX: wp_
+    volumes:
+      - wp_data:/var/www/html
+
+  # Servicio auxiliar para correr comandos WP-CLI reproducibles contra el
+  # mismo WordPress (mismo volumen, misma base de datos). No se deja
+  # corriendo de forma permanente — se invoca puntualmente con
+  # `docker compose run --rm wpcli <comando>`.
+  wpcli:
+    image: wordpress:cli-php8.3
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+    volumes:
+      - wp_data:/var/www/html
+      - ./seed:/seed:ro
+    entrypoint: ["wp"]
+
+volumes:
+  db_data:
+  wp_data:

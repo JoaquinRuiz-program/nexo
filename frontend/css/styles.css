@@ -1,0 +1,865 @@
+/* Librería Central — estilos propios (además de las utilidades de Tailwind,
+   que ya trae darkMode:"class" configurado en index.html). Todo lo que no es
+   un simple ajuste de espaciado/color vive acá. */
+
+:root {
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-card-dark: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* Respaldo crítico: toda la app decide qué mostrar/ocultar (pantallas de
+   login vs. app, tablas, menús, modales) agregando o quitando la clase
+   "hidden" — que normalmente la aporta Tailwind. Si el CDN de Tailwind no
+   llega a cargar (sin internet, un bloqueador, una red restringida), esa
+   clase deja de existir y TODO lo que debía estar oculto se muestra a la
+   vez, superpuesto — se ve como si la interfaz estuviera rota o vacía. Esta
+   regla, en nuestra propia hoja de estilos (que siempre carga, es un
+   archivo local), garantiza que "hidden" oculte el elemento pase lo que
+   pase con el CDN. No compite con Tailwind: si Tailwind sí carga, redefine
+   la misma regla de todos modos (incluso lo hace con !important) — nunca
+   hay dos valores distintos para la misma propiedad en juego.
+   */
+.hidden {
+  display: none !important;
+}
+
+/* Icono de lupa en los buscadores (Productos, Mercado Libre): un <svg> sin
+   ancho/alto propio, si la única clase que lo dimensiona no llega a existir
+   (ver nota de ".hidden" arriba), se dibuja al tamaño por defecto del
+   navegador para SVG sin medidas — enorme, tapando toda la tabla de abajo.
+   Ya se agregó width/height directo en el HTML como respaldo principal;
+   esta regla es el segundo respaldo, en nuestra propia hoja de estilos. */
+.search-icon-svg {
+  width: 1rem;
+  height: 1rem;
+  pointer-events: none;
+}
+
+* {
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ================= Sidebar ================= */
+.sidebar-panel {
+  box-shadow: 4px 0 24px rgba(15, 23, 42, 0.06);
+}
+@media (min-width: 768px) {
+  .sidebar-panel {
+    box-shadow: none;
+  }
+}
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 0.6rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #475569;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.dark .nav-link {
+  color: #94a3b8;
+}
+.nav-link:hover {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+.dark .nav-link:hover {
+  background-color: #1e293b;
+  color: #e2e8f0;
+}
+.nav-link.active-nav {
+  background-color: #eef2ff;
+  color: #4338ca;
+}
+.dark .nav-link.active-nav {
+  background-color: #312e81;
+  color: #c7d2fe;
+}
+.nav-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* Nota a propósito: NO fijar "display" acá. Este elemento se muestra u
+   oculta con las utilidades responsive de Tailwind ("hidden sm:inline-flex"
+   en el HTML) — si "display" también se definiera en esta clase, competiría
+   con esas utilidades por la misma propiedad con la misma especificidad, y
+   el resultado dependería de en qué orden se cargó cada hoja de estilos
+   (con el CDN de Tailwind eso no está garantizado). Layout/estructura vive
+   en el HTML vía Tailwind; look-and-feel (color, borde, tipografía) vive
+   acá. */
+.demo-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+}
+.dark .demo-pill {
+  color: #fbbf24;
+  background: #451a03;
+  border-color: #92400e;
+}
+
+.icon-btn {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  color: #64748b;
+  transition: background-color 120ms ease;
+}
+.icon-btn:hover {
+  background-color: #f1f5f9;
+}
+.dark .icon-btn {
+  color: #94a3b8;
+}
+.dark .icon-btn:hover {
+  background-color: #1e293b;
+}
+
+.dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #334155;
+  transition: background-color 100ms ease;
+}
+.dropdown-item:hover {
+  background-color: #f1f5f9;
+}
+.dark .dropdown-item {
+  color: #cbd5e1;
+}
+.dark .dropdown-item:hover {
+  background-color: #1e293b;
+}
+.dropdown-item.dropdown-item--danger {
+  color: #dc2626;
+}
+.dark .dropdown-item.dropdown-item--danger {
+  color: #f87171;
+}
+
+/* ================= Auth screens ================= */
+.auth-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 2rem;
+  box-shadow: var(--shadow-card);
+}
+.dark .auth-card {
+  background: #0f172a;
+  border-color: #1e293b;
+  box-shadow: var(--shadow-card-dark);
+}
+
+.form-label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #475569;
+  margin-bottom: 0.3rem;
+}
+.dark .form-label {
+  color: #94a3b8;
+}
+.form-input {
+  width: 100%;
+  font-size: 0.9rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #0f172a;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.form-input:focus {
+  outline: none;
+  border-color: #818cf8;
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.25);
+}
+/* Los campos de contraseña necesitan más espacio a la derecha para el botón
+   de mostrar/ocultar — modificador propio en vez de "pr-10" de Tailwind,
+   porque "padding" (abreviado, acá arriba) y "padding-right" competirían por
+   la misma propiedad entre dos hojas de estilo distintas. */
+.form-input.form-input--icon-right {
+  padding-right: 2.5rem;
+}
+.dark .form-input {
+  background: #1e293b;
+  border-color: #334155;
+  color: #f1f5f9;
+}
+.dark .form-input::placeholder {
+  color: #64748b;
+}
+.form-checkbox {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.3rem;
+  accent-color: #4f46e5;
+}
+.password-toggle {
+  position: absolute;
+  right: 0.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.85rem;
+  opacity: 0.6;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.password-toggle:hover {
+  opacity: 1;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.65rem 1.1rem;
+  border-radius: 0.6rem;
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+.btn-primary:hover {
+  background: #4338ca;
+}
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.55rem 1rem;
+  border-radius: 0.6rem;
+  transition: background-color 120ms ease;
+}
+.btn-secondary:hover {
+  background: #f8fafc;
+}
+.dark .btn-secondary {
+  color: #cbd5e1;
+  border-color: #334155;
+}
+.dark .btn-secondary:hover {
+  background: #1e293b;
+}
+.btn-secondary.btn-secondary--danger {
+  color: #dc2626;
+}
+.dark .btn-secondary.btn-secondary--danger {
+  color: #f87171;
+}
+.btn-disabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #e2e8f0;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.55rem 1rem;
+  border-radius: 0.6rem;
+  cursor: not-allowed;
+}
+.dark .btn-disabled {
+  background: #1e293b;
+  color: #475569;
+}
+
+/* ================= Page content ================= */
+.page-wrap {
+  padding: 1.75rem;
+  max-width: 1400px;
+}
+@media (min-width: 768px) {
+  .page-wrap {
+    padding: 2.25rem 2.5rem;
+  }
+}
+
+.app-fade {
+  animation: fade-in 180ms ease;
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.stat-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 1.4rem 1.5rem;
+  box-shadow: var(--shadow-card);
+}
+.dark .stat-card {
+  background: #0f172a;
+  border-color: #1e293b;
+  box-shadow: var(--shadow-card-dark);
+}
+.stat-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #64748b;
+}
+.dark .stat-label {
+  color: #94a3b8;
+}
+.stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 0.2rem;
+  font-variant-numeric: tabular-nums;
+}
+.dark .stat-value {
+  color: #f1f5f9;
+}
+/* Modificadores propios en vez de utilidades de Tailwind: si dependiéramos
+   de que una clase de Tailwind (ej. "text-emerald-600") le gane a
+   ".stat-value" en color/tamaño, el resultado depende de qué stylesheet se
+   insertó último en el <head> — con el CDN de Tailwind eso no está
+   garantizado. Estos modificadores viven en el mismo archivo que
+   ".stat-value", así que su especificidad siempre gana de forma predecible. */
+.stat-value.stat-value--sm {
+  font-size: 1.15rem;
+}
+.stat-value.stat-value--success {
+  color: #059669;
+}
+.dark .stat-value.stat-value--success {
+  color: #34d399;
+}
+.stat-value.stat-value--danger {
+  color: #dc2626;
+}
+.dark .stat-value.stat-value--danger {
+  color: #f87171;
+}
+.stat-value.stat-value--warning {
+  color: #d97706;
+}
+.dark .stat-value.stat-value--warning {
+  color: #fbbf24;
+}
+.stat-hint {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 0.4rem;
+}
+.dark .stat-hint {
+  color: #64748b;
+}
+
+.panel-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 1.5rem 1.65rem;
+  box-shadow: var(--shadow-card);
+}
+.dark .panel-card {
+  background: #0f172a;
+  border-color: #1e293b;
+  box-shadow: var(--shadow-card-dark);
+}
+.panel-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+.dark .panel-title {
+  color: #f1f5f9;
+}
+.panel-subtitle {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin-top: 0.15rem;
+}
+
+/* System status rows */
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.dark .status-row {
+  border-color: #1e293b;
+}
+.status-row:last-child {
+  border-bottom: none;
+}
+.status-dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 9999px;
+}
+
+/* ================= Table ================= */
+.table-wrap {
+  overflow-x: auto;
+}
+#products-table thead th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #64748b;
+  user-select: none;
+}
+.dark #products-table thead th {
+  color: #64748b;
+}
+.sortable-th {
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sortable-th:hover {
+  color: #1e293b;
+}
+.dark .sortable-th:hover {
+  color: #e2e8f0;
+}
+.sort-arrow {
+  font-size: 0.62rem;
+  margin-left: 0.25rem;
+  opacity: 0.6;
+}
+
+#products-tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background-color 100ms ease;
+}
+.dark #products-tbody tr {
+  border-color: #1e293b;
+}
+#products-tbody tr:hover {
+  background-color: #f8fafc;
+}
+.dark #products-tbody tr:hover {
+  background-color: #111c31;
+}
+#products-tbody tr.row-selected {
+  background-color: #eef2ff;
+}
+.dark #products-tbody tr.row-selected {
+  background-color: #1e1b4b;
+}
+#products-tbody td {
+  padding: 0.7rem 0.85rem;
+  vertical-align: middle;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.18rem 0.55rem;
+  border-radius: 9999px;
+}
+.badge-simple { background: #f1f5f9; color: #475569; }
+.dark .badge-simple { background: #1e293b; color: #cbd5e1; }
+.badge-variable { background: #eef2ff; color: #4338ca; }
+.dark .badge-variable { background: #312e81; color: #c7d2fe; }
+
+.stock-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.page-btn {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.55rem;
+  font-weight: 500;
+  transition: background-color 100ms ease, opacity 100ms ease;
+}
+.dark .page-btn {
+  border-color: #334155;
+  background: #0f172a;
+  color: #cbd5e1;
+}
+.page-btn:hover:not(:disabled) {
+  background-color: #f1f5f9;
+}
+.dark .page-btn:hover:not(:disabled) {
+  background-color: #1e293b;
+}
+.page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Row action menu */
+.row-menu-btn {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.4rem;
+  color: #94a3b8;
+  transition: background-color 100ms ease;
+}
+.row-menu-btn:hover {
+  background-color: #e2e8f0;
+  color: #334155;
+}
+.dark .row-menu-btn:hover {
+  background-color: #334155;
+  color: #e2e8f0;
+}
+.row-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 0.25rem;
+  width: 12rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.65rem;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  z-index: 20;
+  overflow: hidden;
+}
+.dark .row-menu {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+/* Selection bar */
+.selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 0.75rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.85rem;
+  color: #3730a3;
+  margin-bottom: 1rem;
+}
+.dark .selection-bar {
+  background: #1e1b4b;
+  border-color: #3730a3;
+  color: #c7d2fe;
+}
+
+/* ================= Empty states ================= */
+/* Igual que ".demo-pill": "display" NO se fija acá a propósito, porque este
+   elemento a veces se combina con la utilidad "hidden" de Tailwind (mismo
+   problema de especificidad entre hojas de estilo distintas). El layout
+   flex se aplica con utilidades de Tailwind en el HTML/JS ("flex flex-col
+   items-center text-center") en cada lugar donde se usa. */
+.empty-state {
+  padding: 3.5rem 1.5rem;
+}
+.empty-state-icon {
+  font-size: 2.75rem;
+  margin-bottom: 1rem;
+}
+.empty-state-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+.dark .empty-state-title {
+  color: #f1f5f9;
+}
+.empty-state-desc {
+  font-size: 0.88rem;
+  color: #64748b;
+  max-width: 30rem;
+  margin-top: 0.4rem;
+}
+.dark .empty-state-desc {
+  color: #94a3b8;
+}
+
+/* ================= Progress bar ================= */
+.progress-track {
+  width: 100%;
+  height: 0.6rem;
+  background: #e2e8f0;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.dark .progress-track {
+  background: #1e293b;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #6366f1, #4f46e5);
+  transition: width 300ms ease;
+}
+.progress-fill.progress-warn {
+  background: linear-gradient(90deg, #f59e0b, #d97706);
+}
+.progress-fill.progress-danger {
+  background: linear-gradient(90deg, #ef4444, #dc2626);
+}
+
+/* ================= Plan cards ================= */
+.plan-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  box-shadow: var(--shadow-card);
+  transition: border-color 150ms ease, transform 150ms ease;
+}
+.dark .plan-card {
+  background: #0f172a;
+  border-color: #1e293b;
+  box-shadow: var(--shadow-card-dark);
+}
+.plan-card.plan-current {
+  border-color: #6366f1;
+  border-width: 2px;
+}
+
+/* ================= Sync timeline ================= */
+.sync-flow {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+.sync-node {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 0.7rem 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}
+.dark .sync-node {
+  background: #111c31;
+  border-color: #1e293b;
+  color: #e2e8f0;
+}
+.sync-arrow {
+  font-size: 1.2rem;
+  color: #cbd5e1;
+}
+.dark .sync-arrow {
+  color: #475569;
+}
+
+/* ================= Mercado Libre: estado de pedido ================= */
+.order-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+.order-status.order-status--pendiente { background: #fffbeb; color: #b45309; }
+.dark .order-status.order-status--pendiente { background: #451a03; color: #fbbf24; }
+.order-status.order-status--enviado { background: #eff6ff; color: #1d4ed8; }
+.dark .order-status.order-status--enviado { background: #1e3a8a; color: #93c5fd; }
+.order-status.order-status--entregado { background: #ecfdf5; color: #059669; }
+.dark .order-status.order-status--entregado { background: #064e3b; color: #34d399; }
+.order-status.order-status--cancelado { background: #fef2f2; color: #dc2626; }
+.dark .order-status.order-status--cancelado { background: #450a0a; color: #f87171; }
+
+/* ================= Gráfico de ventas ================= */
+.chart-card canvas {
+  display: block;
+  width: 100%;
+}
+.chart-tabs {
+  display: inline-flex;
+  background: #f1f5f9;
+  border-radius: 0.6rem;
+  padding: 0.2rem;
+  gap: 0.15rem;
+}
+.dark .chart-tabs {
+  background: #1e293b;
+}
+.chart-tab {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.45rem;
+  color: #64748b;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.dark .chart-tab {
+  color: #94a3b8;
+}
+.chart-tab.chart-tab-active {
+  background: #fff;
+  color: #4338ca;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+.dark .chart-tab.chart-tab-active {
+  background: #0f172a;
+  color: #c7d2fe;
+}
+
+/* ================= Ranking de productos más vendidos ================= */
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.dark .rank-row {
+  border-color: #1e293b;
+}
+.rank-row:last-child {
+  border-bottom: none;
+}
+.rank-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 0.5rem;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.dark .rank-number {
+  background: #1e293b;
+  color: #cbd5e1;
+}
+.rank-row:nth-child(1) .rank-number { background: #fef3c7; color: #b45309; }
+.dark .rank-row:nth-child(1) .rank-number { background: #451a03; color: #fbbf24; }
+.rank-bar-track {
+  flex: 1;
+  height: 0.45rem;
+  background: #f1f5f9;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.dark .rank-bar-track {
+  background: #1e293b;
+}
+.rank-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #4f46e5);
+  border-radius: 9999px;
+}
+
+/* Pill neutro para "estado de conexión" — distinto del ".demo-pill" ámbar
+   (que marca "esto es un dato de ejemplo"): este marca "no hay integración
+   real todavía", que es una idea distinta (ver sección 10 del pedido del
+   dueño: dato de demostración y estado de conexión NUNCA deben mezclarse
+   en un solo indicador). */
+.connection-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.dark .connection-pill {
+  color: #94a3b8;
+  background: #1e293b;
+  border-color: #334155;
+}
+
+/* ================= Skeleton ================= */
+.skeleton-line {
+  background: linear-gradient(90deg, #eef1f5 25%, #f6f8fa 37%, #eef1f5 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+  border-radius: 0.5rem;
+}
+.dark .skeleton-line {
+  background: linear-gradient(90deg, #1e293b 25%, #263449 37%, #1e293b 63%);
+  background-size: 400% 100%;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* ================= Toasts ================= */
+.toast-item {
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
+  transition: opacity 160ms ease, transform 160ms ease;
+  pointer-events: auto;
+}
+.toast-item.toast-in {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.toast-item.toast-out {
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
+}
+
+/* ================= Scrollbar ================= */
+main::-webkit-scrollbar {
+  width: 10px;
+}
+main::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.dark main::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+main::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -1,0 +1,67 @@
+{
+  "generadoEn": "2026-08-19T23:21:30.008Z",
+  "origen": "http://127.0.0.1:8099",
+  "total": 20,
+  "conSku": 18,
+  "sinSku": 2,
+  "conGestionStock": 19,
+  "sinGestionStock": 1,
+  "conStockNumerico": 19,
+  "sinStockNumerico": 1,
+  "conImagenes": 19,
+  "sinImagenes": 1,
+  "conMultiplesImagenes": 1,
+  "conDescripcion": 19,
+  "sinDescripcion": 1,
+  "cantidadCategorias": 9,
+  "categorias": [
+    "Arte",
+    "Artículos de oficina",
+    "Artículos escolares",
+    "Calculadoras",
+    "Carpetas",
+    "Cuadernos",
+    "Escritura",
+    "Libros",
+    "Mochilas"
+  ],
+  "categoriasWooCommerce": [
+    {
+      "nombre": "Cuadernos",
+      "cantidadProductos": 1
+    },
+    {
+      "nombre": "Escritura",
+      "cantidadProductos": 2
+    },
+    {
+      "nombre": "Mochilas",
+      "cantidadProductos": 2
+    },
+    {
+      "nombre": "Carpetas",
+      "cantidadProductos": 1
+    },
+    {
+      "nombre": "Libros",
+      "cantidadProductos": 1
+    },
+    {
+      "nombre": "Calculadoras",
+      "cantidadProductos": 1
+    },
+    {
+      "nombre": "Artículos de oficina",
+      "cantidadProductos": 2
+    },
+    {
+      "nombre": "Artículos escolares",
+      "cantidadProductos": 6
+    },
+    {
+      "nombre": "Arte",
+      "cantidadProductos": 4
+    }
+  ],
+  "posiblesDuplicados": 1
+}
