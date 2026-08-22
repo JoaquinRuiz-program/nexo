@@ -11,7 +11,7 @@ arquitectura-fase0-decisiones.md, sección 7.10).
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import productos
+from app.api.routes import productos, productos_db
 from app.config import get_settings, print_env_diagnostics
 
 app = FastAPI(
@@ -40,7 +40,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Orden importante: productos.router registra /api/productos/reporte antes
+# de que productos_db.router registre /api/productos/{variant_id} — así una
+# request a /reporte siempre matchea la ruta literal primero.
 app.include_router(productos.router)
+app.include_router(productos_db.router)
 
 
 @app.on_event("startup")

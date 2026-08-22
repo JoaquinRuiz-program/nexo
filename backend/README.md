@@ -47,6 +47,17 @@ este caso. Corregido en `_request_with_retry`
 `WooCommerceRequestError`, con un test de regresión
 (`test_error_de_conexion_se_envuelve_en_woocommerce_request_error`).
 
+**Nuevo (22 de agosto de 2026): primer endpoint respaldado por la base de
+datos propia.** El acceso a WooCommerce probado hasta ahora no se considera
+el acceso definitivo de la librería, así que el desarrollo sigue sin
+depender de eso: `app/db/seed_demo.py` llena `products`/`product_variants`
+con un catálogo de prueba (16 productos, 22 filas con variantes de color),
+usando los mismos modelos que usará el futuro job de sincronización real de
+WooCommerce. `GET /api/productos` y `GET /api/productos/{id}`
+(`app/api/routes/productos_db.py`) leen ese catálogo desde la base de
+datos — sin tocar WooCommerce. 57/57 tests pasando. Ver **`DATABASE.md`**,
+sección "Qué falta", para el detalle.
+
 **NO hay todavía, a propósito:** ninguna operación de escritura (crear/
 editar producto, actualizar stock) — mismo alcance que el script de
 auditoría. Ninguna base de datos propia (el endpoint de hoy consulta
@@ -81,13 +92,17 @@ backend/
       analysis.py          Funciones puras de análisis del catálogo.
       security.py           Hash de contraseñas (bcrypt) — nunca texto plano.
     api/routes/
-      productos.py         GET /api/productos/reporte
+      productos.py         GET /api/productos/reporte (WooCommerce en vivo)
+      productos_db.py       GET /api/productos, GET /api/productos/{id}
+                          (base de datos propia, sin WooCommerce)
     db/                    Base de datos propia — ver DATABASE.md
+      seed_demo.py           Catálogo de prueba (python -m app.db.seed_demo)
   alembic/                Migraciones — ver DATABASE.md
   tests/
     test_woocommerce_adapter.py
     test_analysis.py
-    db/                    Pruebas del modelo de datos — ver DATABASE.md
+    test_productos_db.py    Pruebas end-to-end de productos_db.py
+    db/                    Pruebas del modelo de datos y de seed_demo.py — ver DATABASE.md
   requirements.txt
   pytest.ini
   .env.example
@@ -104,11 +119,16 @@ cd backend
 python -m venv .venv
 .venv\Scripts\activate        # Windows
 pip install -r requirements.txt
-copy .env.example .env        # y completa las credenciales reales
+copy .env.example .env        # y completa las credenciales reales (opcional para lo de abajo)
 alembic upgrade head           # crea la base de datos local (ver DATABASE.md)
-python -m pytest -q           # 48 tests, no necesita WooCommerce ni Mercado Libre
+python -m app.db.seed_demo    # catálogo de prueba — no necesita WooCommerce
+python -m pytest -q           # 57 tests, no necesita WooCommerce ni Mercado Libre
 uvicorn app.main:app --reload --port 8000
 ```
+
+Con el servidor corriendo, `GET http://localhost:8000/api/productos` ya
+responde con el catálogo de prueba — sin necesitar `WOOCOMMERCE_URL` ni
+credenciales configuradas.
 
 Con el servidor corriendo: `http://localhost:8000/api/health` (chequeo
 básico) y `http://localhost:8000/api/productos/reporte` (el reporte real,

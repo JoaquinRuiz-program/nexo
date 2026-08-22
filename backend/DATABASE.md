@@ -92,14 +92,27 @@ WooCommerce, ni Mercado Libre.
 
 ## Qué falta para conectar esto con datos reales (próxima fase)
 
-Esto es solo el modelo — todavía no hay ningún endpoint que lea/escriba en
-esta base de datos ni ningún proceso que la llene con datos reales de
-WooCommerce o Mercado Libre. Eso es exactamente lo que sigue en la próxima
-fase: construir el motor de sincronización (que si probablemente sí
-necesite sesiones asíncronas de SQLAlchemy, a diferencia de este diseño) y
-los endpoints que el frontend (`js/dataSource.js`) va a consumir en lugar
-de `js/demoData.js` — ver la nota en `frontend/js/dataSource.js` sobre ese
-mismo punto.
+**Actualizado 22 de agosto de 2026 — decisión del dueño:** el acceso a
+WooCommerce que se probó hasta ahora no se considera el acceso definitivo de
+la librería, así que el desarrollo sigue sin depender de eso. Primera
+porción vertical ya construida, con datos de prueba en vez de WooCommerce:
+
+- `app/db/seed_demo.py`: llena `products`/`product_variants` con un
+  catálogo de prueba (16 productos, 22 filas contando variantes de color) —
+  usa los mismos modelos que usará el futuro job de sincronización real, así
+  que ese job no cambiará el endpoint de abajo, solo quién llena la tabla.
+- `GET /api/productos` y `GET /api/productos/{id}` (`app/api/routes/productos_db.py`):
+  leen el catálogo desde esta base de datos — probado con `pytest` (base en
+  memoria) y en vivo contra `libreria_central.db` real (`alembic upgrade head`
+  + `python -m app.db.seed_demo` + servidor corriendo).
+
+Todavía falta: el resto de endpoints que ya lista `frontend/js/dataSource.js`
+(`/api/dashboard/resumen`, `/api/estado-sistema`, `/api/sincronizacion`,
+`/api/suscripcion`), conectar `dataSource.js` a estos endpoints (sigue en
+Demo Mode hoy), y — más adelante — el motor de sincronización real con
+WooCommerce (que sí probablemente necesite sesiones asíncronas de
+SQLAlchemy, a diferencia de este diseño) para reemplazar `seed_demo.py`
+como fuente de la base de datos.
 
 ## Estructura agregada
 
