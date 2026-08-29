@@ -133,6 +133,13 @@ window.LC = window.LC || {};
     return request("/api/mercadolibre/importar-ventas", { method: "POST", timeoutMs: UPLOAD_TIMEOUT_MS });
   }
 
+  // Comisión REAL de Mercado Libre por producto (29 de agosto de 2026,
+  // segunda ronda) — consulta la API real de ML (categoría + comisión por
+  // precio), nunca instantáneo: puede tardar según el tamaño del catálogo.
+  async function recalcularComisionesMercadoLibre() {
+    return request("/api/mercadolibre/comisiones/recalcular", { method: "POST", timeoutMs: UPLOAD_TIMEOUT_MS });
+  }
+
   // Chequeo rápido y silencioso — usado por importFlow.js para decidir si
   // mostrar el flujo real o el de demostración. Nunca lanza un error, ni
   // muestra un toast: es solo una pregunta de "¿estás ahí?".
@@ -185,6 +192,7 @@ window.LC = window.LC || {};
     conectarMercadoLibre,
     desconectarMercadoLibre,
     importarVentasMercadoLibre,
+    recalcularComisionesMercadoLibre,
     analizarCatalogo,
     confirmarImportacion,
     obtenerSeleccion,

@@ -195,6 +195,46 @@ billing/suscripciones ni autenticación multiempresa completa (login +
 selector de empresa activa) — quedan para después de que la conexión OAuth
 esté probada con una cuenta real.
 
+## Sexta ronda (29 de agosto de 2026, mismo día): comisión REAL de Mercado Libre por producto
+
+A pedido del dueño: "la comisión de Mercado Libre varía por producto" —
+antes `ChannelCostSettings.commission_pct` era un único % manual para todo
+el canal, la misma limitación que ya evitaba inventar un "13% por
+defecto". Ahora, con la cuenta conectada, Nexo consulta la comisión REAL
+de Mercado Libre por producto — verificado en vivo contra la API real
+(no solo mockeado): libros mostraron 13%/17% (Clásica/Premium) y
+cuadernos/útiles 15%/19%, la misma corrida, confirmando que sí varía por
+categoría tal como se pidió.
+
+- **`MercadoLibreAdapter.predict_category`** (`GET /domain_discovery`,
+  público, sin token) y **`get_listing_fees`** (`GET /listing_prices`,
+  requiere el permiso "Publicación y sincronización" en la app — "Venta y
+  envíos" NO alcanza, confirmado en vivo con un 403 antes de habilitarlo).
+- **`POST /api/mercadolibre/comisiones/recalcular`**: predice la categoría
+  de cada producto por su nombre (una sola vez, se guarda en
+  `Product.ml_category_id`) y cachea la comisión real por
+  (tienda, categoría, tipo de publicación, precio exacto) en
+  `MercadoLibreCategoryFee` — nunca se re-consulta lo ya cacheado. A
+  propósito NO se llama durante la carga de un Excel (sería lento con
+  catálogos grandes): es un botón aparte ("Actualizar comisiones reales de
+  Mercado Libre" en Oportunidades) que el dueño dispara cuando quiere.
+- **`GET /api/rentabilidad`/`GET /api/seleccion`**: cada fila ahora incluye
+  `comisionMlReal` (Clásica y Premium en paralelo, con su margen neto
+  real) — sin elegir una por el dueño; `ChannelCostSettings.listing_type_pref`
+  (classic/premium, ya expuesto por `PUT /api/configuracion/canales/mercadolibre`,
+  todavía sin UI propia) queda para cuando el dueño decida cuál usa.
+- **Bug real encontrado y corregido de paso**: `build_profitability_rows`
+  (motor de Rentabilidad/Oportunidades/Dashboard) consultaba `Product` y
+  `ChannelCostSettings` SIN filtrar por `store_id` — invisible con una sola
+  tienda, pero mezclaba el catálogo de TODAS las empresas apenas hubiera
+  una segunda. Corregido + test de regresión.
+- **+16 tests** (adaptador, `app/domain/ml_fees.py`, endpoint de
+  recálculo, aislamiento entre empresas de la comisión cacheada, y el bug
+  de scoping de arriba). **245/245 tests pasando.**
+
+No se tocó: publicación de productos ni ninguna otra automatización — esto
+es solo información para decidir, igual que el resto de Rentabilidad.
+
 ## Qué hay hoy (22 de agosto de 2026) — y qué NO hay todavía
 
 **Hay:** un adaptador de WooCommerce (`app/adapters/woocommerce.py`), puerto
@@ -406,7 +446,7 @@ pip install -r requirements.txt
 copy .env.example .env        # y completa las credenciales reales (opcional para lo de abajo)
 alembic upgrade head           # crea la base de datos local (ver DATABASE.md)
 python -m app.db.seed_demo    # catálogo de prueba — no necesita WooCommerce
-python -m pytest -q           # 229 tests, no necesita WooCommerce ni Mercado Libre
+python -m pytest -q           # 245 tests, no necesita WooCommerce ni Mercado Libre
 uvicorn app.main:app --reload --port 8000
 ```
 

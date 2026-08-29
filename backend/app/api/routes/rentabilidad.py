@@ -25,8 +25,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.db.models import ChannelCostSettings, Product, ProductVariant
+from app.db.models import ChannelCostSettings, MercadoLibreCategoryFee, Product, ProductVariant, Store
 from app.db.session import get_db
+from app.domain.ml_fees import LISTING_TYPE_IDS
 from app.domain.profitability import ChannelCosts, gross_margin, gross_margin_pct, net_margin, net_margin_pct
 
 router = APIRouter(prefix="/api/rentabilidad", tags=["rentabilidad"])
@@ -35,8 +36,49 @@ router = APIRouter(prefix="/api/rentabilidad", tags=["rentabilidad"])
 # propias ventas (ver channel_costs.py) — no necesita una fila en la BD.
 CHANNEL_MERCADO_LIBRE = "mercadolibre"
 
+_LISTING_TYPE_ID_A_CLAVE = {v: k for k, v in LISTING_TYPE_IDS.items()}
 
-def _fila(producto: Product, variante: ProductVariant, costos_ml: ChannelCosts, ml_configurado: bool) -> dict:
+
+def _comision_ml_real(db: Session, store_id: int, producto: Product, precio: float | None, costos_manual: ChannelCosts) -> dict | None:
+    """Comisión REAL de Mercado Libre (Clásica/Premium) para este producto a
+    este precio exacto, si ya se consultó antes (ver POST
+    /api/mercadolibre/comisiones/recalcular — acá nunca se llama a la API
+    de Mercado Libre, solo se lee la caché). None si el producto todavía no
+    tiene categoría de ML detectada, o no hay ningún dato cacheado para su
+    precio actual — nunca se inventa ni se aproxima con otro precio."""
+    if not producto.ml_category_id or precio is None:
+        return None
+    filas = (
+        db.query(MercadoLibreCategoryFee)
+        .filter_by(store_id=store_id, category_id=producto.ml_category_id, price=precio)
+        .all()
+    )
+    if not filas:
+        return None
+
+    resultado: dict = {}
+    for fila in filas:
+        clave = _LISTING_TYPE_ID_A_CLAVE.get(fila.listing_type_id)
+        if clave is None:
+            continue
+        costos_reales = ChannelCosts(
+            commission_pct=float(fila.percentage_fee),
+            shipping_cost=costos_manual.shipping_cost,
+            other_fixed_cost=(costos_manual.other_fixed_cost or 0.0) + float(fila.fixed_fee),
+        )
+        costo_producto = float(producto.variants[0].cost_price) if producto.variants and producto.variants[0].cost_price is not None else None
+        resultado[clave] = {
+            "nombre": fila.listing_type_id,
+            "comisionPct": float(fila.percentage_fee),
+            "comisionFija": float(fila.fixed_fee),
+            "comisionTotal": float(fila.sale_fee_amount),
+            "margenClp": net_margin(precio, costo_producto, costos_reales),
+            "margenPct": net_margin_pct(precio, costo_producto, costos_reales),
+        }
+    return resultado or None
+
+
+def _fila(db: Session, store_id: int, producto: Product, variante: ProductVariant, costos_ml: ChannelCosts, ml_configurado: bool) -> dict:
     precio = float(variante.price) if variante.price is not None else None
     costo = float(variante.cost_price) if variante.cost_price is not None else None
 
@@ -56,14 +98,31 @@ def _fila(producto: Product, variante: ProductVariant, costos_ml: ChannelCosts, 
         "mercadoLibreConfigurado": ml_configurado,
         "margenMercadoLibreClp": net_margin(precio, costo, costos_ml),
         "margenMercadoLibrePct": net_margin_pct(precio, costo, costos_ml),
+        # Comisión REAL de Mercado Libre (29 de agosto de 2026, a pedido del
+        # dueño: "la comisión varía por producto") — Clásica y Premium en
+        # paralelo, para decidir cuál conviene. None hasta que se corra
+        # POST /api/mercadolibre/comisiones/recalcular; nunca se calcula acá
+        # con un valor estimado.
+        "comisionMlReal": _comision_ml_real(db, store_id, producto, precio, costos_ml),
+        "mlCategoriaId": producto.ml_category_id,
+        "mlCategoriaNombre": producto.ml_category_name,
     }
 
 
 def build_profitability_rows(db: Session) -> tuple[list[dict], bool]:
     """Arma las mismas filas que devuelve GET /api/rentabilidad — factorizado
     acá para que app/api/routes/seleccion.py pueda reusarlas sin duplicar la
-    consulta ni el cálculo de márgenes."""
-    config_ml = db.query(ChannelCostSettings).filter_by(channel=CHANNEL_MERCADO_LIBRE).first()
+    consulta ni el cálculo de márgenes.
+
+    Sin ninguna tienda creada todavía (recién instalado, antes de
+    seed_demo.py) devuelve listas vacías en vez de fallar — igual que antes
+    de que esto se scopeara por tienda: dashboard.py y GET /api/rentabilidad
+    dependen de que esto nunca reviente con un 404 en ese caso."""
+    store = db.query(Store).order_by(Store.id).first()
+    if store is None:
+        return [], False
+
+    config_ml = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel=CHANNEL_MERCADO_LIBRE).first()
     costos_ml = ChannelCosts(
         commission_pct=float(config_ml.commission_pct) if config_ml and config_ml.commission_pct is not None else None,
         shipping_cost=float(config_ml.shipping_cost) if config_ml and config_ml.shipping_cost is not None else None,
@@ -71,9 +130,9 @@ def build_profitability_rows(db: Session) -> tuple[list[dict], bool]:
     )
     ml_configurado = costos_ml.is_configured()
 
-    productos = db.query(Product).order_by(Product.name).all()
+    productos = db.query(Product).filter_by(store_id=store.id).order_by(Product.name).all()
     filas = [
-        _fila(producto, variante, costos_ml, ml_configurado)
+        _fila(db, store.id, producto, variante, costos_ml, ml_configurado)
         for producto in productos
         for variante in producto.variants
     ]

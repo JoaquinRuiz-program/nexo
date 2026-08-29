@@ -11,6 +11,7 @@ from app.db.models.marketplace import (  # noqa: F401
     MarketplaceAccount,
     MarketplaceListing,
     MarketplaceListingVariant,
+    MercadoLibreCategoryFee,
 )
 from app.db.models.orders import Order, OrderItem  # noqa: F401
 from app.db.models.products import Product, ProductImage, ProductVariant  # noqa: F401
@@ -45,6 +46,7 @@ __all__ = [
     "MarketplaceAccount",
     "MarketplaceListing",
     "MarketplaceListingVariant",
+    "MercadoLibreCategoryFee",
     "Order",
     "OrderItem",
     "SyncJob",

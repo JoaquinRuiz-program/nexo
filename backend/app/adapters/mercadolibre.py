@@ -193,6 +193,41 @@ class MercadoLibreAdapter:
         verdad en esa venta)."""
         return await self._get_with_retry(f"/orders/{order_id}", access_token)
 
+    async def predict_category(self, title: str, site_id: str) -> Optional[dict[str, str]]:
+        """GET /sites/{site_id}/domain_discovery/search — público, NO
+        necesita access_token (verificado en vivo el 29 de agosto de 2026).
+        Predice la categoría real de Mercado Libre a partir del título del
+        producto — necesaria para poder consultar su comisión real
+        (get_listing_fees), que varía por categoría. Devuelve
+        {"categoryId","categoryName"} de la primera predicción, o None si
+        Mercado Libre no devolvió ninguna (título vacío o demasiado
+        genérico) — nunca se inventa una categoría."""
+        query = urlencode({"q": title, "limit": 1})
+        url = f"{API_BASE_URL}/sites/{site_id}/domain_discovery/search?{query}"
+        response = await self._request_with_retry("GET", url, None)
+        data = response.json()
+        if not data:
+            return None
+        primero = data[0]
+        return {"categoryId": primero["category_id"], "categoryName": primero.get("category_name", "")}
+
+    async def get_listing_fees(self, access_token: str, site_id: str, category_id: str, price: float) -> list[dict[str, Any]]:
+        """GET /sites/{site_id}/listing_prices — la comisión REAL que
+        Mercado Libre cobraría por vender a este precio, en esta categoría,
+        para cada tipo de publicación disponible (Clásica/Premium/etc — ver
+        app/domain/ml_fees.py para cómo se interpreta la respuesta cruda).
+
+        Requiere que la aplicación tenga habilitado el permiso
+        "Publicación y sincronización" en developers.mercadolibre.cl — el
+        permiso "Venta y envíos" NO alcanza para este endpoint (confirmado
+        en vivo el 29 de agosto de 2026: sin ese permiso, Mercado Libre
+        responde 403 PA_UNAUTHORIZED_RESULT_FROM_POLICIES, que acá se
+        traduce en MercadoLibreAuthError como cualquier otro 401/403)."""
+        query = urlencode({"price": price, "category_id": category_id})
+        url = f"{API_BASE_URL}/sites/{site_id}/listing_prices?{query}"
+        response = await self._request_with_retry("GET", url, access_token)
+        return response.json()
+
     async def _get_with_retry(self, path: str, access_token: str) -> dict[str, Any]:
         url = f"{API_BASE_URL}{path}"
         response = await self._request_with_retry("GET", url, access_token)

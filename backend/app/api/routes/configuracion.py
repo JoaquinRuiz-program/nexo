@@ -26,6 +26,9 @@ class ChannelCostsUpdate(BaseModel):
     commission_pct: float | None = None
     shipping_cost: float | None = None
     other_fixed_cost: float | None = None
+    # classic | premium | None ("comparar ambas", ver domain/ml_fees.py) —
+    # solo tiene sentido para channel="mercadolibre".
+    listing_type_pref: str | None = None
 
 
 def _get_default_store(db: Session) -> Store:
@@ -41,6 +44,7 @@ def _fila(costos: ChannelCostSettings) -> dict:
         "commissionPct": float(costos.commission_pct) if costos.commission_pct is not None else None,
         "shippingCost": float(costos.shipping_cost) if costos.shipping_cost is not None else None,
         "otherFixedCost": float(costos.other_fixed_cost) if costos.other_fixed_cost is not None else None,
+        "listingTypePref": costos.listing_type_pref,
         # Ningún campo configurado todavía = el canal existe pero no se usa
         # para calcular margen neto (ver domain/profitability.py.is_configured).
         "configurado": costos.commission_pct is not None or costos.shipping_cost is not None or costos.other_fixed_cost is not None,
@@ -66,6 +70,7 @@ def configurar_canal(channel: str, body: ChannelCostsUpdate, db: Session = Depen
     costos.commission_pct = body.commission_pct
     costos.shipping_cost = body.shipping_cost
     costos.other_fixed_cost = body.other_fixed_cost
+    costos.listing_type_pref = body.listing_type_pref
     costos.updated_at = datetime.now()
     db.commit()
     db.refresh(costos)

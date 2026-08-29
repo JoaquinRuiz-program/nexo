@@ -247,3 +247,71 @@ async def test_sin_internet_agota_reintentos_y_lanza_request_error():
     await adapter.aclose()
 
     assert route.calls.call_count == BASE_CONFIG["max_retries"] + 1
+
+
+# ------------------------------------------------------------------
+# Comisión REAL de Mercado Libre por producto (29 de agosto de 2026,
+# segunda ronda del mismo día — "la comisión varía por producto").
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_predict_category_no_manda_authorization_header():
+    # Confirmado en vivo el 29 de agosto de 2026: /domain_discovery es
+    # público — mandar un token no es necesario, y si algún día se manda
+    # por error no debería importar. Acá se confirma que NO lo manda.
+    route = respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/domain_discovery/search.*").mock(
+        return_value=httpx.Response(200, json=[{"category_id": "MLC180937", "category_name": "Cuadernos"}])
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    resultado = await adapter.predict_category("Cuaderno universitario 100 hojas", "MLC")
+    await adapter.aclose()
+
+    assert resultado == {"categoryId": "MLC180937", "categoryName": "Cuadernos"}
+    assert "authorization" not in route.calls[0].request.headers
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_predict_category_sin_resultados_devuelve_none():
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/domain_discovery/search.*").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    resultado = await adapter.predict_category("asdf", "MLC")
+    await adapter.aclose()
+
+    assert resultado is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_listing_fees_manda_precio_categoria_y_bearer_token():
+    route = respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(
+        return_value=httpx.Response(200, json=[{"listing_type_id": "gold_special", "sale_fee_amount": 750}])
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    resultado = await adapter.get_listing_fees("mi-token", "MLC", "MLC180937", 5000)
+    await adapter.aclose()
+
+    sent_url = str(route.calls[0].request.url)
+    assert "price=5000" in sent_url
+    assert "category_id=MLC180937" in sent_url
+    assert route.calls[0].request.headers["authorization"] == "Bearer mi-token"
+    assert resultado[0]["sale_fee_amount"] == 750
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_listing_fees_sin_permiso_lanza_auth_error():
+    # Confirmado en vivo: sin el permiso "Publicación y sincronización"
+    # habilitado en la app, Mercado Libre responde 403 aunque el token sea
+    # válido — mismo tratamiento que cualquier 401/403 (MercadoLibreAuthError).
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(
+        return_value=httpx.Response(403, json={"code": "PA_UNAUTHORIZED_RESULT_FROM_POLICIES"})
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    with pytest.raises(MercadoLibreAuthError):
+        await adapter.get_listing_fees("mi-token", "MLC", "MLC180937", 5000)
+    await adapter.aclose()

@@ -72,10 +72,11 @@ from app.adapters.mercadolibre import (
     generate_pkce_pair,
 )
 from app.config import Settings, get_settings
-from app.db.models import MarketplaceAccount, Order, OrderItem, ProductVariant, Store
+from app.db.models import MarketplaceAccount, MercadoLibreCategoryFee, Order, OrderItem, Product, ProductVariant, Store
 from app.db.session import get_db
 from app.domain.marketplace_orders import map_ml_order
 from app.domain.marketplace_stock import MarketplaceStockError, apply_sale
+from app.domain.ml_fees import LISTING_TYPE_IDS, parse_listing_fees
 from app.domain.token_crypto import TokenEncryptionNotConfigured, decrypt_token, encrypt_token
 
 router = APIRouter(prefix="/api/mercadolibre", tags=["mercadolibre"])
@@ -480,4 +481,125 @@ async def importar_ventas(db: Session = Depends(get_db)) -> dict:
         "ordenesYaExistian": ordenes_ya_existian,
         "itemsSinSkuEnCatalogo": items_sin_sku_en_catalogo,
         "desajustesStockReservado": desajustes_stock_reservado,
+    }
+
+
+@router.post("/comisiones/recalcular")
+async def recalcular_comisiones(db: Session = Depends(get_db)) -> dict:
+    """Consulta la comisión REAL de Mercado Libre (Clásica y Premium, ver
+    app/domain/ml_fees.py) para cada producto del catálogo con precio
+    cargado — a pedido del dueño (29 de agosto de 2026): "la comisión de
+    Mercado Libre varía por producto", nunca un % fijo asumido.
+
+    Deliberadamente NO se llama durante la carga de un Excel (sería lento
+    con catálogos grandes, y golpearía la API de Mercado Libre una vez por
+    SKU) — es un paso aparte que el dueño dispara cuando quiere. Requiere
+    la cuenta de Mercado Libre conectada y con el permiso "Publicación y
+    sincronización" habilitado en la aplicación (no alcanza con "Venta y
+    envíos" — ver MercadoLibreAdapter.get_listing_fees).
+
+    Categoría por producto: se predice UNA vez por título
+    (GET /domain_discovery, público) y se guarda en
+    Product.ml_category_id — no se vuelve a predecir en corridas
+    siguientes. Comisión por (categoría, precio): se cachea en
+    MercadoLibreCategoryFee — si YA está cacheada para el precio actual del
+    producto, no se vuelve a pedir a Mercado Libre."""
+    settings = get_settings()
+    cfg = _build_ml_config(settings)
+    _require_configured(cfg, settings)
+
+    store = _get_default_store(db)
+    account = _get_account(db, store)
+    if account is None or account.status != "connected":
+        raise HTTPException(status_code=400, detail="Mercado Libre no está conectado todavía — conectar primero con GET /api/mercadolibre/conectar.")
+
+    site_id = account.external_account_site_id or "MLC"
+    access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
+
+    productos_con_precio = [
+        p for p in db.query(Product).filter_by(store_id=store.id).all()
+        if any(v.price is not None for v in p.variants)
+    ]
+
+    adapter = MercadoLibreAdapter(cfg)
+    productos_sin_categoria: list[str] = []
+    combinaciones_actualizadas = 0
+    combinaciones_con_error: list[str] = []
+    try:
+        for producto in productos_con_precio:
+            if producto.ml_category_id:
+                continue
+            try:
+                prediccion = await adapter.predict_category(producto.name, site_id)
+            except (MercadoLibreAuthError, MercadoLibreRequestError):
+                prediccion = None
+            if prediccion is None:
+                productos_sin_categoria.append(producto.name)
+                continue
+            producto.ml_category_id = prediccion["categoryId"]
+            producto.ml_category_name = prediccion["categoryName"]
+        db.commit()
+
+        # (categoría, precio) únicos a consultar — un mismo par se pide una
+        # sola vez aunque varios productos/variantes lo compartan.
+        pares_a_pedir: set[tuple[str, float]] = set()
+        for producto in productos_con_precio:
+            if not producto.ml_category_id:
+                continue
+            for variante in producto.variants:
+                if variante.price is None:
+                    continue
+                par = (producto.ml_category_id, float(variante.price))
+                tipos_cacheados = {
+                    fila.listing_type_id
+                    for fila in db.query(MercadoLibreCategoryFee)
+                    .filter_by(store_id=store.id, category_id=par[0], price=par[1])
+                    .all()
+                }
+                if not set(LISTING_TYPE_IDS.values()).issubset(tipos_cacheados):
+                    pares_a_pedir.add(par)
+
+        ahora = datetime.now()
+        for category_id, precio in pares_a_pedir:
+            try:
+                raw = await adapter.get_listing_fees(access_token, site_id, category_id, precio)
+            except MercadoLibreAuthError as err:
+                raise HTTPException(
+                    status_code=502,
+                    detail=(
+                        "Mercado Libre rechazó la consulta de comisiones — revisá que la "
+                        "aplicación tenga habilitado el permiso 'Publicación y sincronización' "
+                        "en developers.mercadolibre.cl."
+                    ),
+                ) from err
+            except MercadoLibreRequestError:
+                combinaciones_con_error.append(f"{category_id} @ ${precio:,.0f}")
+                continue
+
+            for clave, fee in parse_listing_fees(raw).items():
+                listing_type_id = LISTING_TYPE_IDS[clave]
+                fila = (
+                    db.query(MercadoLibreCategoryFee)
+                    .filter_by(store_id=store.id, category_id=category_id, listing_type_id=listing_type_id, price=precio)
+                    .first()
+                )
+                if fila is None:
+                    fila = MercadoLibreCategoryFee(
+                        store_id=store.id, category_id=category_id, listing_type_id=listing_type_id, price=precio
+                    )
+                    db.add(fila)
+                fila.percentage_fee = fee.percentage_fee
+                fila.fixed_fee = fee.fixed_fee
+                fila.sale_fee_amount = fee.sale_fee_amount
+                fila.fetched_at = ahora
+            combinaciones_actualizadas += 1
+        db.commit()
+    finally:
+        await adapter.aclose()
+
+    return {
+        "productosRevisados": len(productos_con_precio),
+        "productosSinCategoriaDetectada": productos_sin_categoria,
+        "combinacionesComisionActualizadas": combinaciones_actualizadas,
+        "combinacionesConError": combinaciones_con_error,
     }

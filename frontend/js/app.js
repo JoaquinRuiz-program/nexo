@@ -1543,6 +1543,18 @@ window.LC = window.LC || {};
     { id: "no_rentable", clasificaciones: ["no_rentable"], titulo: "Baja rentabilidad", desc: "Hoy no conviene venderlos — revisa el costo o el precio." },
   ];
 
+  // Comisión REAL de Mercado Libre (29 de agosto de 2026) — "Clásica 15% /
+  // Premium 19%" cuando ya se corrió "Actualizar comisiones reales"; "—"
+  // si el producto todavía no tiene esa comisión consultada (nunca se
+  // inventa un %).
+  function comisionMlTexto(comisionMlReal) {
+    if (!comisionMlReal) return "—";
+    const partes = [];
+    if (comisionMlReal.classic) partes.push(`Clásica ${comisionMlReal.classic.comisionPct}%`);
+    if (comisionMlReal.premium) partes.push(`Premium ${comisionMlReal.premium.comisionPct}%`);
+    return partes.length ? partes.join(" · ") : "—";
+  }
+
   function filaOportunidad(p) {
     const accion =
       p.clasificacion === "sin_datos"
@@ -1558,6 +1570,7 @@ window.LC = window.LC || {};
         <td class="px-3 py-2.5 text-right">${p.costo != null ? formatCLP(p.costo) : "—"}</td>
         <td class="px-3 py-2.5 text-right font-medium ${p.margenTiendaClp != null && p.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${p.margenTiendaClp != null ? formatCLP(p.margenTiendaClp) : "—"}</td>
         <td class="px-3 py-2.5 text-right">${p.margenTiendaPct != null ? `${p.margenTiendaPct.toFixed(1)}%` : "—"}</td>
+        <td class="px-3 py-2.5 text-right text-xs text-slate-500 dark:text-slate-400">${escapeHtml(comisionMlTexto(p.comisionMlReal))}</td>
         <td class="px-3 py-2.5">${accion}</td>
       </tr>`;
   }
@@ -1571,6 +1584,7 @@ window.LC = window.LC || {};
           <th class="px-3 py-2 font-medium text-right">Costo</th>
           <th class="px-3 py-2 font-medium text-right">Ganancia estimada</th>
           <th class="px-3 py-2 font-medium text-right">Margen</th>
+          <th class="px-3 py-2 font-medium text-right">Comisión ML real</th>
           <th class="px-3 py-2 font-medium"></th>
         </tr>
       </thead>
@@ -1584,9 +1598,32 @@ window.LC = window.LC || {};
     const productos = [...(data.productos || [])].sort((a, b) => (b.margenTiendaClp ?? -Infinity) - (a.margenTiendaClp ?? -Infinity));
     const r = data.resumen || {};
 
+    // Comisión REAL de Mercado Libre (29 de agosto de 2026) — el botón
+    // solo tiene sentido si la cuenta está conectada (la consulta usa su
+    // access token real); si no, se explica por qué no está disponible en
+    // vez de mostrar un botón que va a fallar.
+    let mlConectado = false;
+    if (esReal) {
+      const estadoMl = await LC.backendApi.fetchMercadoLibreEstado();
+      mlConectado = estadoMl.ok && estadoMl.data.conectado;
+    }
+
     main.innerHTML = `
       <div class="page-wrap app-fade">
         ${esReal ? "" : `<div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 mb-6 text-sm text-amber-800 dark:text-amber-200">Estás viendo datos de demostración — sube tu catálogo en "Importar catálogo" para ver tus oportunidades reales.</div>`}
+
+        ${
+          esReal
+            ? `<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+                <p class="text-sm text-slate-500 dark:text-slate-400 max-w-xl">La comisión real de Mercado Libre varía por producto (categoría, precio y tipo de publicación) — actualizala para ver cuál conviene subir.</p>
+                ${
+                  mlConectado
+                    ? `<button id="recalcular-comisiones-btn" class="btn-secondary shrink-0">Actualizar comisiones reales de Mercado Libre</button>`
+                    : `<span class="text-xs text-slate-400 shrink-0">Conectá Mercado Libre en Integraciones para ver la comisión real.</span>`
+                }
+              </div>`
+            : ""
+        }
 
         <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
           <div class="stat-card"><p class="stat-label">Total</p><p class="stat-value stat-value--sm">${r.total ?? productos.length}</p></div>
@@ -1626,6 +1663,28 @@ window.LC = window.LC || {};
         abrirEditorCosto(p, () => renderOportunidades(main));
       });
     });
+
+    const recalcularBtn = document.getElementById("recalcular-comisiones-btn");
+    if (recalcularBtn) {
+      recalcularBtn.addEventListener("click", async () => {
+        recalcularBtn.disabled = true;
+        recalcularBtn.textContent = "Consultando comisiones reales…";
+        const res = await LC.backendApi.recalcularComisionesMercadoLibre();
+        if (!res.ok) {
+          toast("error", res.error.mensaje);
+          recalcularBtn.disabled = false;
+          recalcularBtn.textContent = "Actualizar comisiones reales de Mercado Libre";
+          return;
+        }
+        const { combinacionesComisionActualizadas, productosSinCategoriaDetectada } = res.data;
+        if (productosSinCategoriaDetectada.length) {
+          toast("info", `Comisiones actualizadas. ${productosSinCategoriaDetectada.length} producto(s) sin categoría detectada por Mercado Libre — revisá su nombre.`);
+        } else {
+          toast("success", combinacionesComisionActualizadas > 0 ? "Comisiones reales actualizadas." : "Las comisiones ya estaban actualizadas.");
+        }
+        renderOportunidades(main);
+      });
+    }
   }
 
   // ------------------------------------------------------------------

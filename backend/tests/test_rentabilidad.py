@@ -164,6 +164,26 @@ def test_listar_canales_vacio_antes_de_configurar(client, a_store):
     assert client.get("/api/configuracion/canales").json() == []
 
 
+def test_rentabilidad_esta_scopeada_por_tienda_no_mezcla_empresas(client, db_session, a_store):
+    """Antes (29 de agosto de 2026) build_profitability_rows consultaba
+    Product/ChannelCostSettings SIN filtrar por store_id — con una sola
+    tienda en desarrollo no se notaba, pero mezclaba el catálogo de TODAS
+    las empresas apenas hubiera una segunda."""
+    _producto_con_precio_y_costo(db_session, a_store, sku="A-001", nombre="Producto de Empresa A", precio=10000, costo=6000)
+
+    otro_usuario = User(email="otra@empresa.cl", password_hash=hash_password("x"), full_name="Dueño B", created_at=NOW, updated_at=NOW)
+    db_session.add(otro_usuario)
+    tienda_b = Store(owner=otro_usuario, name="Empresa B", created_at=NOW)
+    db_session.add(tienda_b)
+    db_session.commit()
+    _producto_con_precio_y_costo(db_session, tienda_b, sku="B-001", nombre="Producto de Empresa B", precio=20000, costo=15000)
+
+    body = client.get("/api/rentabilidad").json()
+    nombres = [f["nombre"] for f in body["productos"]]
+    assert nombres == ["Producto de Empresa A"]
+    assert "Producto de Empresa B" not in nombres
+
+
 def test_configurar_canal_sin_dato_no_lo_marca_configurado(client, a_store):
     res = client.put("/api/configuracion/canales/mercadolibre", json={})
     assert res.json()["configurado"] is False

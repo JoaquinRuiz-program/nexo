@@ -24,6 +24,7 @@ from app.config import Settings
 from app.db.base import Base
 from app.db.models import (
     MarketplaceAccount,
+    MercadoLibreCategoryFee,
     Order,
     OrderItem,
     Product,
@@ -47,7 +48,18 @@ CONFIGURED_SETTINGS = Settings(
     mercadolibre_auth_domain="auth.mercadolibre.cl",
     token_encryption_key=TEST_ENCRYPTION_KEY,
 )
-UNCONFIGURED_SETTINGS = Settings()
+# Vacío A PROPÓSITO en los 4 campos de Mercado Libre, sin importar qué haya
+# en el backend/.env real del desarrollador — Settings() por defecto LEE
+# ese .env (ver ENV_PATH en app/config.py), así que si el dueño ya
+# configuró credenciales reales para probar en vivo (29 de agosto de 2026),
+# un Settings() "pelado" dejaría de representar el caso "sin configurar" y
+# rompería estos tests por una razón ajena al código.
+UNCONFIGURED_SETTINGS = Settings(
+    mercadolibre_client_id="",
+    mercadolibre_client_secret="",
+    mercadolibre_redirect_uri="",
+    token_encryption_key="",
+)
 
 
 @event.listens_for(Engine, "connect")
@@ -754,3 +766,120 @@ def test_status_nunca_expone_tokens_ni_client_secret(client, a_store, cuenta_con
     assert "access_token" not in res.json()
     assert "refresh_token" not in res.json()
     assert "clientSecret" not in res.json()
+
+
+# ------------------------------------------------------------------
+# POST /comisiones/recalcular — comisión REAL de Mercado Libre por
+# producto (29 de agosto de 2026, segunda ronda del mismo día).
+# ------------------------------------------------------------------
+
+
+def test_recalcular_comisiones_sin_conexion_devuelve_400(client, a_store, monkeypatch):
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+    res = client.post("/api/mercadolibre/comisiones/recalcular")
+    assert res.status_code == 400
+    assert "no está conectado" in res.json()["detail"]
+
+
+@respx.mock
+def test_recalcular_comisiones_predice_categoria_y_guarda_la_comision_real(client, db_session, a_store, cuenta_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+    variante = _producto(db_session, a_store, sku="LIB-100", nombre="Cuaderno universitario", precio=5000)
+
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/domain_discovery/search.*").mock(
+        return_value=httpx.Response(200, json=[{"category_id": "MLC180937", "category_name": "Cuadernos"}])
+    )
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"listing_type_id": "gold_special", "listing_type_name": "Clásica", "sale_fee_amount": 750, "sale_fee_details": {"fixed_fee": 0, "percentage_fee": 15}},
+                {"listing_type_id": "gold_pro", "listing_type_name": "Premium", "sale_fee_amount": 950, "sale_fee_details": {"fixed_fee": 0, "percentage_fee": 19}},
+            ],
+        )
+    )
+
+    res = client.post("/api/mercadolibre/comisiones/recalcular")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["productosRevisados"] == 1
+    assert body["productosSinCategoriaDetectada"] == []
+    assert body["combinacionesComisionActualizadas"] == 1
+
+    producto = db_session.get(Product, variante.product_id)
+    assert producto.ml_category_id == "MLC180937"
+    assert producto.ml_category_name == "Cuadernos"
+
+    filas = db_session.query(MercadoLibreCategoryFee).filter_by(store_id=a_store.id, category_id="MLC180937", price=5000).all()
+    por_tipo = {f.listing_type_id: f for f in filas}
+    assert por_tipo["gold_special"].percentage_fee == 15
+    assert por_tipo["gold_pro"].percentage_fee == 19
+
+    # La respuesta de rentabilidad ahora muestra la comisión real, Clásica y
+    # Premium en paralelo — sin elegir una por el dueño.
+    fila_rentabilidad = client.get("/api/rentabilidad").json()["productos"][0]
+    assert fila_rentabilidad["comisionMlReal"]["classic"]["comisionPct"] == 15
+    assert fila_rentabilidad["comisionMlReal"]["premium"]["comisionPct"] == 19
+
+
+@respx.mock
+def test_recalcular_comisiones_no_repite_la_llamada_si_ya_esta_cacheada(client, db_session, a_store, cuenta_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+    variante = _producto(db_session, a_store, sku="LIB-101", nombre="Cuaderno ya categorizado", precio=5000)
+    producto = db_session.get(Product, variante.product_id)
+    producto.ml_category_id = "MLC180937"
+    producto.ml_category_name = "Cuadernos"
+    db_session.add_all([
+        MercadoLibreCategoryFee(store_id=a_store.id, category_id="MLC180937", listing_type_id="gold_special", price=5000, percentage_fee=15, fixed_fee=0, sale_fee_amount=750, fetched_at=NOW),
+        MercadoLibreCategoryFee(store_id=a_store.id, category_id="MLC180937", listing_type_id="gold_pro", price=5000, percentage_fee=19, fixed_fee=0, sale_fee_amount=950, fetched_at=NOW),
+    ])
+    db_session.commit()
+
+    ruta_categoria = respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/domain_discovery/search.*")
+    ruta_comision = respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*")
+
+    res = client.post("/api/mercadolibre/comisiones/recalcular")
+
+    assert res.status_code == 200
+    assert res.json()["combinacionesComisionActualizadas"] == 0
+    # Ya tenía categoría Y ya estaban cacheados los dos tipos -> ninguna
+    # llamada nueva a Mercado Libre.
+    assert ruta_categoria.calls.call_count == 0
+    assert ruta_comision.calls.call_count == 0
+
+
+@respx.mock
+def test_recalcular_comisiones_sin_permiso_de_publicacion_devuelve_502_amigable(client, db_session, a_store, cuenta_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+    variante = _producto(db_session, a_store, sku="LIB-102", nombre="Cuaderno sin permiso", precio=5000)
+    producto = db_session.get(Product, variante.product_id)
+    producto.ml_category_id = "MLC180937"  # ya tiene categoría -> no llama domain_discovery
+    db_session.commit()
+
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(
+        return_value=httpx.Response(403, json={"code": "PA_UNAUTHORIZED_RESULT_FROM_POLICIES"})
+    )
+
+    res = client.post("/api/mercadolibre/comisiones/recalcular")
+
+    assert res.status_code == 502
+    detalle = res.json()["detail"]
+    assert "Publicación y sincronización" in detalle
+    # Nunca el código/JSON técnico crudo de Mercado Libre en la respuesta.
+    assert "PA_UNAUTHORIZED_RESULT_FROM_POLICIES" not in detalle
+
+
+def test_comision_ml_real_de_empresa_a_nunca_se_mezcla_con_empresa_b(db_session):
+    tienda_a = _otra_tienda(db_session, nombre="Empresa A")
+    tienda_b = _otra_tienda(db_session, nombre="Empresa B")
+    db_session.add_all([
+        MercadoLibreCategoryFee(store_id=tienda_a.id, category_id="MLC180937", listing_type_id="gold_special", price=5000, percentage_fee=15, fixed_fee=0, sale_fee_amount=750, fetched_at=NOW),
+        MercadoLibreCategoryFee(store_id=tienda_b.id, category_id="MLC180937", listing_type_id="gold_special", price=5000, percentage_fee=99, fixed_fee=0, sale_fee_amount=4950, fetched_at=NOW),
+    ])
+    db_session.commit()
+
+    de_a = db_session.query(MercadoLibreCategoryFee).filter_by(store_id=tienda_a.id, category_id="MLC180937", price=5000).one()
+    de_b = db_session.query(MercadoLibreCategoryFee).filter_by(store_id=tienda_b.id, category_id="MLC180937", price=5000).one()
+    assert de_a.percentage_fee == 15
+    assert de_b.percentage_fee == 99  # misma categoría/precio, comisión completamente distinta por tienda

@@ -37,6 +37,13 @@ class ChannelCostSettings(Base):
     commission_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
     shipping_cost: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     other_fixed_cost: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Solo aplica al canal "mercadolibre": qué tipo de publicación usa este
+    # cliente para decidir CUÁL comisión real mostrar como la principal
+    # (classic | premium) — la comisión real varía bastante entre una y
+    # otra (29 de agosto de 2026: "depende por cliente", no hay un default
+    # universal correcto). NULL = todavía no eligió: se muestran las dos
+    # comisiones reales una al lado de la otra, sin asumir ninguna.
+    listing_type_pref: Mapped[str | None] = mapped_column(String(20), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     store: Mapped["Store"] = relationship(back_populates="channel_cost_settings")  # noqa: F821

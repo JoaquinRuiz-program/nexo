@@ -45,6 +45,14 @@ class Product(Base):
     # simple | variable — mismo vocabulario que ya usa WooCommerce/el backend hoy
     product_type: Mapped[str] = mapped_column(String(20), nullable=False, default="simple")
     category: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Categoría REAL de Mercado Libre (ej. "MLC180937") — distinta de
+    # `category` de arriba (texto libre, del Excel del dueño). Se predice a
+    # partir del nombre del producto vía GET /domain_discovery (ver
+    # app/domain/ml_fees.py) — nunca la elige el dueño a mano ni se inventa;
+    # NULL hasta que se calcule. Sirve para consultar la comisión REAL de
+    # Mercado Libre para este producto (varía por categoría).
+    ml_category_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    ml_category_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
     # De dónde vino este producto — manual | excel_upload | csv_upload |
     # woocommerce | google_sheets | api. Es solo metadata: el resto del

@@ -113,3 +113,39 @@ class MarketplaceListingVariant(Base):
 
     listing: Mapped["MarketplaceListing"] = relationship(back_populates="variants")
     variant: Mapped["ProductVariant"] = relationship(back_populates="listing_variants")  # noqa: F821
+
+
+class MercadoLibreCategoryFee(Base):
+    """Caché de la comisión REAL de Mercado Libre (GET /listing_prices) por
+    categoría + tipo de publicación + precio exacto, ver app/domain/ml_fees.py.
+
+    Scopeada por `store_id` a propósito: aunque hoy la comisión de Mercado
+    Libre parece ser la misma para cualquier vendedor en una categoría dada,
+    nunca se asume — ML puede aplicar descuentos de comisión por reputación
+    u otras condiciones propias de cada cuenta, así que la comisión que
+    consultó la Empresa A nunca se le muestra a la Empresa B como si fuera
+    la suya. Cache exacta (no por rango de precio): evita mostrar un número
+    aproximado como si fuera el real.
+    """
+
+    __tablename__ = "mercadolibre_category_fees"
+    __table_args__ = (
+        UniqueConstraint(
+            "store_id", "category_id", "listing_type_id", "price",
+            name="uq_ml_category_fee_store_category_listing_type_price",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    category_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    # "gold_special" (Clásica) | "gold_pro" (Premium) — ver LISTING_TYPE_IDS
+    # en app/domain/ml_fees.py.
+    listing_type_id: Mapped[str] = mapped_column(String(30), nullable=False)
+    price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    percentage_fee: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    fixed_fee: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    sale_fee_amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    store: Mapped["Store"] = relationship()  # noqa: F821
