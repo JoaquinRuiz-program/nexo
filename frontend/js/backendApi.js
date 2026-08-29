@@ -3,13 +3,11 @@
 /**
  * Librería Central — cliente del backend real (FastAPI).
  *
- * IMPORTANTE: este archivo NO se usa todavía. Esta fase del proyecto es
- * "solo frontend, con datos de demostración" — ver js/demoData.js y
- * js/dataSource.js, que es lo que las pantallas consultan hoy. Este módulo
- * queda listo y probado (se construyó y se verificó de punta a punta en la
- * fase anterior) para el día en que conectemos el backend real: en ese
- * momento, dataSource.js es el único archivo que hay que tocar para que las
- * pantallas empiecen a llamar a estas funciones en vez de a los datos demo.
+ * 24 de agosto de 2026: este archivo empieza a usarse de verdad — antes
+ * solo `fetchReporte()` existía, sin usar. `js/importFlow.js` es el primer
+ * consumidor real: sube un catálogo, lo analiza, calcula rentabilidad,
+ * arma la selección y prepara publicaciones — todo contra el backend real,
+ * cuando está disponible.
  *
  * Nunca maneja API keys, secrets ni contraseñas — solo habla con este
  * backend propio, nunca directo con WooCommerce ni Mercado Libre.
@@ -19,57 +17,121 @@ window.LC = window.LC || {};
 
 (function () {
   const API_BASE_URL = "http://localhost:8000";
-  const REPORTE_ENDPOINT = `${API_BASE_URL}/api/productos/reporte`;
   const FETCH_TIMEOUT_MS = 10000;
+  // Analizar/confirmar un catálogo grande puede tardar más que una consulta
+  // normal (lee y valida cada fila) — timeout más generoso solo para eso.
+  const UPLOAD_TIMEOUT_MS = 30000;
 
-  async function fetchReporte() {
+  function classifyHttpError(status, detail, bodyParseFailed) {
+    if (status === 500) return { tipo: "servidor", mensaje: detail || "El backend no pudo completar la operación." };
+    if (status === 502) {
+      const esAuth = !!detail && /autenticaci[oó]n/i.test(detail);
+      return { tipo: "integracion", mensaje: detail || "No se pudo conectar con el servicio externo.", credenciales: esAuth ? "rechazadas" : "sin_conexion" };
+    }
+    if (status === 404) return { tipo: "endpoint", mensaje: detail || "No se encontró lo que buscábamos en el backend." };
+    if (status === 400) return { tipo: "datos", mensaje: detail || "Los datos enviados no son válidos." };
+    return { tipo: "http", mensaje: bodyParseFailed ? `El backend respondió HTTP ${status}.` : detail || `El backend respondió HTTP ${status}.` };
+  }
+
+  // Punto único de fetch — cualquier función de acá abajo pasa por esto,
+  // así el manejo de timeout/red/HTTP/JSON no se repite 6 veces.
+  async function request(path, { method = "GET", body, isFormData = false, timeoutMs = FETCH_TIMEOUT_MS } = {}) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    const opts = { method, signal: controller.signal };
+    if (body !== undefined) {
+      if (isFormData) {
+        opts.body = body; // FormData: el navegador arma el Content-Type con el boundary solo.
+      } else {
+        opts.headers = { "Content-Type": "application/json" };
+        opts.body = JSON.stringify(body);
+      }
+    }
 
     try {
-      const res = await fetch(REPORTE_ENDPOINT, { signal: controller.signal });
+      const res = await fetch(`${API_BASE_URL}${path}`, opts);
       clearTimeout(timeoutId);
 
-      let body = null;
+      let responseBody = null;
       let bodyParseFailed = false;
       try {
-        body = await res.json();
+        responseBody = await res.json();
       } catch (_parseErr) {
         bodyParseFailed = true;
       }
 
       if (!res.ok) {
-        const detail = !bodyParseFailed && body && body.detail ? String(body.detail) : null;
+        const detail = !bodyParseFailed && responseBody && responseBody.detail ? String(responseBody.detail) : null;
         return { ok: false, error: classifyHttpError(res.status, detail, bodyParseFailed) };
       }
-      if (bodyParseFailed || !body) {
+      if (bodyParseFailed || responseBody === null) {
         return { ok: false, error: { tipo: "json", mensaje: "El backend respondió, pero el contenido no es un JSON válido." } };
       }
-      return { ok: true, data: body };
+      return { ok: true, data: responseBody };
     } catch (err) {
       clearTimeout(timeoutId);
       if (err && err.name === "AbortError") {
-        return { ok: false, error: { tipo: "timeout", mensaje: `El backend no respondió en ${FETCH_TIMEOUT_MS / 1000} segundos.` } };
+        return { ok: false, error: { tipo: "timeout", mensaje: `El backend no respondió en ${timeoutMs / 1000} segundos.` } };
       }
       return {
         ok: false,
-        error: {
-          tipo: "red",
-          mensaje: "No fue posible conectar con el backend. Verifica que esté corriendo, o que CORS permita este origen.",
-        },
+        error: { tipo: "red", mensaje: "No fue posible conectar con el backend. Verifica que esté corriendo, o que CORS permita este origen." },
       };
     }
   }
 
-  function classifyHttpError(status, detail, bodyParseFailed) {
-    if (status === 500) return { tipo: "credenciales", mensaje: detail || "Faltan variables de entorno de WooCommerce en backend/.env." };
-    if (status === 502) {
-      const esAuth = !!detail && /autenticaci[oó]n/i.test(detail);
-      return { tipo: "woocommerce", mensaje: detail || "No se pudo conectar con WooCommerce.", credenciales: esAuth ? "rechazadas" : "sin_conexion" };
-    }
-    if (status === 404) return { tipo: "endpoint", mensaje: "El endpoint /api/productos/reporte no existe en este backend." };
-    return { tipo: "http", mensaje: bodyParseFailed ? `El backend respondió HTTP ${status}.` : detail || `El backend respondió HTTP ${status}.` };
+  async function fetchReporte() {
+    return request("/api/productos/reporte");
   }
 
-  LC.backendApi = { API_BASE_URL, fetchReporte };
+  // Chequeo rápido y silencioso — usado por importFlow.js para decidir si
+  // mostrar el flujo real o el de demostración. Nunca lanza un error, ni
+  // muestra un toast: es solo una pregunta de "¿estás ahí?".
+  async function checkHealth() {
+    const resultado = await request("/api/health", { timeoutMs: 2500 });
+    return resultado.ok;
+  }
+
+  async function analizarCatalogo(file) {
+    const form = new FormData();
+    form.append("file", file);
+    return request("/api/catalogo/importar/analizar", { method: "POST", body: form, isFormData: true, timeoutMs: UPLOAD_TIMEOUT_MS });
+  }
+
+  async function confirmarImportacion(file, mapeo, omitirErrores = true) {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("mapeo", JSON.stringify(mapeo));
+    form.append("omitir_errores", omitirErrores ? "true" : "false");
+    return request("/api/catalogo/importar/confirmar", { method: "POST", body: form, isFormData: true, timeoutMs: UPLOAD_TIMEOUT_MS });
+  }
+
+  async function obtenerSeleccion(opts = {}) {
+    const params = new URLSearchParams();
+    if (opts.canal) params.set("canal", opts.canal);
+    if (opts.margenMinimoClp != null) params.set("margen_minimo_clp", opts.margenMinimoClp);
+    if (opts.margenMinimoPct != null) params.set("margen_minimo_pct", opts.margenMinimoPct);
+    if (opts.top != null) params.set("top", opts.top);
+    if (opts.requiereStock != null) params.set("requiere_stock", opts.requiereStock ? "true" : "false");
+    const query = params.toString();
+    return request(`/api/seleccion${query ? `?${query}` : ""}`);
+  }
+
+  async function prepararPublicaciones(variantIds, opts = {}) {
+    return request("/api/publicaciones/preparar", {
+      method: "POST",
+      body: { variant_ids: variantIds, canal: opts.canal || "tienda", requiere_stock: opts.requiereStock !== false },
+    });
+  }
+
+  LC.backendApi = {
+    API_BASE_URL,
+    fetchReporte,
+    checkHealth,
+    analizarCatalogo,
+    confirmarImportacion,
+    obtenerSeleccion,
+    prepararPublicaciones,
+  };
 })();

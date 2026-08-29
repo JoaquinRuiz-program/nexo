@@ -16,6 +16,7 @@ window.LC = window.LC || {};
   const SECTION_TITLES = {
     dashboard: "Dashboard",
     productos: "Productos",
+    importar: "Importar catálogo",
     mercadolibre: "Mercado Libre",
     sincronizacion: "Sincronización",
     suscripcion: "Suscripción",
@@ -78,6 +79,9 @@ window.LC = window.LC || {};
         case "productos":
           if (param) await renderProductDetail(main, param);
           else await renderProductos(main);
+          break;
+        case "importar":
+          await LC.importFlow.render(main);
           break;
         case "mercadolibre":
           await renderMercadoLibre(main);
