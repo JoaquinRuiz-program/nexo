@@ -47,6 +47,15 @@ def _read_uploaded_rows(file: UploadFile, contenido: bytes) -> tuple[list[str], 
         return read_rows(BytesIO(contenido), file.filename)
     except (UnsupportedSpreadsheetFormat, ValueError) as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
+    except Exception as err:
+        # Cualquier otro fallo leyendo el archivo (zip corrupto, xlsx dañado,
+        # protegido con contraseña, etc.) es un problema del archivo subido,
+        # no un error del servidor — un 500 acá además pierde los headers de
+        # CORS y el frontend solo ve un fallo de red sin explicación.
+        raise HTTPException(
+            status_code=400,
+            detail="No pudimos leer el archivo. Verifica que sea un Excel (.xlsx) o CSV válido, y que no esté dañado ni protegido con contraseña.",
+        ) from err
 
 
 def _row_to_dict(r: RowResult) -> dict:

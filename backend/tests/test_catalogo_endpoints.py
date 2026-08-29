@@ -216,3 +216,13 @@ def test_formato_no_soportado_devuelve_400(client, a_store):
     archivo = io.BytesIO(b"esto no es una planilla")
     res = client.post("/api/catalogo/importar/analizar", files={"file": ("archivo.pdf", archivo, "application/pdf")})
     assert res.status_code == 400
+
+
+def test_xlsx_corrupto_devuelve_400_no_500(client, a_store):
+    # Extensión válida pero contenido dañado (no es un zip válido) — antes
+    # esto escapaba como una excepción sin manejar (500 sin headers CORS),
+    # dejando al frontend con un fallo de red sin ninguna explicación.
+    archivo = io.BytesIO(b"PK\x03\x04esto no es un zip valido de verdad")
+    res = client.post("/api/catalogo/importar/analizar", files={"file": ("catalogo.xlsx", archivo, "application/octet-stream")})
+    assert res.status_code == 400
+    assert "no pudimos leer el archivo" in res.json()["detail"].lower()
