@@ -41,10 +41,20 @@ class Product(Base):
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
     internal_sku: Mapped[str | None] = mapped_column(String(100), nullable=True)
     name: Mapped[str] = mapped_column(String(500), nullable=False)
+    brand: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # simple | variable — mismo vocabulario que ya usa WooCommerce/el backend hoy
     product_type: Mapped[str] = mapped_column(String(20), nullable=False, default="simple")
     category: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
+    # De dónde vino este producto — manual | excel_upload | csv_upload |
+    # woocommerce | google_sheets | api. Es solo metadata: el resto del
+    # sistema (rentabilidad, selección, publicación) trata un producto igual
+    # sin importar su origen, tal como se decidió al hacer el catálogo
+    # universal (24 de agosto de 2026) — agregar una fuente nueva más
+    # adelante (Shopify, Google Sheets) no debería requerir tocar nada de
+    # esto, solo un importador nuevo que termine escribiendo las mismas
+    # columnas.
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="manual")
     # active | archived
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -52,6 +62,9 @@ class Product(Base):
 
     store: Mapped["Store"] = relationship(back_populates="products")  # noqa: F821
     variants: Mapped[list["ProductVariant"]] = relationship(back_populates="product", cascade="all, delete-orphan")
+    images: Mapped[list["ProductImage"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan", order_by="ProductImage.position"
+    )
     woocommerce_link: Mapped["WooCommerceProduct | None"] = relationship(  # noqa: F821
         back_populates="product", uselist=False
     )
@@ -73,6 +86,10 @@ class ProductVariant(Base):
     # Etiqueta de la variante — hoy siempre color en WooCommerce, pero se
     # deja como texto libre por si algún día se varía por otro atributo.
     variant_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # EAN/UPC/GTIN — a nivel de variante porque en WooCommerce real cada
+    # color de un producto suele tener su propio código de barras (ver
+    # find_barcode_candidates en domain/analysis.py).
+    barcode: Mapped[str | None] = mapped_column(String(64), nullable=True)
     price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     # Precio de compra (lo que le cuesta al dueño, no lo que cobra) — nunca
     # viene de WooCommerce ni de Mercado Libre, ninguno de los dos lo expone.
@@ -105,3 +122,33 @@ class ProductVariant(Base):
     listing_variants: Mapped[list["MarketplaceListingVariant"]] = relationship(back_populates="variant")  # noqa: F821
     order_items: Mapped[list["OrderItem"]] = relationship(back_populates="variant")  # noqa: F821
     stock_movements: Mapped[list["StockMovement"]] = relationship(back_populates="variant")  # noqa: F821
+
+
+class ProductImage(Base):
+    """
+    Referencia a una imagen de producto — NUNCA el archivo en sí (nada de
+    base64 en la base de datos, a propósito, ver decisión del 24 de agosto
+    de 2026). Hoy solo se llena con `url` cuando el Excel importado trae una
+    columna de imagen con una URL válida. El resto de fuentes ya está
+    modelado para cuando exista el código que las llene:
+
+    - "excel_url": URL que ya venía en el archivo importado (la única que
+      escribe algo real hoy).
+    - "embedded_excel": imagen incrustada dentro del archivo Excel — el
+      importador de hoy no la extrae todavía.
+    - "store_sync": importada desde una tienda online conectada (WooCommerce,
+      Shopify) — no hay ningún sync real todavía.
+    - "manual_upload": el dueño la sube a mano desde el panel — no existe
+      endpoint de subida todavía, ni almacenamiento real (S3 o similar).
+    """
+
+    __tablename__ = "product_images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="excel_url")
+    position: Mapped[int] = mapped_column(default=0)  # 0 = imagen principal
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    product: Mapped["Product"] = relationship(back_populates="images")

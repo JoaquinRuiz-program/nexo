@@ -1,10 +1,82 @@
-# Librería Central — Backend (Fase 3, recién iniciada)
+# Backend — catálogo universal + rentabilidad para Mercado Libre
 
-Backend real del proyecto, en Python + FastAPI (stack confirmado por el
-dueño el 21 de agosto de 2026, sobre la recomendación ya escrita en
-`arquitectura-fase0-decisiones.md`). Vive fuera de `src/` (el frontend
-React) y de `scripts/woocommerce-audit/` (el script de auditoría) — es un
-proyecto Python independiente, con su propio entorno virtual.
+Backend real del proyecto, en Python + FastAPI. Vive fuera de `src/` (el
+frontend React) y de `scripts/woocommerce-audit/` (el script de auditoría)
+— es un proyecto Python independiente, con su propio entorno virtual.
+
+## Pivote (24 de agosto de 2026): de "una librería" a plataforma universal
+
+El dueño decidió que el sistema no es exclusivo de Librería Central — es
+una plataforma para cualquier vendedor de Mercado Libre que empieza
+subiendo su catálogo en Excel/CSV. Librería Central es el primer caso de
+uso, no un límite de arquitectura. Esto ya estaba mayormente resuelto por
+decisiones previas (`store_id` en todo el catálogo, `category` como texto
+libre, comisión de canal siempre configurable — nunca hardcodeada) — lo
+nuevo de esta fase:
+
+- **`app/domain/catalog_import.py`** — detecta columnas por sinónimo
+  (`SKU`/`Codigo`/`ID`, `Precio`/`Precio venta`/`Valor`, etc.), sin exigir
+  nombres exactos. Puerto a Python de la lógica que ya existía en
+  `src/services/importService.ts`, extendida con costo y código de barras.
+- **`app/api/routes/catalogo.py`** — `POST /api/catalogo/importar/analizar`
+  (detecta y valida, no escribe nada) y `POST /api/catalogo/importar/confirmar`
+  (crea/actualiza productos reales, con imagen si el archivo trae una URL).
+- **`app/domain/catalog_selection.py`** + **`GET /api/seleccion`** — "¿qué
+  conviene publicar en Mercado Libre?": clasifica cada producto en
+  rentable / margen_bajo / no_rentable / sin_stock / sin_datos, con umbrales
+  que decide quien llama (nunca hardcodeados), reutilizando el motor de
+  rentabilidad ya existente sin recalcular nada.
+- **`ProductImage`** (nueva tabla) — referencia a imagen (URL por ahora),
+  nunca base64. **`Product.brand`/`source`**, **`ProductVariant.barcode`**
+  — nuevos, para que el catálogo no dependa de las columnas exactas de una
+  librería.
+- **`backend/demo_data/`** — 5 catálogos de prueba REALES (archivos
+  `.xlsx`/`.csv` generados con `python -m demo_data.generate_demo_catalogs`,
+  no datos inventados en JS): librería, electrónica, ferretería, ropa (con
+  variantes de talla/color), y un CSV "desordenado" que simula un negocio
+  real sin preparar (columnas con nombres distintos, datos faltantes).
+  Verificados en vivo contra el servidor real — incluye productos
+  deliberadamente rentables, con margen negativo, sin stock, sin costo y
+  sin descripción, para que la selección tenga algo real que descartar.
+
+**Limitación conocida de esta primera versión:** el importador no agrupa
+variantes automáticamente (talla/color de un mismo producto) — cada fila
+del archivo es un producto con una sola variante. Es una decisión, no un
+olvido: agrupar variantes bien requiere más reglas de las que se pueden
+adivinar de forma confiable.
+
+**Segunda ronda (mismo día) — flujo completo hasta "borrador de
+publicación":**
+
+- 2 bugs reales de detección de columnas, encontrados probando con Excels
+  reales (no en el diseño en papel) y corregidos con test de regresión: (1)
+  cuando el archivo trae "Código" Y "SKU" a la vez, ahora gana el sinónimo
+  más específico; (2) un header como "Precio compra" se estaba matcheando
+  como precio de venta en vez de costo (la palabra "precio" como substring
+  se comía cualquier columna que la contuviera).
+- **`app/domain/ai_content.py`** — título/descripción/atributos generados
+  con REGLAS, marcado explícito `simulado=True`, para reemplazar por un
+  modelo real más adelante sin tocar el resto del sistema. Nunca inventa
+  una característica que no esté en los datos del producto.
+- **`app/domain/listing_draft.py`** + **`GET /api/publicaciones/borrador/{id}`**
+  / **`POST /api/publicaciones/preparar`** — arma el "borrador de
+  publicación" completo (título, descripción, categoría — marcada
+  explícitamente como NO oficial de Mercado Libre —, atributos, precio,
+  costo, imágenes, margen, y advertencias) sin persistir nada ni tocar
+  Mercado Libre.
+- **4 escenarios de Excel más** en `backend/demo_data/` (06 a 09): una
+  tienda con "Código" Y "SKU" a la vez, un formato de cosmética con
+  columnas completamente distintas, un catálogo de juguetería con SKU
+  duplicado/precio inválido/costo mayor al precio, y un comercio con 6
+  categorías radicalmente distintas en un solo archivo.
+- **Flujo completo verificado en vivo, de punta a punta:** subí los 4
+  archivos nuevos al servidor real → se importaron 32 de 35 filas (las 3
+  omitidas eran, correctamente, un precio inválido y un SKU duplicado) →
+  `/api/seleccion` clasificó los 32 sin exigir nada a mano → preparé
+  publicaciones de un producto rentable, uno no rentable y uno sin datos, y
+  cada borrador trajo exactamente la advertencia esperada.
+
+195/195 tests pasando.
 
 ## Qué hay hoy (22 de agosto de 2026) — y qué NO hay todavía
 

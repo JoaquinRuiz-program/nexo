@@ -47,6 +47,10 @@ def _fila(producto: Product, variante: ProductVariant, costos_ml: ChannelCosts, 
         "precio": precio,
         "costo": costo,
         "tieneCosto": costo is not None,
+        # Tope de unidades reservadas para Mercado Libre — lo necesita
+        # domain/catalog_selection.py para saber si hay algo que publicar,
+        # sin confundirlo con el stock físico (ver domain/marketplace_stock.py).
+        "marketplaceStock": variante.marketplace_stock,
         "margenTiendaClp": gross_margin(precio, costo),
         "margenTiendaPct": gross_margin_pct(precio, costo),
         "mercadoLibreConfigurado": ml_configurado,
@@ -55,8 +59,10 @@ def _fila(producto: Product, variante: ProductVariant, costos_ml: ChannelCosts, 
     }
 
 
-@router.get("")
-def reporte_rentabilidad(db: Session = Depends(get_db)) -> dict:
+def build_profitability_rows(db: Session) -> tuple[list[dict], bool]:
+    """Arma las mismas filas que devuelve GET /api/rentabilidad — factorizado
+    acá para que app/api/routes/seleccion.py pueda reusarlas sin duplicar la
+    consulta ni el cálculo de márgenes."""
     config_ml = db.query(ChannelCostSettings).filter_by(channel=CHANNEL_MERCADO_LIBRE).first()
     costos_ml = ChannelCosts(
         commission_pct=float(config_ml.commission_pct) if config_ml and config_ml.commission_pct is not None else None,
@@ -71,6 +77,12 @@ def reporte_rentabilidad(db: Session = Depends(get_db)) -> dict:
         for producto in productos
         for variante in producto.variants
     ]
+    return filas, ml_configurado
+
+
+@router.get("")
+def reporte_rentabilidad(db: Session = Depends(get_db)) -> dict:
+    filas, ml_configurado = build_profitability_rows(db)
 
     # Prioriza lo que más conviene (mayor margen en tienda) primero; lo que
     # todavía no tiene costo cargado va al final, no se mezcla ordenado como

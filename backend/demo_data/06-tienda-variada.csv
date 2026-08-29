@@ -1,0 +1,9 @@
+Código,SKU,Producto,Marca,Precio compra,Precio venta,Cantidad,Descripción,EAN,Imagen
+BOD-0001,VAR-001,Termo acero inoxidable 750ml,Stanley,9500,15990,22,Mantiene temperatura 12 horas,7805670900011,https://cdn.demo.test/variada/termo.png
+BOD-0002,VAR-002,Set de vasos térmicos x4,Genérico,6000,9990,14,"Vidrio templado, 350ml c/u",7805670900028,https://cdn.demo.test/variada/vasos.png
+BOD-0003,VAR-003,Paraguas plegable automático,Totto,5200,8990,30,"Resistente al viento, apertura automática",7805670900035,https://cdn.demo.test/variada/paraguas.png
+BOD-0004,VAR-004,Mochila térmica para almuerzo,Genérico,4800,4500,9,"Compartimento aislado, capacidad 6L",7805670900042,https://cdn.demo.test/variada/mochila-termica.png
+BOD-0005,VAR-005,Set organizadores de cocina x3,Rubbermaid,7200,12990,18,"Herméticos, aptos microondas",7805670900059,https://cdn.demo.test/variada/organizadores.png
+BOD-0006,VAR-006,Linterna LED recargable,Genérico,3500,6990,0,"USB-C, 3 modos de luz",7805670900066,https://cdn.demo.test/variada/linterna.png
+BOD-0007,VAR-007,Set de destapadores y utensilios bar,Genérico,2200,4990,25,,7805670900073,https://cdn.demo.test/variada/utensilios-bar.png
+BOD-0008,VAR-008,Cojín decorativo 45x45,Genérico,,7990,16,"Funda desmontable, relleno incluido",7805670900080,https://cdn.demo.test/variada/cojin.png

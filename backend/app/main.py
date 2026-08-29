@@ -1,23 +1,37 @@
 """
-Punto de entrada de la app real de Librería Central (backend).
+Punto de entrada del backend.
 
-Lectura de WooCommerce (reutilizando el adaptador y el análisis ya probados
-en scripts/woocommerce-audit/) + rentabilidad + OAuth real de Mercado Libre
-e importación de sus ventas (app/api/routes/mercadolibre.py) — sin escribir
-todavía en WooCommerce ni en Mercado Libre, y sin autenticación de usuarios
-del panel. Ver DATABASE.md para el detalle de cada fase.
+24 de agosto de 2026 — pivote de "app de una librería" a plataforma
+universal para vendedores de Mercado Libre (Librería Central queda como
+primer caso de uso, no como límite de arquitectura): importador de catálogo
+desde cualquier Excel/CSV (app/api/routes/catalogo.py), motor de
+rentabilidad configurable por canal, selección de qué conviene publicar
+(app/api/routes/seleccion.py), lectura de WooCommerce, y OAuth real de
+Mercado Libre con importación de sus ventas — sin escribir todavía en
+WooCommerce ni en Mercado Libre, y sin autenticación de usuarios del panel.
+Ver DATABASE.md para el detalle de cada fase.
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import configuracion, costos, mercadolibre, productos, productos_db, rentabilidad
+from app.api.routes import (
+    catalogo,
+    configuracion,
+    costos,
+    mercadolibre,
+    productos,
+    productos_db,
+    publicaciones,
+    rentabilidad,
+    seleccion,
+)
 from app.config import get_settings, print_env_diagnostics
 
 app = FastAPI(
-    title="Librería Central — Backend",
-    description="Backend real del proyecto. Fase actual: lectura de WooCommerce.",
-    version="0.1.0",
+    title="Backend de catálogo y rentabilidad para Mercado Libre",
+    description="Importa cualquier catálogo (Excel/CSV), calcula rentabilidad y decide qué conviene publicar en Mercado Libre. Librería Central es el primer caso de uso, no un límite de arquitectura.",
+    version="0.2.0",
 )
 
 # CORS: el frontend (frontend/index.html) se sirve desde un servidor estático
@@ -52,6 +66,9 @@ app.include_router(rentabilidad.router)
 app.include_router(configuracion.router)
 app.include_router(costos.router)
 app.include_router(mercadolibre.router)
+app.include_router(catalogo.router)
+app.include_router(seleccion.router)
+app.include_router(publicaciones.router)
 
 
 @app.on_event("startup")
