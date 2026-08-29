@@ -8,6 +8,7 @@ reales).
 from __future__ import annotations
 
 from datetime import datetime
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
@@ -107,6 +108,20 @@ def _producto(db_session, tienda, *, sku, nombre, precio, marketplace_stock=None
     return variante
 
 
+def _state_de(authorization_url):
+    """El "state" real de la URL de autorización — con parseo de verdad
+    (no un split ingenuo), porque desde que se agregó PKCE la URL trae más
+    parámetros después de "state=" (code_challenge, code_challenge_method)."""
+    return parse_qs(urlparse(authorization_url).query)["state"][0]
+
+
+def _redirect_params(response):
+    """Query params de a dónde redirige /callback al frontend — la parte
+    ANTES del "#" (ver _frontend_redirect en app/api/routes/mercadolibre.py)."""
+    location = response.headers["location"]
+    return parse_qs(urlparse(location).query)
+
+
 def _pedido_ml(order_id, sku, *, quantity=1, unit_price=10000, sale_fee=1200, status="paid"):
     return {
         "id": order_id,
@@ -153,10 +168,35 @@ def test_conectar_con_credenciales_devuelve_la_url_de_autorizacion_real(client, 
     assert "state=" in url
 
 
-def test_callback_con_state_invalido_se_rechaza(client, a_store, monkeypatch):
+def test_callback_con_state_invalido_redirige_al_frontend_con_error(client, a_store, monkeypatch):
     monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
-    res = client.get("/api/mercadolibre/callback", params={"code": "x", "state": "no-existe"})
-    assert res.status_code == 400
+    res = client.get("/api/mercadolibre/callback", params={"code": "x", "state": "no-existe"}, follow_redirects=False)
+    assert res.status_code == 303
+    params = _redirect_params(res)
+    assert params["ml"] == ["error"]
+    assert params["razon"] == ["estado_invalido"]
+    # Nunca un JSON crudo ni un detalle técnico en la URL a la que vuelve el navegador.
+    assert "location" in res.headers
+    assert res.headers["location"].startswith(CONFIGURED_SETTINGS.frontend_base_url)
+
+
+def test_callback_con_error_de_autorizacion_redirige_sin_romper(client, a_store, monkeypatch):
+    """El dueño cancela en la pantalla de Mercado Libre — ML redirige con
+    ?error=access_denied y SIN "code". Antes esto rompía con un 422 (code
+    era un parámetro obligatorio) antes de llegar a nuestro código."""
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+    state = _state_de(client.get("/api/mercadolibre/conectar").json()["authorizationUrl"])
+
+    res = client.get(
+        "/api/mercadolibre/callback",
+        params={"error": "access_denied", "error_description": "user denied", "state": state},
+        follow_redirects=False,
+    )
+
+    assert res.status_code == 303
+    params = _redirect_params(res)
+    assert params["ml"] == ["error"]
+    assert params["razon"] == ["rechazado"]
 
 
 @respx.mock
@@ -172,21 +212,33 @@ def test_conectar_y_callback_guardan_los_tokens_cifrados(client, db_session, a_s
         return_value=httpx.Response(200, json={"id": 555, "nickname": "LIBRERIA_REAL"})
     )
 
-    state = client.get("/api/mercadolibre/conectar").json()["authorizationUrl"].split("state=")[1]
-    res = client.get("/api/mercadolibre/callback", params={"code": "codigo-real", "state": state})
+    authorization_url = client.get("/api/mercadolibre/conectar").json()["authorizationUrl"]
+    assert "code_challenge=" in authorization_url  # PKCE — siempre se manda, ver generate_pkce_pair()
+    assert "code_challenge_method=S256" in authorization_url
+    state = _state_de(authorization_url)
 
-    assert res.status_code == 200
-    body = res.json()
-    assert body["conectado"] is True
-    assert body["cuentaExternaId"] == "555"
-    # La respuesta HTTP nunca expone el token, cifrado o no.
-    assert "APP_USR-real" not in res.text
-    assert "token" not in body
+    res = client.get("/api/mercadolibre/callback", params={"code": "codigo-real", "state": state}, follow_redirects=False)
+
+    assert res.status_code == 303
+    params = _redirect_params(res)
+    assert params["ml"] == ["conectado"]
+    # El navegador nunca recibe el token, cifrado o no, en ningún lado.
+    assert "APP_USR-real" not in res.headers["location"]
+    assert "token" not in res.headers["location"]
 
     cuenta = db_session.query(MarketplaceAccount).filter_by(store_id=a_store.id, marketplace="mercadolibre").one()
+    assert cuenta.status == "connected"
+    assert cuenta.external_account_id == "555"
+    assert cuenta.external_account_nickname == "LIBRERIA_REAL"
     assert cuenta.access_token_encrypted != "APP_USR-real"  # nunca texto plano
     assert decrypt_token(cuenta.access_token_encrypted, TEST_ENCRYPTION_KEY) == "APP_USR-real"
     assert decrypt_token(cuenta.refresh_token_encrypted, TEST_ENCRYPTION_KEY) == "TG-real"
+
+    # El code_verifier que mandó el backend en el intercambio de tokens es
+    # el mismo que se generó junto al state en /conectar (PKCE real, no
+    # solo el parámetro presente en la URL).
+    token_call = [c for c in respx.calls if "/oauth/token" in str(c.request.url)][0]
+    assert b"code_verifier=" in token_call.request.content
 
 
 def test_importar_ventas_sin_conexion_devuelve_400(client, a_store, monkeypatch):
@@ -197,32 +249,37 @@ def test_importar_ventas_sin_conexion_devuelve_400(client, a_store, monkeypatch)
 
 
 @respx.mock
-def test_callback_con_error_de_red_al_canjear_el_code_devuelve_502(client, a_store, monkeypatch):
+def test_callback_con_error_de_red_al_canjear_el_code_redirige_con_error(client, a_store, monkeypatch):
     monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
     respx.post("https://api.mercadolibre.com/oauth/token").mock(side_effect=httpx.ConnectError("sin red"))
 
-    state = client.get("/api/mercadolibre/conectar").json()["authorizationUrl"].split("state=")[1]
-    res = client.get("/api/mercadolibre/callback", params={"code": "codigo-real", "state": state})
+    state = _state_de(client.get("/api/mercadolibre/conectar").json()["authorizationUrl"])
+    res = client.get("/api/mercadolibre/callback", params={"code": "codigo-real", "state": state}, follow_redirects=False)
 
-    assert res.status_code == 502
-    assert "No se pudo conectar con Mercado Libre" in res.json()["detail"]
+    assert res.status_code == 303
+    params = _redirect_params(res)
+    assert params["ml"] == ["error"]
+    assert params["razon"] == ["conexion_fallida"]
+    # Nunca el detalle técnico ("sin red", ConnectError, etc.) en la URL.
+    assert "ConnectError" not in res.headers["location"]
 
 
 @respx.mock
-def test_callback_con_code_invalido_o_vencido_devuelve_502(client, a_store, monkeypatch):
+def test_callback_con_code_invalido_o_vencido_redirige_con_error(client, a_store, monkeypatch):
     monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
     respx.post("https://api.mercadolibre.com/oauth/token").mock(
         return_value=httpx.Response(400, json={"error": "invalid_grant", "message": "código inválido o expirado"})
     )
 
-    state = client.get("/api/mercadolibre/conectar").json()["authorizationUrl"].split("state=")[1]
-    res = client.get("/api/mercadolibre/callback", params={"code": "codigo-vencido", "state": state})
+    state = _state_de(client.get("/api/mercadolibre/conectar").json()["authorizationUrl"])
+    res = client.get("/api/mercadolibre/callback", params={"code": "codigo-vencido", "state": state}, follow_redirects=False)
 
-    assert res.status_code == 502
+    assert res.status_code == 303
+    assert _redirect_params(res)["ml"] == ["error"]
 
 
 @respx.mock
-def test_callback_con_token_encryption_key_invalida_devuelve_400_no_500(client, a_store, monkeypatch):
+def test_callback_con_token_encryption_key_invalida_redirige_con_error_no_revienta(client, a_store, monkeypatch):
     # Los tokens de ML son reales y válidos acá — el problema es que
     # TOKEN_ENCRYPTION_KEY en .env no es una clave Fernet válida (typo al
     # copiarla). No debe perderse como un 500 sin manejar.
@@ -241,11 +298,13 @@ def test_callback_con_token_encryption_key_invalida_devuelve_400_no_500(client, 
     )
     respx.get("https://api.mercadolibre.com/users/me").mock(return_value=httpx.Response(200, json={"id": 1}))
 
-    state = client.get("/api/mercadolibre/conectar").json()["authorizationUrl"].split("state=")[1]
-    res = client.get("/api/mercadolibre/callback", params={"code": "codigo-real", "state": state})
+    state = _state_de(client.get("/api/mercadolibre/conectar").json()["authorizationUrl"])
+    res = client.get("/api/mercadolibre/callback", params={"code": "codigo-real", "state": state}, follow_redirects=False)
 
-    assert res.status_code == 400
-    assert "cifrar" in res.json()["detail"].lower()
+    assert res.status_code == 303
+    params = _redirect_params(res)
+    assert params["ml"] == ["error"]
+    assert params["razon"] == ["cifrado_no_configurado"]
 
 
 @pytest.fixture()
@@ -424,3 +483,274 @@ def test_rentabilidad_y_catalogo_siguen_funcionando_despues_de_importar_ventas(c
 
     rentabilidad = client.get("/api/rentabilidad").json()
     assert rentabilidad["resumen"]["totalProductos"] == 1  # sigue respondiendo normal, sin costo cargado todavía
+
+
+# ------------------------------------------------------------------
+# Desconectar
+# ------------------------------------------------------------------
+
+
+def test_desconectar_limpia_la_conexion(client, db_session, a_store, cuenta_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+
+    res = client.post("/api/mercadolibre/desconectar")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["conectado"] is False
+    assert body["estado"] == "not_connected"
+    assert body["cuentaExternaId"] is None
+
+    cuenta = db_session.get(MarketplaceAccount, cuenta_conectada.id)
+    assert cuenta.status == "not_connected"
+    assert cuenta.access_token_encrypted is None
+    assert cuenta.refresh_token_encrypted is None
+    assert cuenta.external_account_id is None
+    assert cuenta.external_account_nickname is None
+    assert cuenta.external_account_site_id is None
+    assert cuenta.connected_at is None
+    assert cuenta.last_checked_at is None
+
+
+def test_desconectar_sin_conexion_previa_no_falla(client, a_store, monkeypatch):
+    """Desconectar es idempotente — nunca hay que verificar primero si hay
+    algo conectado antes de poder llamarlo."""
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+
+    res = client.post("/api/mercadolibre/desconectar")
+
+    assert res.status_code == 200
+    assert res.json()["conectado"] is False
+
+
+@respx.mock
+def test_reconectar_despues_de_desconectar_funciona(client, db_session, a_store, cuenta_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+    client.post("/api/mercadolibre/desconectar")
+
+    respx.post("https://api.mercadolibre.com/oauth/token").mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "nuevo-token", "refresh_token": "nuevo-refresh", "expires_in": 21600, "user_id": 777}
+        )
+    )
+    respx.get("https://api.mercadolibre.com/users/me").mock(
+        return_value=httpx.Response(200, json={"id": 777, "nickname": "OTRA_CUENTA", "site_id": "MLC"})
+    )
+    state = _state_de(client.get("/api/mercadolibre/conectar").json()["authorizationUrl"])
+
+    res = client.get("/api/mercadolibre/callback", params={"code": "codigo-nuevo", "state": state}, follow_redirects=False)
+
+    assert _redirect_params(res)["ml"] == ["conectado"]
+    cuenta = db_session.get(MarketplaceAccount, cuenta_conectada.id)
+    assert cuenta.status == "connected"
+    assert cuenta.external_account_id == "777"
+    assert cuenta.external_account_nickname == "OTRA_CUENTA"
+    assert cuenta.external_account_site_id == "MLC"
+
+
+# ------------------------------------------------------------------
+# La conexión pertenece a una tienda, nunca es global (sección 5 del
+# pedido: "NO crear una única conexión global de Mercado Libre").
+# ------------------------------------------------------------------
+
+
+def test_la_cuenta_de_mercado_libre_esta_scopeada_por_tienda_no_es_global(db_session):
+    usuario = User(email="dos@tiendas.cl", password_hash=hash_password("x"), full_name="Dueño", created_at=NOW, updated_at=NOW)
+    db_session.add(usuario)
+    tienda_a = Store(owner=usuario, name="Tienda A", created_at=NOW)
+    tienda_b = Store(owner=usuario, name="Tienda B", created_at=NOW)
+    db_session.add_all([tienda_a, tienda_b])
+    db_session.commit()
+
+    cuenta_a = MarketplaceAccount(store=tienda_a, marketplace="mercadolibre", status="connected", external_account_id="111")
+    cuenta_b = MarketplaceAccount(store=tienda_b, marketplace="mercadolibre", status="not_connected")
+    db_session.add_all([cuenta_a, cuenta_b])
+    db_session.commit()
+
+    de_tienda_a = db_session.query(MarketplaceAccount).filter_by(store_id=tienda_a.id, marketplace="mercadolibre").one()
+    de_tienda_b = db_session.query(MarketplaceAccount).filter_by(store_id=tienda_b.id, marketplace="mercadolibre").one()
+    assert de_tienda_a.external_account_id == "111"
+    assert de_tienda_a.status == "connected"
+    assert de_tienda_b.status == "not_connected"  # conectar la tienda A nunca afecta a la tienda B
+
+
+# ------------------------------------------------------------------
+# Arquitectura multiempresa/multi-seller (29 de agosto de 2026, segunda
+# ronda): Nexo es un SaaS — una sola aplicación desarrolladora de Mercado
+# Libre (MERCADOLIBRE_CLIENT_ID/SECRET en backend/.env), múltiples empresas
+# conectando cada una su propia cuenta vendedora. Estas pruebas demuestran
+# el aislamiento entre empresas descrito en el pedido (Tests 1-9): cada una
+# opera sobre `_get_account`/`_account_status`/los endpoints reales
+# directamente por `store_id`, nunca mezclando datos entre tiendas.
+#
+# El backend todavía no resuelve "la empresa actual" desde una sesión
+# autenticada (`_get_default_store` documenta ese límite conocido) — así
+# que donde hace falta una segunda empresa "activa" en la misma request
+# HTTP, la prueba llama directamente a las funciones que sí ya operan por
+# `store_id` (las mismas que usan los endpoints), en vez de inventar un
+# mecanismo de sesión que todavía no existe.
+# ------------------------------------------------------------------
+
+from app.api.routes.mercadolibre import _account_status, _consume_state, _get_account, _new_state  # noqa: E402
+
+
+def _otra_tienda(db_session, *, nombre):
+    usuario = User(email=f"{nombre.lower()}@empresas.cl", password_hash=hash_password("x"), full_name="Dueño", created_at=NOW, updated_at=NOW)
+    db_session.add(usuario)
+    tienda = Store(owner=usuario, name=nombre, created_at=NOW)
+    db_session.add(tienda)
+    db_session.commit()
+    return tienda
+
+
+def test_empresa_a_conecta_su_seller_y_queda_asociado_solo_a_empresa_a(db_session):
+    """Test 1 del pedido."""
+    tienda_a = _otra_tienda(db_session, nombre="Empresa A")
+    cuenta_a = MarketplaceAccount(store=tienda_a, marketplace="mercadolibre", status="connected", external_account_id="111", external_account_nickname="SELLER_A")
+    db_session.add(cuenta_a)
+    db_session.commit()
+
+    de_a = _get_account(db_session, tienda_a)
+    assert de_a.external_account_id == "111"
+    assert de_a.external_account_nickname == "SELLER_A"
+
+
+def test_empresa_b_conecta_su_seller_y_queda_asociado_solo_a_empresa_b(db_session):
+    """Test 2 del pedido."""
+    tienda_b = _otra_tienda(db_session, nombre="Empresa B")
+    cuenta_b = MarketplaceAccount(store=tienda_b, marketplace="mercadolibre", status="connected", external_account_id="222", external_account_nickname="SELLER_B")
+    db_session.add(cuenta_b)
+    db_session.commit()
+
+    de_b = _get_account(db_session, tienda_b)
+    assert de_b.external_account_id == "222"
+    assert de_b.external_account_nickname == "SELLER_B"
+
+
+def test_status_de_empresa_a_nunca_incluye_datos_de_empresa_b(db_session):
+    """Tests 3 y 4 del pedido: cada empresa consulta status y ve solo su
+    propio seller — nunca el nickname/id/estado de la otra."""
+    tienda_a = _otra_tienda(db_session, nombre="Empresa A")
+    tienda_b = _otra_tienda(db_session, nombre="Empresa B")
+    db_session.add_all([
+        MarketplaceAccount(store=tienda_a, marketplace="mercadolibre", status="connected", external_account_id="111", external_account_nickname="SELLER_A", external_account_site_id="MLC"),
+        MarketplaceAccount(store=tienda_b, marketplace="mercadolibre", status="connected", external_account_id="222", external_account_nickname="SELLER_B", external_account_site_id="MLA"),
+    ])
+    db_session.commit()
+
+    status_a = _account_status(_get_account(db_session, tienda_a), configurado=True)
+    status_b = _account_status(_get_account(db_session, tienda_b), configurado=True)
+
+    assert status_a["cuentaExternaId"] == "111"
+    assert status_a["nickname"] == "SELLER_A"
+    assert "222" not in str(status_a.values())
+    assert "SELLER_B" not in str(status_a.values())
+
+    assert status_b["cuentaExternaId"] == "222"
+    assert status_b["nickname"] == "SELLER_B"
+    assert "111" not in str(status_b.values())
+    assert "SELLER_A" not in str(status_b.values())
+
+
+@respx.mock
+def test_desconectar_empresa_a_no_afecta_la_conexion_de_empresa_b(client, db_session, a_store, cuenta_conectada, monkeypatch):
+    """Test 6 del pedido. `a_store`/`cuenta_conectada` son la tienda que
+    HOY resuelve `_get_default_store` (la primera creada) — se crea además
+    una segunda empresa ya conectada, y se comprueba que desconectar la
+    primera por HTTP nunca toca los datos de la segunda."""
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+    from app.domain.token_crypto import encrypt_token
+
+    tienda_b = _otra_tienda(db_session, nombre="Empresa B")
+    cuenta_b = MarketplaceAccount(
+        store=tienda_b, marketplace="mercadolibre", status="connected",
+        external_account_id="222", external_account_nickname="SELLER_B",
+        access_token_encrypted=encrypt_token("token-de-b", TEST_ENCRYPTION_KEY),
+        refresh_token_encrypted=encrypt_token("refresh-de-b", TEST_ENCRYPTION_KEY),
+        connected_at=NOW, last_checked_at=NOW,
+    )
+    db_session.add(cuenta_b)
+    db_session.commit()
+
+    res = client.post("/api/mercadolibre/desconectar")
+    assert res.status_code == 200
+    assert res.json()["conectado"] is False  # la tienda resuelta (a_store) queda desconectada
+
+    de_b = db_session.get(MarketplaceAccount, cuenta_b.id)
+    assert de_b.status == "connected"  # Empresa B sigue conectada, intacta
+    assert de_b.external_account_id == "222"
+    assert decrypt_token(de_b.access_token_encrypted, TEST_ENCRYPTION_KEY) == "token-de-b"
+
+
+@respx.mock
+def test_renovar_el_token_de_empresa_a_nunca_toca_el_token_de_empresa_b(client, db_session, a_store, cuenta_con_token_vencido, monkeypatch):
+    """Test 7 del pedido."""
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+    from app.domain.token_crypto import encrypt_token
+
+    tienda_b = _otra_tienda(db_session, nombre="Empresa B")
+    cuenta_b = MarketplaceAccount(
+        store=tienda_b, marketplace="mercadolibre", status="connected",
+        external_account_id="222",
+        access_token_encrypted=encrypt_token("token-vigente-de-b", TEST_ENCRYPTION_KEY),
+        refresh_token_encrypted=encrypt_token("refresh-vigente-de-b", TEST_ENCRYPTION_KEY),
+        token_expires_at=datetime(2027, 1, 1),  # vigente, no debería tocarse
+        connected_at=NOW, last_checked_at=NOW,
+    )
+    db_session.add(cuenta_b)
+    db_session.commit()
+
+    respx.post("https://api.mercadolibre.com/oauth/token").mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "token-nuevo-de-a", "refresh_token": "refresh-nuevo-de-a", "expires_in": 21600, "user_id": 555}
+        )
+    )
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/orders/search.*").mock(return_value=httpx.Response(200, json={"results": []}))
+
+    res = client.post("/api/mercadolibre/importar-ventas")
+    assert res.status_code == 200
+
+    cuenta_a_renovada = db_session.get(MarketplaceAccount, cuenta_con_token_vencido.id)
+    assert decrypt_token(cuenta_a_renovada.access_token_encrypted, TEST_ENCRYPTION_KEY) == "token-nuevo-de-a"
+
+    de_b = db_session.get(MarketplaceAccount, cuenta_b.id)
+    assert decrypt_token(de_b.access_token_encrypted, TEST_ENCRYPTION_KEY) == "token-vigente-de-b"  # sin cambios
+    assert decrypt_token(de_b.refresh_token_encrypted, TEST_ENCRYPTION_KEY) == "refresh-vigente-de-b"
+
+
+def test_el_state_de_oauth_guarda_la_empresa_que_inicio_la_conexion(db_session):
+    """Test de la sección 7/18 del pedido: el `state` recupera de forma
+    segura qué empresa inició el intento, para que /callback asocie la
+    cuenta de Mercado Libre a esa empresa y no a "la que sea la actual" en
+    el momento en que Mercado Libre responde."""
+    tienda_a = _otra_tienda(db_session, nombre="Empresa A")
+    tienda_b = _otra_tienda(db_session, nombre="Empresa B")
+
+    state_a, _ = _new_state(tienda_a.id)
+    state_b, _ = _new_state(tienda_b.id)
+    assert state_a != state_b  # impredecible, nunca el mismo valor para dos intentos
+
+    pendiente_a = _consume_state(state_a)
+    assert pendiente_a["store_id"] == tienda_a.id
+
+    pendiente_b = _consume_state(state_b)
+    assert pendiente_b["store_id"] == tienda_b.id
+
+    # Un state ya usado no sirve una segunda vez (protección CSRF real).
+    assert _consume_state(state_a) is None
+
+
+def test_status_nunca_expone_tokens_ni_client_secret(client, a_store, cuenta_conectada, monkeypatch):
+    """Tests 8 y 9 del pedido."""
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+
+    res = client.get("/api/mercadolibre/estado")
+    assert res.status_code == 200
+
+    cuerpo_crudo = res.text
+    assert "token-valido" not in cuerpo_crudo
+    assert "refresh-valido" not in cuerpo_crudo
+    assert CONFIGURED_SETTINGS.mercadolibre_client_secret not in cuerpo_crudo
+    assert "access_token" not in res.json()
+    assert "refresh_token" not in res.json()
+    assert "clientSecret" not in res.json()

@@ -47,15 +47,30 @@ class Settings(BaseSettings):
     # sitio del país que corresponda), NO se inventan acá. Vacíos por
     # defecto: sin esto, /api/mercadolibre/conectar devuelve un error claro
     # diciendo exactamente qué falta, nunca intenta adivinar un valor.
+    #
+    # 29 de agosto de 2026 — corregido contra la documentación oficial
+    # vigente de Mercado Libre: la Redirect URI exige HTTPS SIEMPRE, incluso
+    # para registrarla en el DevCenter — "en localhost alcanza con HTTP" (lo
+    # que decía antes este comentario) ya no es así. Ver backend/README.md,
+    # sección "Mercado Libre real", para cómo probarlo en desarrollo con un
+    # túnel HTTPS (ngrok o similar).
     mercadolibre_client_id: str = ""
     mercadolibre_client_secret: str = ""
     # URL de este backend que Mercado Libre debe llamar después del login
-    # (tiene que coincidir EXACTO con la registrada en el DevCenter de ML).
+    # (tiene que coincidir EXACTO con la registrada en el DevCenter de ML,
+    # HTTPS obligatorio).
     mercadolibre_redirect_uri: str = ""
     # Dominio de autorización — depende del país del vendedor (Chile por
     # default, ya que la tienda real es lalibreriaonlineoficial.cl). Cambiar
     # solo si la cuenta de Mercado Libre es de otro país.
     mercadolibre_auth_domain: str = "auth.mercadolibre.cl"
+
+    # URL del frontend (frontend/index.html) — a dónde redirige
+    # /api/mercadolibre/callback después de procesar la autorización (con
+    # ?ml=conectado o ?ml=error&razon=..., antes del "#", para que sea un
+    # query string real y no se mezcle con el router de hash del frontend).
+    # Cambiar si el dueño abre Nexo desde otro host/puerto.
+    frontend_base_url: str = "http://localhost:5500"
 
     # Clave con la que se cifran (NUNCA se guardan en texto plano) los
     # access_token/refresh_token de Mercado Libre en la base de datos — ver
@@ -108,4 +123,5 @@ def print_env_diagnostics(settings: Settings) -> None:
     print(f"  MERCADOLIBRE_CLIENT_ID={settings.mercadolibre_client_id or '(no definida)'}")
     print(f"  MERCADOLIBRE_CLIENT_SECRET={mask_secret(settings.mercadolibre_client_secret)}")
     print(f"  MERCADOLIBRE_REDIRECT_URI={settings.mercadolibre_redirect_uri or '(no definida)'}")
+    print(f"  FRONTEND_BASE_URL={settings.frontend_base_url}")
     print(f"  TOKEN_ENCRYPTION_KEY={mask_secret(settings.token_encryption_key)}")

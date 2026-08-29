@@ -1,12 +1,37 @@
 """
 Conexión real (OAuth) e importación de ventas de Mercado Libre.
 
-Nada de esto simula datos: /conectar necesita las credenciales reales del
-dueño (MERCADOLIBRE_CLIENT_ID/SECRET/REDIRECT_URI en backend/.env) o
-devuelve un error explicando EXACTAMENTE qué falta — nunca genera una URL
-de autorización con un client_id inventado. /importar-ventas necesita una
-cuenta ya conectada de verdad; sin eso no hay ningún pedido "de ejemplo"
-que mostrar.
+ARQUITECTURA MULTIEMPRESA — dos cosas que nunca hay que confundir:
+
+1. La APLICACIÓN DESARROLLADORA (MERCADOLIBRE_CLIENT_ID/SECRET/REDIRECT_URI
+   en backend/.env) es de NEXO. Se crea UNA sola vez en
+   https://developers.mercadolibre.cl y sirve para TODAS las empresas que
+   usen Nexo — nunca se le pide a un cliente que cree su propia aplicación
+   de desarrollador. Estas credenciales no viven nunca en la base de datos
+   (no son datos "de una empresa"), solo en el entorno del servidor.
+2. La CUENTA VENDEDORA (el seller que Mercado Libre identifica en
+   /users/me — external_account_id/nickname/site_id en
+   `MarketplaceAccount`) es del cliente. Cada empresa que conecta Mercado
+   Libre autoriza con SU propia cuenta, y esa fila queda scopeada por
+   `store_id` — nunca global. Dos empresas conectando cada una su propio
+   seller conviven sin problema (`MarketplaceAccount` tiene
+   `UniqueConstraint(store_id, marketplace)`: una empresa no puede tener dos
+   conexiones activas del mismo marketplace, pero nada impide que dos
+   empresas distintas tengan cada una la suya).
+
+Nada de esto simula datos: /conectar necesita las credenciales reales de la
+app de Nexo o devuelve un error explicando EXACTAMENTE qué falta — nunca
+genera una URL de autorización con un client_id inventado. /importar-ventas
+necesita una cuenta ya conectada de verdad; sin eso no hay ningún pedido "de
+ejemplo" que mostrar.
+
+/callback SIEMPRE redirige el navegador de vuelta al frontend (nunca
+devuelve JSON): a quien llega ahí es al navegador real del dueño, recién
+saliendo de autorizar en Mercado Libre — un JSON crudo en pantalla se vería
+como un error. Los errores (autorización rechazada, code vencido,
+credenciales mal configuradas, etc.) también redirigen, con un código corto
+en `razon` — nunca el detalle técnico ni una excepción — que el frontend
+traduce a lenguaje humano.
 
 Limitación conocida y deliberada de esta primera versión: solo ingresa
 pedidos NUEVOS. Si un pedido ya importado cambia de estado en Mercado Libre
@@ -15,8 +40,16 @@ reservado para ML que ya se descontó NO se revierte automáticamente — el
 dueño lo ajusta a mano en /api/productos/{id}/stock-mercadolibre si hace
 falta. Revertir automáticamente es una función aparte, no construida todavía.
 
-Sin autenticación de usuarios ni multi-tienda (mismo alcance que el resto
-del backend): opera sobre la única tienda que existe.
+Sin autenticación de usuarios real todavía (mismo alcance que el resto del
+backend — ver User/AuthSession en app/db/models/users.py, que existen pero
+sin ruta de login en el backend; `lc_session` en el frontend es solo demo):
+opera sobre "la tienda actual", resuelta HOY como la única/primera tienda
+que existe (`_get_default_store`, el único lugar de este archivo con esa
+decisión). El modelo de datos (`MarketplaceAccount.store_id`, `state` con
+`store_id` embebido — ver `_new_state`) ya está armado por-empresa a
+propósito, para que activar multiempresa real más adelante sea reemplazar
+`_get_default_store` por la tienda activa de la sesión — aditivo, no una
+reescritura de este archivo.
 """
 
 from __future__ import annotations
@@ -24,8 +57,11 @@ from __future__ import annotations
 import secrets
 import time
 from datetime import datetime, timedelta
+from typing import Optional
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.adapters.mercadolibre import (
@@ -33,6 +69,7 @@ from app.adapters.mercadolibre import (
     MercadoLibreAuthError,
     MercadoLibreConfig,
     MercadoLibreRequestError,
+    generate_pkce_pair,
 )
 from app.config import Settings, get_settings
 from app.db.models import MarketplaceAccount, Order, OrderItem, ProductVariant, Store
@@ -45,30 +82,46 @@ router = APIRouter(prefix="/api/mercadolibre", tags=["mercadolibre"])
 
 MARKETPLACE = "mercadolibre"
 
-# Estados pendientes de OAuth (protección CSRF) — en memoria del proceso,
-# con expiración corta. Alcanza para un solo backend en desarrollo; si esto
-# corre algún día con varias réplicas, hay que moverlo a algo compartido
-# (Redis, o una tabla) — anotado a propósito, no resuelto porque no hace
-# falta todavía con un solo proceso.
-_pending_states: dict[str, float] = {}
+# Estados pendientes de OAuth (protección CSRF + PKCE) — en memoria del
+# proceso, con expiración corta. Alcanza para un solo backend en
+# desarrollo; si esto corre algún día con varias réplicas, hay que moverlo
+# a algo compartido (Redis, o una tabla) — anotado a propósito, no resuelto
+# porque no hace falta todavía con un solo proceso.
+_pending_states: dict[str, dict] = {}
 _STATE_TTL_S = 600
 
 
-def _new_state() -> str:
+def _new_state(store_id: int) -> tuple[str, str]:
+    """(state, code_challenge) — genera y guarda también el code_verifier de
+    PKCE Y la tienda/empresa que inició este intento de conexión, ambos
+    emparejados con este state para recuperarlos en el callback.
+
+    Guardar `store_id` acá (y no volver a resolver "la tienda actual" en
+    /callback) es lo que hace que la cuenta de Mercado Libre quede asociada
+    a la empresa que REALMENTE empezó este flujo — no a la que resulte ser
+    "la tienda actual" en el momento en que Mercado Libre responde, que
+    puede ser un instante distinto. Hoy con una sola tienda no cambia nada
+    en la práctica, pero es el punto exacto que hay que enchufar a la
+    sesión del usuario cuando exista login multiempresa real (ver
+    `_get_default_store`)."""
     _cleanup_states()
     state = secrets.token_urlsafe(24)
-    _pending_states[state] = time.time()
-    return state
+    code_verifier, code_challenge = generate_pkce_pair()
+    _pending_states[state] = {"created": time.time(), "code_verifier": code_verifier, "store_id": store_id}
+    return state, code_challenge
 
 
-def _consume_state(state: str) -> bool:
+def _consume_state(state: str) -> Optional[dict]:
+    """Devuelve {"code_verifier", "store_id"} guardados para este state (o
+    None si el state no existe o venció) — y lo borra: un state solo se usa
+    una vez."""
     _cleanup_states()
-    return _pending_states.pop(state, None) is not None
+    return _pending_states.pop(state, None)
 
 
 def _cleanup_states() -> None:
     ahora = time.time()
-    for s in [s for s, creado in _pending_states.items() if ahora - creado > _STATE_TTL_S]:
+    for s in [s for s, entry in _pending_states.items() if ahora - entry["created"] > _STATE_TTL_S]:
         _pending_states.pop(s, None)
 
 
@@ -96,15 +149,28 @@ def _require_configured(cfg: MercadoLibreConfig, settings: Settings) -> None:
             status_code=400,
             detail=(
                 "Faltan datos de Mercado Libre en backend/.env: "
-                f"{', '.join(faltantes)}. MERCADOLIBRE_* se generan creando una "
-                "aplicación en https://developers.mercadolibre.cl con la cuenta "
-                "real de la librería; TOKEN_ENCRYPTION_KEY se genera local (ver "
-                ".env.example). Ninguno de los dos se puede inventar."
+                f"{', '.join(faltantes)}. MERCADOLIBRE_* son las credenciales de "
+                "la aplicación desarrolladora de NEXO (se crean UNA sola vez en "
+                "https://developers.mercadolibre.cl, nunca por cada empresa que "
+                "use Nexo) — no son datos de la cuenta vendedora de ningún "
+                "cliente. TOKEN_ENCRYPTION_KEY se genera local (ver .env.example). "
+                "Ninguno de los dos se puede inventar."
             ),
         )
 
 
 def _get_default_store(db: Session) -> Store:
+    """Resuelve "la empresa/tienda actual" para esta request.
+
+    ÚNICO punto de todo este archivo que decide de qué empresa se trata —
+    a propósito: el día que exista login + selector de empresa activa real
+    (ver User/AuthSession en app/db/models/users.py, hoy sin ruta de
+    login en el backend — el `lc_session` del frontend es solo demo), acá
+    es donde se reemplaza "la primera tienda que exista" por "la tienda
+    activa de la sesión autenticada". Todo lo demás en este archivo ya
+    trabaja por `store.id` (MarketplaceAccount, Order, etc.), así que ese
+    reemplazo no obliga a tocar el resto — es aditivo, no una reescritura.
+    No se inventa acá una seguridad multiempresa que todavía no existe."""
     store = db.query(Store).order_by(Store.id).first()
     if store is None:
         raise HTTPException(status_code=404, detail="No hay ninguna tienda creada todavía (correr app/db/seed_demo.py).")
@@ -126,11 +192,21 @@ def _get_or_create_account(db: Session, store: Store) -> MarketplaceAccount:
 
 def _account_status(account: MarketplaceAccount | None, configurado: bool) -> dict:
     if account is None:
-        return {"conectado": False, "estado": "not_connected", "cuentaExternaId": None, "conectadoEn": None, "credencialesConfiguradas": configurado}
+        return {
+            "conectado": False,
+            "estado": "not_connected",
+            "cuentaExternaId": None,
+            "nickname": None,
+            "siteId": None,
+            "conectadoEn": None,
+            "credencialesConfiguradas": configurado,
+        }
     return {
         "conectado": account.status == "connected",
         "estado": account.status,
         "cuentaExternaId": account.external_account_id,
+        "nickname": account.external_account_nickname,
+        "siteId": account.external_account_site_id,
         "conectadoEn": account.connected_at.isoformat() if account.connected_at else None,
         "credencialesConfiguradas": configurado,
     }
@@ -151,60 +227,124 @@ def estado(db: Session = Depends(get_db)) -> dict:
 
 @router.get("/conectar")
 def conectar(db: Session = Depends(get_db)) -> dict:
-    _get_default_store(db)
+    store = _get_default_store(db)
     settings = get_settings()
     cfg = _build_ml_config(settings)
     _require_configured(cfg, settings)
 
+    state, code_challenge = _new_state(store.id)
     adapter = MercadoLibreAdapter(cfg)
-    return {"authorizationUrl": adapter.build_authorization_url(_new_state())}
+    return {"authorizationUrl": adapter.build_authorization_url(state, code_challenge)}
+
+
+def _frontend_redirect(settings: Settings, *, ml: str, razon: Optional[str] = None) -> RedirectResponse:
+    """A dónde vuelve el navegador después de /callback — SIEMPRE una
+    redirección al frontend (nunca un JSON): quien llega acá es el
+    navegador real del dueño, recién saliendo de autorizar en Mercado
+    Libre, no un cliente HTTP programático. `razon` es un código corto
+    (nunca el detalle técnico ni un mensaje de excepción) — el frontend lo
+    traduce a lenguaje humano (ver js/app.js, RAZON_ERROR_ML)."""
+    params = {"ml": ml}
+    if razon:
+        params["razon"] = razon
+    return RedirectResponse(f"{settings.frontend_base_url}/?{urlencode(params)}#/mercadolibre", status_code=303)
 
 
 @router.get("/callback")
-async def callback(code: str, state: str, db: Session = Depends(get_db)) -> dict:
-    if not _consume_state(state):
-        raise HTTPException(
-            status_code=400,
-            detail="El parámetro state es inválido o venció — iniciá la conexión de nuevo desde /api/mercadolibre/conectar.",
-        )
-
+async def callback(
+    state: Optional[str] = None,
+    code: Optional[str] = None,
+    error: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
     settings = get_settings()
+
+    # Mercado Libre redirige con ?error=access_denied (sin "code") cuando el
+    # dueño cancela la autorización en vez de aceptarla — no es un fallo del
+    # sistema, así que nunca debe verse como un 4xx/5xx crudo.
+    if error:
+        _consume_state(state) if state else None
+        razon = "rechazado" if error == "access_denied" else "error_autorizacion"
+        return _frontend_redirect(settings, ml="error", razon=razon)
+
+    if not state or not code:
+        return _frontend_redirect(settings, ml="error", razon="solicitud_invalida")
+
+    pendiente = _consume_state(state)
+    if pendiente is None:
+        return _frontend_redirect(settings, ml="error", razon="estado_invalido")
+    code_verifier = pendiente["code_verifier"]
+
+    # La empresa dueña de esta conexión es la que se guardó en el state al
+    # iniciar /conectar — no "la tienda actual" recién ahora (ver
+    # _new_state). Si esa tienda ya no existe (caso extremo: se borró entre
+    # medio), no hay a quién asociar la cuenta — mismo error que un state
+    # inválido, nunca un 500.
+    store = db.get(Store, pendiente["store_id"])
+    if store is None:
+        return _frontend_redirect(settings, ml="error", razon="estado_invalido")
+
     cfg = _build_ml_config(settings)
-    _require_configured(cfg, settings)
+    try:
+        _require_configured(cfg, settings)
+    except HTTPException:
+        return _frontend_redirect(settings, ml="error", razon="credenciales_faltantes")
 
     adapter = MercadoLibreAdapter(cfg)
     try:
-        tokens = await adapter.exchange_code_for_tokens(code)
+        tokens = await adapter.exchange_code_for_tokens(code, code_verifier)
         user_info = await adapter.get_user_info(tokens.access_token)
-    except MercadoLibreAuthError as err:
-        raise HTTPException(status_code=502, detail=f"Mercado Libre rechazó la conexión: {err}") from err
-    except MercadoLibreRequestError as err:
-        raise HTTPException(status_code=502, detail=f"No se pudo conectar con Mercado Libre: {err}") from err
+    except (MercadoLibreAuthError, MercadoLibreRequestError):
+        # El motivo técnico (código vencido, ML caído, etc.) queda en los
+        # logs del servidor — nunca en la URL a la que vuelve el navegador.
+        return _frontend_redirect(settings, ml="error", razon="conexion_fallida")
     finally:
         await adapter.aclose()
 
-    store = _get_default_store(db)
-    account = _get_or_create_account(db, store)
-    now = datetime.now()
     try:
         access_token_encrypted = encrypt_token(tokens.access_token, settings.token_encryption_key)
         refresh_token_encrypted = encrypt_token(tokens.refresh_token, settings.token_encryption_key)
-    except TokenEncryptionNotConfigured as err:
+    except TokenEncryptionNotConfigured:
         # Mercado Libre ya autorizó la app (los tokens son reales y válidos)
-        # pero TOKEN_ENCRYPTION_KEY está mal escrita en .env — no es un 500:
-        # es un problema de configuración con arreglo claro, y sin este catch
-        # escapaba sin manejar (perdiendo los headers CORS en el camino).
-        raise HTTPException(status_code=400, detail=f"No se pudieron cifrar los tokens recibidos: {err}") from err
+        # pero TOKEN_ENCRYPTION_KEY está mal escrita en .env — se le avisa al
+        # dueño en la UI, el detalle técnico se resuelve mirando el .env.
+        return _frontend_redirect(settings, ml="error", razon="cifrado_no_configurado")
+
+    account = _get_or_create_account(db, store)
+    now = datetime.now()
     account.access_token_encrypted = access_token_encrypted
     account.refresh_token_encrypted = refresh_token_encrypted
     account.token_expires_at = now + timedelta(seconds=tokens.expires_in)
     account.external_account_id = str(user_info.get("id") or tokens.user_id)
+    account.external_account_nickname = user_info.get("nickname")
+    account.external_account_site_id = user_info.get("site_id")
     account.status = "connected"
     account.connected_at = now
     account.last_checked_at = now
     db.commit()
 
-    return _account_status(account, True)
+    return _frontend_redirect(settings, ml="conectado")
+
+
+@router.post("/desconectar")
+def desconectar(db: Session = Depends(get_db)) -> dict:
+    """Borra la conexión guardada — el dueño puede volver a conectar
+    (la misma cuenta u otra) desde cero en cualquier momento. Nunca falla
+    si ya estaba desconectado: desconectar es idempotente."""
+    store = _get_default_store(db)
+    account = _get_account(db, store)
+    if account is not None:
+        account.status = "not_connected"
+        account.access_token_encrypted = None
+        account.refresh_token_encrypted = None
+        account.token_expires_at = None
+        account.external_account_id = None
+        account.external_account_nickname = None
+        account.external_account_site_id = None
+        account.connected_at = None
+        account.last_checked_at = None
+        db.commit()
+    return build_estado_conexion(db, get_settings())
 
 
 async def _get_valid_access_token(db: Session, account: MarketplaceAccount, cfg: MercadoLibreConfig, encryption_key: str) -> str:

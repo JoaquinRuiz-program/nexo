@@ -4,6 +4,9 @@ igual patrón que test_woocommerce_adapter.py. Ninguna de estas pruebas
 llama a la API real de Mercado Libre ni necesita credenciales reales.
 """
 
+import base64
+import hashlib
+
 import httpx
 import pytest
 import respx
@@ -13,6 +16,7 @@ from app.adapters.mercadolibre import (
     MercadoLibreAuthError,
     MercadoLibreConfig,
     MercadoLibreRequestError,
+    generate_pkce_pair,
 )
 
 BASE_CONFIG = dict(
@@ -39,6 +43,58 @@ def test_build_authorization_url_usa_el_dominio_del_pais_de_la_cuenta():
     assert "client_id=test-client-id" in url
     assert "state=abc123" in url
     assert "redirect_uri=" in url
+    # Sin code_challenge no se manda ningún parámetro de PKCE — Mercado
+    # Libre documenta que solo son válidos si la app lo tiene activado.
+    assert "code_challenge" not in url
+
+
+def test_build_authorization_url_con_pkce_agrega_code_challenge_s256():
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    url = adapter.build_authorization_url(state="abc123", code_challenge="el-challenge")
+
+    assert "code_challenge=el-challenge" in url
+    assert "code_challenge_method=S256" in url
+
+
+def test_generate_pkce_pair_el_challenge_es_sha256_base64url_del_verifier():
+    code_verifier, code_challenge = generate_pkce_pair()
+
+    assert 43 <= len(code_verifier) <= 128  # rango que exige RFC 7636
+    esperado = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+    assert code_challenge == esperado
+    assert "=" not in code_challenge  # base64url sin padding, como exige PKCE
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_exchange_code_for_tokens_manda_code_verifier_si_se_pasa():
+    route = respx.post("https://api.mercadolibre.com/oauth/token").mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "a", "refresh_token": "r", "expires_in": 21600, "user_id": 1}
+        )
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    await adapter.exchange_code_for_tokens("un-codigo", code_verifier="el-verifier")
+    await adapter.aclose()
+
+    enviado = route.calls[0].request.content.decode()
+    assert "code_verifier=el-verifier" in enviado
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_exchange_code_for_tokens_sin_code_verifier_no_lo_manda():
+    route = respx.post("https://api.mercadolibre.com/oauth/token").mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "a", "refresh_token": "r", "expires_in": 21600, "user_id": 1}
+        )
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    await adapter.exchange_code_for_tokens("un-codigo")
+    await adapter.aclose()
+
+    enviado = route.calls[0].request.content.decode()
+    assert "code_verifier" not in enviado
 
 
 @pytest.mark.asyncio

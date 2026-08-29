@@ -1148,26 +1148,96 @@ window.LC = window.LC || {};
     return `<span class="order-status order-status--${estado}">${labels[estado] || estado}</span>`;
   }
 
+  // Motivo corto que manda el backend (?razon=...) -> texto humano. Nunca
+  // se muestra el "razon" crudo ni ningún detalle técnico (HTTP, excepción,
+  // JSON) — eso queda en los logs del servidor.
+  const RAZON_ERROR_ML = {
+    rechazado: "No se completó la autorización en Mercado Libre.",
+    error_autorizacion: "Mercado Libre no pudo autorizar la conexión.",
+    solicitud_invalida: "La respuesta de Mercado Libre no fue la esperada.",
+    estado_invalido: "El enlace de conexión venció — probá conectar de nuevo.",
+    credenciales_faltantes: "Todavía no configuraste las credenciales de Mercado Libre.",
+    conexion_fallida: "No pudimos conectar con Mercado Libre. Probá de nuevo en un momento.",
+    cifrado_no_configurado: "Hay un problema de configuración interno — avisale a soporte.",
+  };
+
+  function renderConexionMercadoLibre(ml) {
+    if (!ml) {
+      return `
+        <div class="panel-card mb-6">
+          <h3 class="panel-title mb-1">Mercado Libre</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400">No pudimos consultar el estado de la conexión ahora mismo.</p>
+        </div>`;
+    }
+    if (ml.conectado) {
+      const cuenta = ml.nickname ? `${ml.nickname}${ml.siteId ? ` · ${ml.siteId}` : ""}` : ml.cuentaExternaId;
+      const ultimaConexion = ml.conectadoEn
+        ? new Date(ml.conectadoEn).toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short" })
+        : null;
+      return `
+        <div class="panel-card mb-6">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5">
+              <span class="dot dot--green"></span>
+              <div>
+                <p class="text-sm font-medium">Mercado Libre conectado</p>
+                <p class="text-xs text-slate-400">Cuenta vendedora: ${escapeHtml(cuenta)}</p>
+                ${ultimaConexion ? `<p class="text-xs text-slate-400">Última conexión: ${escapeHtml(ultimaConexion)}</p>` : ""}
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="ml-importar-ventas-btn" class="btn-secondary">Importar ventas ahora</button>
+              <button id="ml-administrar-btn" class="btn-secondary">Administrar</button>
+            </div>
+          </div>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mt-3">
+            Tu cuenta está conectada correctamente. Las ventas, pedidos e ingresos de abajo siguen siendo de ejemplo hasta que importes tus ventas reales.
+          </p>
+        </div>`;
+    }
+    return `
+      <div class="panel-card mb-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2.5">
+            <span class="dot dot--gray"></span>
+            <p class="text-sm font-medium">Mercado Libre no está conectado</p>
+          </div>
+          <button id="connect-ml-btn" class="btn-primary">Conectar Mercado Libre</button>
+        </div>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-3">
+          ${ml.credencialesConfiguradas ? "Conecta la cuenta de Mercado Libre de tu empresa para empezar a traer tus ventas reales." : "Conecta la cuenta de Mercado Libre de tu empresa — necesitás configurar las credenciales en el servidor primero (ver backend/README.md)."}
+        </p>
+      </div>`;
+  }
+
   async function renderMercadoLibre(main) {
-    const [resumen, productosFiltro] = await Promise.all([
+    const url = new URL(window.location.href);
+    const mlParam = url.searchParams.get("ml");
+    if (mlParam) {
+      if (mlParam === "conectado") toast("success", "Mercado Libre conectado correctamente.");
+      else toast("error", RAZON_ERROR_ML[url.searchParams.get("razon")] || "No se completó la conexión con Mercado Libre.");
+      url.searchParams.delete("ml");
+      url.searchParams.delete("razon");
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    }
+
+    const [estadoRes, resumen, productosFiltro] = await Promise.all([
+      LC.backendApi.fetchMercadoLibreEstado(),
       LC.dataSource.getResumenMercadoLibre(),
       LC.dataSource.getProductosVendidosEnMercadoLibre(),
     ]);
+    const ml = estadoRes.ok ? estadoRes.data : null;
     mlState.page = 1;
 
     main.innerHTML = `
       <div class="page-wrap app-fade">
+        ${renderConexionMercadoLibre(ml)}
+
         <div class="panel-card mb-6">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="demo-pill">Datos de demostración</span>
-              <span class="connection-pill">Conexión pendiente</span>
-            </div>
-            <button id="connect-ml-btn" class="btn-primary">Conectar Mercado Libre</button>
+          <div class="flex items-center gap-2">
+            <span class="demo-pill">Datos de demostración</span>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Ventas, pedidos e ingresos de acá abajo son de ejemplo, para poder evaluar la interfaz.</p>
           </div>
-          <p class="text-sm text-slate-500 dark:text-slate-400 mt-3">
-            Todo lo que ves acá (ventas, pedidos, ingresos) es de ejemplo, para poder evaluar la interfaz. Ningún dato es real todavía — cuando conectemos tu cuenta de Mercado Libre, estos números se reemplazarán por tu información real.
-          </p>
         </div>
 
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
@@ -1261,9 +1331,64 @@ window.LC = window.LC || {};
       </div>
     `;
 
-    document.getElementById("connect-ml-btn").addEventListener("click", () => {
-      infoModal("Conectar Mercado Libre", "La conexión con Mercado Libre estará disponible cuando configuremos la integración. Todavía no implementamos el inicio de sesión (OAuth) con Mercado Libre — por eso hoy solo puedes explorar la interfaz con datos de demostración.");
-    });
+    const connectBtn = document.getElementById("connect-ml-btn");
+    if (connectBtn) {
+      connectBtn.addEventListener("click", async () => {
+        connectBtn.disabled = true;
+        connectBtn.textContent = "Conectando…";
+        const res = await LC.backendApi.conectarMercadoLibre();
+        if (!res.ok) {
+          connectBtn.disabled = false;
+          connectBtn.textContent = "Conectar Mercado Libre";
+          toast("error", res.error.mensaje);
+          return;
+        }
+        // Navegación real de página completa — es Mercado Libre quien tiene
+        // que mostrar su propia pantalla de inicio de sesión/autorización,
+        // no algo que se pueda hacer con un fetch().
+        window.location.href = res.data.authorizationUrl;
+      });
+    }
+
+    const administrarBtn = document.getElementById("ml-administrar-btn");
+    if (administrarBtn) {
+      administrarBtn.addEventListener("click", () => {
+        openModal({
+          title: "¿Quieres desconectar Mercado Libre?",
+          body: `<p>Podrás volver a conectar tu cuenta cuando quieras.</p>`,
+          primaryLabel: "Desconectar",
+          secondaryLabel: "Cancelar",
+          onPrimary: async () => {
+            const res = await LC.backendApi.desconectarMercadoLibre();
+            if (!res.ok) {
+              toast("error", res.error.mensaje);
+              return;
+            }
+            toast("info", "Mercado Libre desconectado.");
+            renderMercadoLibre(main);
+          },
+        });
+      });
+    }
+
+    const importarVentasBtn = document.getElementById("ml-importar-ventas-btn");
+    if (importarVentasBtn) {
+      importarVentasBtn.addEventListener("click", async () => {
+        importarVentasBtn.disabled = true;
+        importarVentasBtn.textContent = "Importando…";
+        const res = await LC.backendApi.importarVentasMercadoLibre();
+        if (!res.ok) {
+          importarVentasBtn.disabled = false;
+          importarVentasBtn.textContent = "Importar ventas ahora";
+          toast("error", res.error.mensaje);
+          return;
+        }
+        const nuevas = res.data.ordenesNuevas.length;
+        toast("success", nuevas > 0 ? `${nuevas} venta${nuevas === 1 ? "" : "s"} nueva${nuevas === 1 ? "" : "s"} importada${nuevas === 1 ? "" : "s"}.` : "No hay ventas nuevas para importar.");
+        importarVentasBtn.disabled = false;
+        importarVentasBtn.textContent = "Importar ventas ahora";
+      });
+    }
 
     document.getElementById("ml-search-input").addEventListener("input", (e) => {
       mlState.search = e.target.value;

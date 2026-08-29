@@ -108,6 +108,93 @@ Sin credenciales reales de Mercado Libre configuradas todavía (ver sección
 "Mercado Libre real" en `DATABASE.md`) — nada de eso se puede probar de
 punta a punta hasta que el dueño las genere en developers.mercadolibre.cl.
 
+## Cuarta ronda (29 de agosto de 2026): conexión real de Mercado Libre, de punta a punta
+
+El OAuth ya existía y estaba bien construido, pero el frontend nunca lo
+disparaba de verdad (el botón "Conectar" solo mostraba un aviso) y
+`/callback` devolvía JSON en vez de llevar al navegador de vuelta a Nexo.
+Auditado contra la documentación oficial vigente de Mercado Libre antes de
+tocar nada (no de memoria) — un dato que tenía desactualizado: la Redirect
+URI exige HTTPS siempre, incluso en desarrollo local (antes decía que HTTP
+alcanzaba en localhost). Ver "Mercado Libre real" en `DATABASE.md` para la
+guía paso a paso completa, corregida, con `ngrok` como solución de
+desarrollo.
+
+- **PKCE** (RFC 7636, `app/adapters/mercadolibre.py`: `generate_pkce_pair`)
+  — opcional según Mercado Libre, pero se manda siempre como capa extra
+  contra interceptación del código de autorización.
+- **`/callback` ahora SIEMPRE redirige el navegador al frontend** (nunca
+  JSON) — éxito (`?ml=conectado`) y cada error (`?ml=error&razon=<código
+  corto>`, nunca el detalle técnico) — incluido el caso de que el dueño
+  cancele la autorización en Mercado Libre (`?error=access_denied`, antes
+  rompía con un 422 porque `code` era obligatorio).
+- **`POST /api/mercadolibre/desconectar`** — nuevo, idempotente.
+- **Cuenta vendedora identificada**: `external_account_nickname` /
+  `external_account_site_id` nuevos en `marketplace_accounts` (migración
+  `ea44b265af0b`), desde `GET /users/me` — nunca nombre real, email,
+  teléfono ni dirección, aunque ese endpoint los devuelva.
+- **Frontend conectado de verdad** (`frontend/js/app.js`,
+  `renderMercadoLibre`): "Conectar" navega a la URL real de autorización;
+  al volver, un banner con el estado real (conectado/no conectado/error en
+  lenguaje humano) y "Importar ventas ahora"/"Administrar" (desconectar),
+  con feedback de carga en cada botón — nunca deja al usuario sin saber si
+  funcionó.
+- +14 tests (PKCE en el adapter, `access_denied`, desconectar e idempotencia,
+  reconectar después de desconectar, la cuenta queda scopeada por tienda —
+  nunca global). **222/222 tests pasando.**
+
+Sin credenciales reales todavía — igual que antes, nada de esto se puede
+probar de punta a punta hasta que el dueño las genere.
+
+## Quinta ronda (29 de agosto de 2026): arquitectura multiempresa/multi-seller
+
+El OAuth funcionaba, pero había que confirmar que la arquitectura no
+asumía en ningún lado "una única cuenta de Mercado Libre" — Nexo es un
+SaaS que va a tener muchas empresas cliente, no solo Librería Central.
+Auditoría completa (modelos, `MarketplaceAccount`, `store_id`, tokens,
+OAuth, callback, endpoints, frontend, tests) antes de tocar nada: la base
+ya estaba bien encaminada (`store_id` scopea todo desde el modelo
+original, `UniqueConstraint(store_id, marketplace)` ya permite que dos
+empresas tengan cada una su propio seller sin chocar), pero el `state` de
+OAuth no capturaba explícitamente qué empresa inició la conexión.
+
+- **El `state` ahora guarda `store_id`** (`_new_state`/`_consume_state` en
+  `app/api/routes/mercadolibre.py`) — `/callback` asocia la cuenta a la
+  empresa que REALMENTE inició ese intento, no a "la que sea la actual" en
+  el instante en que Mercado Libre responde. Sin esto, el diseño era
+  correcto hoy (una sola tienda) pero frágil para cuando exista selección
+  real de empresa activa.
+- **Documentado en el código, no solo en Markdown**: `_get_default_store`
+  ahora explica que es el ÚNICO punto de todo el archivo que decide "la
+  empresa actual", y que es justo lo que hay que reemplazar cuando exista
+  login multiempresa real — todo lo demás ya opera por `store_id` y no
+  cambia. Mismo criterio en el docstring del módulo y en
+  `app/db/models/marketplace.py` (por qué `external_account_id` no tiene
+  unique constraint global — a propósito, dos empresas pueden conectar
+  sellers distintos sin restricción artificial).
+- **Mensaje de configuración corregido**: el error de "faltan credenciales
+  de Mercado Libre" decía "con la cuenta real de la librería", como si
+  cada cliente necesitara su propia aplicación desarrolladora — ahora
+  aclara que `MERCADOLIBRE_CLIENT_ID`/`_SECRET` son de la aplicación de
+  **Nexo** (se crean una sola vez), nunca credenciales por empresa.
+- **+7 tests de aislamiento entre empresas** (`test_mercadolibre_endpoints.py`,
+  sección "Arquitectura multiempresa/multi-seller"): dos `Store` conectando
+  cada una su seller, `estado` de una nunca expone datos de la otra,
+  desconectar una nunca afecta a la otra, renovar el token vencido de una
+  nunca toca el token vigente de la otra, el `state` recupera de forma
+  segura la empresa que inició la conexión, y `/estado` nunca expone
+  tokens ni el client secret. **229/229 tests pasando.**
+- **`DATABASE.md`**: nueva guía para probar con **usuarios de prueba** de
+  Mercado Libre (hasta 10 por aplicación, vía `POST
+  /users/test_user`) en vez de la cuenta real de la librería — así se
+  puede simular dos empresas clientes conectando cada una su propio seller
+  sin arriesgar la cuenta real de nadie.
+
+No se tocó: publicación de productos, sincronización masiva, scheduler,
+billing/suscripciones ni autenticación multiempresa completa (login +
+selector de empresa activa) — quedan para después de que la conexión OAuth
+esté probada con una cuenta real.
+
 ## Qué hay hoy (22 de agosto de 2026) — y qué NO hay todavía
 
 **Hay:** un adaptador de WooCommerce (`app/adapters/woocommerce.py`), puerto
@@ -272,7 +359,7 @@ backend/
       configuracion.py       GET/PUT /api/configuracion/canales/{channel}
       costos.py                POST /api/costos/importar (sube .xlsx/.csv)
       mercadolibre.py         GET .../estado, .../conectar, .../callback,
-                          POST .../importar-ventas
+                          POST .../importar-ventas, .../desconectar
       catalogo.py              POST /api/catalogo/importar/analizar,
                           /confirmar — importador universal por Excel/CSV
       seleccion.py              GET /api/seleccion — qué conviene publicar
@@ -319,7 +406,7 @@ pip install -r requirements.txt
 copy .env.example .env        # y completa las credenciales reales (opcional para lo de abajo)
 alembic upgrade head           # crea la base de datos local (ver DATABASE.md)
 python -m app.db.seed_demo    # catálogo de prueba — no necesita WooCommerce
-python -m pytest -q           # 209 tests, no necesita WooCommerce ni Mercado Libre
+python -m pytest -q           # 229 tests, no necesita WooCommerce ni Mercado Libre
 uvicorn app.main:app --reload --port 8000
 ```
 

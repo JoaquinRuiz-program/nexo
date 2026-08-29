@@ -210,12 +210,12 @@ window.LC = window.LC || {};
       const res = await LC.backendApi.fetchMercadoLibreEstado();
       if (res.ok) {
         ml = res.data.conectado
-          ? { estado: "conectado", detalle: `Cuenta conectada (${res.data.cuentaExternaId})` }
+          ? { estado: "conectado", detalle: `Tu cuenta está conectada correctamente${res.data.nickname ? ` (${res.data.nickname})` : ""}.` }
           : {
               estado: "no_conectado",
               detalle: res.data.credencialesConfiguradas
-                ? "Credenciales configuradas — falta autorizar la cuenta"
-                : "Pendiente de configuración",
+                ? "Conecta tu cuenta para comenzar."
+                : "Conecta tu cuenta para comenzar — falta configurar las credenciales en el servidor.",
             };
       }
     }

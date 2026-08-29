@@ -118,6 +118,21 @@ window.LC = window.LC || {};
     return request("/api/mercadolibre/estado");
   }
 
+  // Devuelve la URL real de autorización de Mercado Libre — el navegador
+  // tiene que navegar ahí de verdad (window.location.href), no un fetch:
+  // es el usuario quien inicia sesión y autoriza en el sitio de ML.
+  async function conectarMercadoLibre() {
+    return request("/api/mercadolibre/conectar");
+  }
+
+  async function desconectarMercadoLibre() {
+    return request("/api/mercadolibre/desconectar", { method: "POST" });
+  }
+
+  async function importarVentasMercadoLibre() {
+    return request("/api/mercadolibre/importar-ventas", { method: "POST", timeoutMs: UPLOAD_TIMEOUT_MS });
+  }
+
   // Chequeo rápido y silencioso — usado por importFlow.js para decidir si
   // mostrar el flujo real o el de demostración. Nunca lanza un error, ni
   // muestra un toast: es solo una pregunta de "¿estás ahí?".
@@ -167,6 +182,9 @@ window.LC = window.LC || {};
     fetchProductoDetalle,
     actualizarCostoProducto,
     fetchMercadoLibreEstado,
+    conectarMercadoLibre,
+    desconectarMercadoLibre,
+    importarVentasMercadoLibre,
     analizarCatalogo,
     confirmarImportacion,
     obtenerSeleccion,

@@ -8,13 +8,18 @@ configuradas (MERCADOLIBRE_CLIENT_ID/SECRET/REDIRECT_URI en .env), este
 adaptador simplemente no se puede usar — ver app/api/routes/mercadolibre.py,
 que valida eso antes de instanciarlo y explica exactamente qué falta.
 
-Flujo de OAuth (Authorization Code, la misma que ML documenta para
-aplicaciones de servidor con client_secret):
-  1. build_authorization_url(state) -> el dueño abre esa URL, inicia sesión
-     en Mercado Libre y autoriza la app.
+Flujo de OAuth (Authorization Code + PKCE, la misma que ML documenta para
+aplicaciones de servidor con client_secret — PKCE es opcional según la
+documentación oficial, pero se manda siempre; ver generate_pkce_pair()):
+  1. build_authorization_url(state, code_challenge) -> el dueño abre esa
+     URL, inicia sesión en Mercado Libre y autoriza la app.
   2. Mercado Libre redirige a MERCADOLIBRE_REDIRECT_URI con ?code=...
-  3. exchange_code_for_tokens(code) -> access_token + refresh_token reales.
-  4. refresh_tokens(refresh_token) cuando el access_token expira (6 horas).
+  3. exchange_code_for_tokens(code, code_verifier) -> access_token +
+     refresh_token reales.
+  4. refresh_tokens(refresh_token) cuando el access_token expira (6 horas)
+     — Mercado Libre devuelve un refresh_token NUEVO en cada renovación
+     (de un solo uso): siempre hay que guardar el que llega, nunca reusar
+     el anterior (ver app/api/routes/mercadolibre.py).
 
 El dominio de autorización (paso 1) es específico por país
 (auth.mercadolibre.cl para Chile, .com.ar para Argentina, etc.) — el de
@@ -29,7 +34,10 @@ inicial que el adaptador de WooCommerce cuando se construyó: solo lectura.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import random
+import secrets
 from dataclasses import dataclass
 from typing import Any, Optional
 from urllib.parse import urlencode
@@ -81,6 +89,20 @@ def _backoff_delay_s(attempt: int) -> float:
     return base + random.random() * 0.2
 
 
+def generate_pkce_pair() -> tuple[str, str]:
+    """(code_verifier, code_challenge) — PKCE (RFC 7636), documentado por
+    Mercado Libre como opcional (solo obligatorio si la app lo activa en el
+    DevCenter), pero se envía siempre acá: es una capa extra de protección
+    contra interceptación del código de autorización, sin costo si la app
+    no lo exige (ML simplemente ignora el parámetro). code_challenge_method
+    S256, el único recomendado por la documentación oficial (junto a
+    "plain", que ML desaconseja)."""
+    code_verifier = secrets.token_urlsafe(64)[:128]
+    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+    code_challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return code_verifier, code_challenge
+
+
 class MercadoLibreAdapter:
     def __init__(self, config: MercadoLibreConfig, client: Optional[httpx.AsyncClient] = None):
         self._cfg = config
@@ -91,28 +113,34 @@ class MercadoLibreAdapter:
         if self._owns_client:
             await self._client.aclose()
 
-    def build_authorization_url(self, state: str) -> str:
+    def build_authorization_url(self, state: str, code_challenge: Optional[str] = None) -> str:
         """URL a la que el dueño tiene que ir para conectar su cuenta real
         de Mercado Libre — inicia el flujo de OAuth. `state` protege contra
-        CSRF: se guarda antes de redirigir y se valida en el callback."""
+        CSRF: se guarda antes de redirigir y se valida en el callback.
+        `code_challenge` (PKCE, opcional) va emparejado con el
+        `code_verifier` que se manda en exchange_code_for_tokens."""
         params = {
             "response_type": "code",
             "client_id": self._cfg.client_id,
             "redirect_uri": self._cfg.redirect_uri,
             "state": state,
         }
+        if code_challenge:
+            params["code_challenge"] = code_challenge
+            params["code_challenge_method"] = "S256"
         return f"https://{self._cfg.auth_domain}/authorization?{urlencode(params)}"
 
-    async def exchange_code_for_tokens(self, code: str) -> TokenResponse:
-        return await self._request_tokens(
-            {
-                "grant_type": "authorization_code",
-                "client_id": self._cfg.client_id,
-                "client_secret": self._cfg.client_secret,
-                "code": code,
-                "redirect_uri": self._cfg.redirect_uri,
-            }
-        )
+    async def exchange_code_for_tokens(self, code: str, code_verifier: Optional[str] = None) -> TokenResponse:
+        form_data = {
+            "grant_type": "authorization_code",
+            "client_id": self._cfg.client_id,
+            "client_secret": self._cfg.client_secret,
+            "code": code,
+            "redirect_uri": self._cfg.redirect_uri,
+        }
+        if code_verifier:
+            form_data["code_verifier"] = code_verifier
+        return await self._request_tokens(form_data)
 
     async def refresh_tokens(self, refresh_token: str) -> TokenResponse:
         return await self._request_tokens(

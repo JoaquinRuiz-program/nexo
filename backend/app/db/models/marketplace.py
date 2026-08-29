@@ -16,6 +16,19 @@ clave primaria de nada más. La forma de saber que "este producto de
 WooCommerce corresponde a esta publicación de Mercado Libre" es que ambos
 apuntan al mismo `product_id`/`variant_id` interno — no hay ninguna tabla
 que relacione un ID de WooCommerce con un ID de Mercado Libre directamente.
+
+Multiempresa (Nexo es un SaaS: cada `Store` es una empresa cliente
+distinta, Librería Central es solo la primera): `store_id` es lo que hace
+que cada empresa tenga su propia conexión, tokens y seller de Mercado
+Libre, completamente aislados de las demás — nunca hay una sola conexión
+"global" de Nexo. A propósito `external_account_id` (el seller_id de
+Mercado Libre) NO tiene una constraint de unicidad global: la única
+constraint es `(store_id, marketplace)` — una empresa no puede tener dos
+conexiones activas del mismo marketplace a la vez, pero nada impide que dos
+empresas distintas conecten cada una su propio seller. No agregar una
+unique constraint sobre `external_account_id` solo salvo que aparezca una
+razón de negocio real para prohibir que dos empresas usen el mismo seller
+(ej. una agencia gestionando la misma cuenta ML desde dos Stores de Nexo).
 """
 
 from __future__ import annotations
@@ -36,6 +49,12 @@ class MarketplaceAccount(Base):
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
     marketplace: Mapped[str] = mapped_column(String(50), nullable=False, default="mercadolibre")
     external_account_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Nickname y site_id (ej. "MLC") que devuelve GET /users/me — solo para
+    # que el dueño pueda confirmar de un vistazo "esta es mi cuenta real",
+    # nunca datos personales (nombre real, email, teléfono, dirección
+    # también vienen en /users/me pero jamás se guardan acá).
+    external_account_nickname: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    external_account_site_id: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # not_connected | connected | error | token_expired
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="not_connected")
     # Tokens de OAuth real, SIEMPRE cifrados (ver app/domain/token_crypto.py

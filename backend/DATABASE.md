@@ -149,32 +149,81 @@ sincronización de pedidos de Mercado Libre. Tampoco se creó stock para
 WooCommerce ni sincronización de inventario entre canales — ambos
 explícitamente fuera de alcance por ahora.
 
-## Mercado Libre real (24 de agosto de 2026)
+## Mercado Libre real (24 de agosto de 2026 — flujo completo desde el 29 de agosto; arquitectura multiempresa desde el 29 de agosto, segunda ronda)
+
+**Nexo es un SaaS multiempresa — Librería Central es solo el primer
+cliente, no una integración especial.** Dos conceptos que nunca hay que
+confundir:
+
+- **Aplicación desarrolladora de Mercado Libre** (`MERCADOLIBRE_CLIENT_ID`/
+  `_CLIENT_SECRET`/`_REDIRECT_URI` en `backend/.env`): es de **Nexo**. Se
+  crea UNA sola vez y sirve para todas las empresas que usen la plataforma.
+  Nunca se le pide a un cliente que cree su propia aplicación.
+- **Cuenta vendedora**: es de **cada empresa cliente**. Cada una conecta su
+  propio seller de Mercado Libre por OAuth; queda guardada en su propia fila
+  de `marketplace_accounts`, scopeada por `store_id` (cada `Store` = una
+  empresa cliente distinta — ver `app/db/models/stores.py`). Dos empresas
+  conectando cada una su propio seller conviven sin ningún problema:
+  ```
+  Empresa A (Store 1) -> MarketplaceAccount(store_id=1) -> Seller A
+  Empresa B (Store 2) -> MarketplaceAccount(store_id=2) -> Seller B
+  ```
+  nunca `Nexo -> Mercado Libre` como una única conexión global.
 
 `apply_sale` de la sección anterior ya está conectada — este es el motor
-que la usa. Flujo real, sin ningún dato inventado:
+que la usa. Flujo real, de punta a punta, sin ningún dato inventado:
 
 ```
-Dueño abre GET /api/mercadolibre/conectar
-  -> si faltan credenciales, error explicando EXACTAMENTE cuáles
-  -> si están, devuelve la URL real de autorización de Mercado Libre
-Dueño inicia sesión en Mercado Libre y autoriza la app
-  -> Mercado Libre redirige a GET /api/mercadolibre/callback?code=...
-  -> se cambia el code por access_token/refresh_token REALES
-  -> se guardan CIFRADOS en marketplace_accounts (nunca texto plano)
+Frontend: botón "Conectar Mercado Libre" (Integraciones -> Mercado Libre)
+  -> GET /api/mercadolibre/conectar
+     - si faltan credenciales, error explicando EXACTAMENTE cuáles
+     - si están, arma un state + un par PKCE (code_verifier/code_challenge,
+       RFC 7636 — opcional según Mercado Libre, pero siempre se manda) y
+       devuelve la URL real de autorización
+  -> el navegador navega de verdad a esa URL (no es un fetch: es Mercado
+     Libre quien tiene que mostrar su propia pantalla de login)
+Dueño inicia sesión en Mercado Libre y autoriza la app (o cancela)
+  -> Mercado Libre redirige el navegador a MERCADOLIBRE_REDIRECT_URI
+     (este backend) con ?code=...&state=... (o ?error=access_denied si canceló)
+GET /api/mercadolibre/callback
+  -> valida el state (protección CSRF) y recupera el code_verifier de PKCE
+  -> cambia el code por access_token/refresh_token REALES
+  -> pide GET /users/me para identificar la cuenta (id, nickname, site_id
+     — nunca nombre real, email, teléfono ni dirección, aunque /users/me
+     los devuelva)
+  -> guarda todo CIFRADO en marketplace_accounts (nunca texto plano)
+  -> SIEMPRE redirige el navegador de vuelta al frontend
+     (FRONTEND_BASE_URL/?ml=conectado#/mercadolibre, o
+     ?ml=error&razon=<código corto> si algo falló) — nunca devuelve un JSON
+     crudo, porque quien llega ahí es el navegador real del dueño
+Frontend: pantalla Mercado Libre pasa a mostrar "Mercado Libre conectado"
+  con la cuenta vendedora, y los botones "Importar ventas ahora" /
+  "Administrar" (desconectar)
+
 POST /api/mercadolibre/importar-ventas
+  -> antes de llamar a Mercado Libre, revisa si el access_token venció y lo
+     renueva solo (refresh_token de un solo uso: Mercado Libre devuelve uno
+     NUEVO en cada renovación, y hay que guardar ese, nunca reusar el viejo)
   -> trae pedidos reales de GET /orders/search
   -> por cada pedido nuevo: matchea seller_sku contra product_variants,
      crea Order + OrderItem, descuenta marketplace_stock (apply_sale)
   -> comission_amount de cada pedido es el sale_fee REAL que Mercado Libre
      ya cobró (no una comisión estimada) — ver domain/marketplace_orders.py
+
+POST /api/mercadolibre/desconectar
+  -> borra tokens y estado de la cuenta — idempotente, se puede volver a
+     conectar (la misma cuenta u otra) en cualquier momento
 ```
 
 **Nunca se guarda ningún dato del comprador** — el payload real de un
 pedido de Mercado Libre trae un objeto `buyer` completo (nombre, email,
 teléfono); `map_ml_order` nunca lo toca, ni siquiera para guardarlo cifrado.
 Solo se persiste lo necesario para conciliar la operación: ID del pedido,
-fecha, SKU, cantidad, precio, estado, comisión.
+fecha, SKU, cantidad, precio, estado, comisión. Tampoco se guarda nada
+personal de la cuenta VENDEDORA (la del dueño) más allá de lo mínimo para
+identificarla: `external_account_id`, `external_account_nickname`,
+`external_account_site_id` — tres columnas nuevas en `marketplace_accounts`
+(migración `ea44b265af0b`).
 
 **Tokens cifrados, nunca en texto plano** — `access_token_encrypted` /
 `refresh_token_encrypted` en `marketplace_accounts`, con Fernet
@@ -182,22 +231,129 @@ fecha, SKU, cantidad, precio, estado, comisión.
 `TOKEN_ENCRYPTION_KEY` (`.env`, nunca en Git). Sin esa clave configurada,
 cifrar/descifrar falla explícito — nunca usa una clave por defecto insegura.
 
-**Bloqueado hoy, y por qué:** no hay ninguna cuenta real conectada porque
-faltan las credenciales que solo el dueño puede generar:
+**La conexión es por tienda (`store_id`), nunca global** —
+`marketplace_accounts` ya tenía esa columna desde que se creó el modelo;
+cada empresa tiene su propia fila, con sus propios tokens, sin tocar el
+modelo (ver `uq_marketplace_account_store_marketplace`). El `state` de
+OAuth también guarda `store_id` (ver `_new_state` en
+`app/api/routes/mercadolibre.py`) — así /callback asocia la cuenta a la
+empresa que REALMENTE inició ese intento de conexión, no a "la actual" en
+el instante en que Mercado Libre responde.
 
-1. `MERCADOLIBRE_CLIENT_ID` / `MERCADOLIBRE_CLIENT_SECRET` — se obtienen
-   creando una aplicación en https://developers.mercadolibre.cl **con la
-   cuenta de Mercado Libre real de la librería** (no una cuenta de prueba:
-   necesitamos leer sus pedidos reales).
-2. `MERCADOLIBRE_REDIRECT_URI` — hay que decidir/registrar la URL pública a
-   la que Mercado Libre redirige después del login (en desarrollo local,
-   `http://localhost:8000/api/mercadolibre/callback`; en producción, tiene
-   que ser una URL HTTPS real del servidor donde corra este backend).
-3. `TOKEN_ENCRYPTION_KEY` — esta sí se genera local, no depende de Mercado
-   Libre (comando exacto en `.env.example`).
+**Lo único que falta para multiempresa completa** es autenticación real de
+usuarios con selector de "empresa activa" (`User`/`AuthSession` ya existen
+en `app/db/models/users.py`, pero sin ruta de login en el backend todavía
+— `lc_session` del frontend es solo una demo). Hoy `_get_default_store()`
+(un único punto, documentado en el código) resuelve "la empresa actual"
+como la primera tienda que existe — cuando exista login multiempresa, ese
+es el único lugar que hay que reemplazar; el resto de este archivo (tokens,
+callback, desconexión, importación de ventas) ya opera por `store_id` y no
+cambia. Las pruebas de aislamiento entre empresas
+(`tests/test_mercadolibre_endpoints.py`, sección "Arquitectura
+multiempresa/multi-seller") demuestran esto operando dos `Store` a la vez:
+cada una ve solo su propio seller, desconectar una nunca afecta a la otra,
+y renovar el token de una nunca toca el de la otra.
 
-Sin estos tres datos, `/api/mercadolibre/conectar` devuelve 400 explicando
-cuál falta — nunca genera una URL con un client_id inventado.
+### Cómo probarlo — guía paso a paso
+
+**Lo que tenés que hacer vos (no se puede generar ni inventar):**
+
+1. Entrar a https://developers.mercadolibre.cl (o el sitio del país que
+   corresponda) — esto crea la **aplicación de Nexo** (el paso 1 de
+   "Arquitectura multiempresa" de más arriba), no la cuenta de ningún
+   cliente. Podés usar cualquier cuenta real de Mercado Libre para crearla
+   (no hace falta que sea la de Librería Central).
+2. "Mis aplicaciones" -> crear una aplicación nueva.
+3. **Redirect URI**: Mercado Libre exige HTTPS siempre, incluso para
+   desarrollo — `http://localhost:...` no se puede registrar. La forma más
+   simple de probar esto en tu máquina es un túnel HTTPS hacia tu backend
+   local, por ejemplo con [ngrok](https://ngrok.com/):
+   ```bash
+   ngrok http 8000
+   ```
+   ngrok te da una URL como `https://algo-random.ngrok-free.app` — la
+   Redirect URI a registrar en Mercado Libre es
+   `https://algo-random.ngrok-free.app/api/mercadolibre/callback`.
+4. Mercado Libre te muestra el **App ID** (client id) y el **Secret Key**
+   (client secret) — cópialos.
+5. Completa en `backend/.env` (copiando `.env.example` si no existe):
+   ```
+   MERCADOLIBRE_CLIENT_ID=<tu App ID>
+   MERCADOLIBRE_CLIENT_SECRET=<tu Secret Key>
+   MERCADOLIBRE_REDIRECT_URI=https://algo-random.ngrok-free.app/api/mercadolibre/callback
+   TOKEN_ENCRYPTION_KEY=<generada con el comando en .env.example>
+   ```
+   (`MERCADOLIBRE_AUTH_DOMAIN` y `FRONTEND_BASE_URL` solo si no son los
+   valores por default — Chile / `http://localhost:5500`.)
+
+**Lo que hace Nexo (ya construido, no hace falta tocar nada más):**
+
+6. `uvicorn app.main:app --reload --port 8000` (backend) y el frontend
+   estático en el puerto 5500 — ver `frontend/README.md`.
+7. Abrí Nexo, entrá a Integraciones -> Mercado Libre.
+8. Presioná "Conectar Mercado Libre" -> te lleva a la pantalla real de
+   Mercado Libre -> autorizá -> volvés a Nexo con "Mercado Libre conectado".
+9. "Importar ventas ahora" trae tus pedidos reales; "Administrar" permite
+   desconectar.
+
+**Bloqueado hasta que completes esos 5 pasos:** sin credenciales,
+`/api/mercadolibre/conectar` devuelve 400 explicando cuál falta — nunca
+genera una URL con un client_id inventado.
+
+#### Probar con usuarios de prueba (recomendado antes de usar la cuenta real de la librería)
+
+Mercado Libre no tiene un ambiente "sandbox" separado — en vez de eso deja
+crear hasta 10 **usuarios de prueba** por aplicación, que funcionan como
+cuentas reales (conectar, autorizar, comprar/vender entre ellos) pero
+aislados de tu reputación real. Es la forma correcta de probar el flujo de
+conexión — incluido que dos empresas distintas queden separadas — sin
+tocar todavía la cuenta real de Librería Central:
+
+1. Conectá Nexo una vez con **cualquier** cuenta real de Mercado Libre (la
+   misma con la que creaste la aplicación en el paso 1 sirve) para obtener
+   un `access_token` válido — es el único uso de esa conexión.
+2. Con ese token, creá un usuario de prueba:
+   ```bash
+   curl -X POST -H "Authorization: Bearer <access_token>" \
+     -H "Content-Type: application/json" \
+     -d '{"site_id":"MLC"}' \
+     https://api.mercadolibre.com/users/test_user
+   ```
+   (`site_id` según el país — `MLC` Chile, `MLA` Argentina, `MLM` México,
+   etc.) La respuesta trae `nickname` y `password` del usuario de prueba —
+   guardalos, Mercado Libre no los vuelve a mostrar.
+3. Repetí el paso 2 para tener un segundo usuario de prueba distinto — así
+   podés simular dos empresas clientes conectando cada una su propio
+   seller y confirmar que Nexo las mantiene separadas.
+4. Desconectá la cuenta real (botón "Administrar" -> "Desconectar") y
+   volvé a conectar usando el nickname/password del usuario de prueba en
+   la pantalla de login de Mercado Libre.
+
+Fuente oficial: [Realiza pruebas — Developers Mercado Libre](https://developers.mercadolibre.cl/realiza-pruebas).
+
+### Producción — qué cambia respecto a desarrollo local
+
+- **Redirect URI**: la del dominio real donde corra el backend en
+  producción (ej. `https://api.tudominio.cl/api/mercadolibre/callback`) —
+  hay que registrarla como una Redirect URI **adicional** en la misma
+  aplicación de Mercado Libre (o crear una aplicación de producción
+  separada, según prefiera el dueño), y actualizar
+  `MERCADOLIBRE_REDIRECT_URI` en el `.env` de producción.
+- **`FRONTEND_BASE_URL`**: el dominio real donde se sirva el frontend en
+  producción, no `localhost`.
+- **CORS**: `DEV_FRONTEND_ORIGINS` en `app/main.py` hoy solo lista
+  `localhost:5500`/`127.0.0.1:5500` — en producción hay que agregar el/los
+  dominio(s) reales (nunca `"*"`).
+- **`TOKEN_ENCRYPTION_KEY`**: una clave DISTINTA a la de desarrollo,
+  generada una vez y guardada de forma segura (gestor de secretos del
+  hosting, nunca en Git) — perderla significa no poder descifrar los
+  tokens ya guardados (hay que reconectar todas las cuentas).
+- **Estado OAuth (`_pending_states`)**: hoy vive en memoria del proceso —
+  válido para un solo proceso/réplica. Si producción corre con más de una
+  réplica del backend, hay que moverlo a algo compartido (Redis, o una
+  tabla) antes de escalar horizontalmente — anotado en el código, no
+  resuelto porque no hace falta con una sola réplica.
+- **Base de datos**: `DATABASE_URL` apuntando a PostgreSQL real, no SQLite.
 
 **Limitación conocida, deliberada:** solo se importan pedidos NUEVOS. Si un
 pedido ya importado se cancela después en Mercado Libre, el estado se
@@ -210,7 +366,10 @@ pedidos reales para saber si el caso es frecuente).
 regla de "conviene/no conviene" vender por Mercado Libre, ninguna comisión
 por defecto (nunca 13%, nunca ningún otro número — sale de `sale_fee` real
 de cada pedido, o de `ChannelCostSettings` si el dueño lo configura a
-mano), WooCommerce (no tocado en esta fase), y ninguna operación de
+mano), WooCommerce (no tocado en esta fase), sincronización de productos/
+publicaciones (el modelo `MarketplaceListing` ya existe y está listo para
+esa próxima fase, pero no se construyó todavía — primero hace falta una
+conexión sólida, que es lo que se completó acá), y ninguna operación de
 escritura en Mercado Libre (no crea/edita publicaciones ni actualiza
 precio/stock allá — sigue siendo de solo lectura, igual que el adaptador de
 WooCommerce cuando se construyó).
