@@ -39,7 +39,7 @@ from app.db.models import MarketplaceAccount, Order, OrderItem, ProductVariant, 
 from app.db.session import get_db
 from app.domain.marketplace_orders import map_ml_order
 from app.domain.marketplace_stock import MarketplaceStockError, apply_sale
-from app.domain.token_crypto import decrypt_token, encrypt_token
+from app.domain.token_crypto import TokenEncryptionNotConfigured, decrypt_token, encrypt_token
 
 router = APIRouter(prefix="/api/mercadolibre", tags=["mercadolibre"])
 
@@ -180,8 +180,17 @@ async def callback(code: str, state: str, db: Session = Depends(get_db)) -> dict
     store = _get_default_store(db)
     account = _get_or_create_account(db, store)
     now = datetime.now()
-    account.access_token_encrypted = encrypt_token(tokens.access_token, settings.token_encryption_key)
-    account.refresh_token_encrypted = encrypt_token(tokens.refresh_token, settings.token_encryption_key)
+    try:
+        access_token_encrypted = encrypt_token(tokens.access_token, settings.token_encryption_key)
+        refresh_token_encrypted = encrypt_token(tokens.refresh_token, settings.token_encryption_key)
+    except TokenEncryptionNotConfigured as err:
+        # Mercado Libre ya autorizó la app (los tokens son reales y válidos)
+        # pero TOKEN_ENCRYPTION_KEY está mal escrita en .env — no es un 500:
+        # es un problema de configuración con arreglo claro, y sin este catch
+        # escapaba sin manejar (perdiendo los headers CORS en el camino).
+        raise HTTPException(status_code=400, detail=f"No se pudieron cifrar los tokens recibidos: {err}") from err
+    account.access_token_encrypted = access_token_encrypted
+    account.refresh_token_encrypted = refresh_token_encrypted
     account.token_expires_at = now + timedelta(seconds=tokens.expires_in)
     account.external_account_id = str(user_info.get("id") or tokens.user_id)
     account.status = "connected"
@@ -208,6 +217,13 @@ async def _get_valid_access_token(db: Session, account: MarketplaceAccount, cfg:
                 status_code=401,
                 detail=f"El token de Mercado Libre venció y no se pudo renovar: {err}. Hay que reconectar la cuenta.",
             ) from err
+        except MercadoLibreRequestError as err:
+            # Renovar falló por red/servidor, no porque el refresh token esté
+            # mal — no se marca la cuenta como desconectada, se puede
+            # reintentar la importación más tarde.
+            raise HTTPException(status_code=502, detail=f"No se pudo renovar el token de Mercado Libre: {err}") from err
+        except TokenEncryptionNotConfigured as err:
+            raise HTTPException(status_code=400, detail=f"No se pudo leer/guardar el token cifrado: {err}") from err
         finally:
             await adapter.aclose()
 
@@ -216,7 +232,10 @@ async def _get_valid_access_token(db: Session, account: MarketplaceAccount, cfg:
         account.token_expires_at = datetime.now() + timedelta(seconds=tokens.expires_in)
         db.commit()
 
-    return decrypt_token(account.access_token_encrypted, encryption_key)
+    try:
+        return decrypt_token(account.access_token_encrypted, encryption_key)
+    except TokenEncryptionNotConfigured as err:
+        raise HTTPException(status_code=400, detail=f"No se pudo leer el token guardado: {err}") from err
 
 
 @router.post("/importar-ventas")

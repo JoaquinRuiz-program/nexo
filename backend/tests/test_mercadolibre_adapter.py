@@ -174,3 +174,20 @@ async def test_errores_5xx_se_reintentan_y_terminan_bien():
 
     assert info["nickname"] == "OK"
     assert route.calls.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sin_internet_agota_reintentos_y_lanza_request_error():
+    # No hay caída al 429/5xx acá — httpx no puede ni conectar (DNS caído,
+    # sin red, etc.). Nunca debe devolver un token/pedido falso: agota los
+    # reintentos configurados y avisa con un error claro.
+    route = respx.get("https://api.mercadolibre.com/users/me")
+    route.side_effect = httpx.ConnectError("Connection refused")
+
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    with pytest.raises(MercadoLibreRequestError):
+        await adapter.get_user_info("token")
+    await adapter.aclose()
+
+    assert route.calls.call_count == BASE_CONFIG["max_retries"] + 1

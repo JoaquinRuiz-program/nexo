@@ -196,6 +196,58 @@ def test_importar_ventas_sin_conexion_devuelve_400(client, a_store, monkeypatch)
     assert "no está conectado" in res.json()["detail"]
 
 
+@respx.mock
+def test_callback_con_error_de_red_al_canjear_el_code_devuelve_502(client, a_store, monkeypatch):
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+    respx.post("https://api.mercadolibre.com/oauth/token").mock(side_effect=httpx.ConnectError("sin red"))
+
+    state = client.get("/api/mercadolibre/conectar").json()["authorizationUrl"].split("state=")[1]
+    res = client.get("/api/mercadolibre/callback", params={"code": "codigo-real", "state": state})
+
+    assert res.status_code == 502
+    assert "No se pudo conectar con Mercado Libre" in res.json()["detail"]
+
+
+@respx.mock
+def test_callback_con_code_invalido_o_vencido_devuelve_502(client, a_store, monkeypatch):
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+    respx.post("https://api.mercadolibre.com/oauth/token").mock(
+        return_value=httpx.Response(400, json={"error": "invalid_grant", "message": "código inválido o expirado"})
+    )
+
+    state = client.get("/api/mercadolibre/conectar").json()["authorizationUrl"].split("state=")[1]
+    res = client.get("/api/mercadolibre/callback", params={"code": "codigo-vencido", "state": state})
+
+    assert res.status_code == 502
+
+
+@respx.mock
+def test_callback_con_token_encryption_key_invalida_devuelve_400_no_500(client, a_store, monkeypatch):
+    # Los tokens de ML son reales y válidos acá — el problema es que
+    # TOKEN_ENCRYPTION_KEY en .env no es una clave Fernet válida (typo al
+    # copiarla). No debe perderse como un 500 sin manejar.
+    settings_clave_invalida = Settings(
+        mercadolibre_client_id="test-client-id",
+        mercadolibre_client_secret="test-client-secret",
+        mercadolibre_redirect_uri="http://localhost:8000/api/mercadolibre/callback",
+        mercadolibre_auth_domain="auth.mercadolibre.cl",
+        token_encryption_key="esto-no-es-una-clave-fernet-valida",
+    )
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: settings_clave_invalida)
+    respx.post("https://api.mercadolibre.com/oauth/token").mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "a", "refresh_token": "r", "expires_in": 21600, "user_id": 1}
+        )
+    )
+    respx.get("https://api.mercadolibre.com/users/me").mock(return_value=httpx.Response(200, json={"id": 1}))
+
+    state = client.get("/api/mercadolibre/conectar").json()["authorizationUrl"].split("state=")[1]
+    res = client.get("/api/mercadolibre/callback", params={"code": "codigo-real", "state": state})
+
+    assert res.status_code == 400
+    assert "cifrar" in res.json()["detail"].lower()
+
+
 @pytest.fixture()
 def cuenta_conectada(db_session, a_store):
     from app.domain.token_crypto import encrypt_token
@@ -214,6 +266,65 @@ def cuenta_conectada(db_session, a_store):
     db_session.add(cuenta)
     db_session.commit()
     return cuenta
+
+
+@pytest.fixture()
+def cuenta_con_token_vencido(db_session, a_store):
+    from app.domain.token_crypto import encrypt_token
+
+    cuenta = MarketplaceAccount(
+        store=a_store,
+        marketplace="mercadolibre",
+        status="connected",
+        external_account_id="555",
+        access_token_encrypted=encrypt_token("token-vencido", TEST_ENCRYPTION_KEY),
+        refresh_token_encrypted=encrypt_token("refresh-valido", TEST_ENCRYPTION_KEY),
+        token_expires_at=datetime(2020, 1, 1),  # bien en el pasado, dispara refresh
+        connected_at=NOW,
+        last_checked_at=NOW,
+    )
+    db_session.add(cuenta)
+    db_session.commit()
+    return cuenta
+
+
+@respx.mock
+def test_importar_ventas_renueva_el_token_vencido_automaticamente(client, db_session, a_store, cuenta_con_token_vencido, monkeypatch):
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+    respx.post("https://api.mercadolibre.com/oauth/token").mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "token-nuevo", "refresh_token": "refresh-nuevo", "expires_in": 21600, "user_id": 555}
+        )
+    )
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/orders/search.*").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+
+    res = client.post("/api/mercadolibre/importar-ventas")
+
+    assert res.status_code == 200
+    cuenta = db_session.query(MarketplaceAccount).filter_by(id=cuenta_con_token_vencido.id).one()
+    assert cuenta.token_expires_at > datetime.now()
+    assert decrypt_token(cuenta.access_token_encrypted, TEST_ENCRYPTION_KEY) == "token-nuevo"
+    assert decrypt_token(cuenta.refresh_token_encrypted, TEST_ENCRYPTION_KEY) == "refresh-nuevo"
+    # La llamada a /orders/search tiene que haber usado el token YA renovado.
+    llamada_orders = [c for c in respx.calls if "/orders/search" in str(c.request.url)][0]
+    assert llamada_orders.request.headers["authorization"] == "Bearer token-nuevo"
+
+
+@respx.mock
+def test_importar_ventas_con_refresh_token_rechazado_marca_la_cuenta_como_vencida(client, db_session, a_store, cuenta_con_token_vencido, monkeypatch):
+    monkeypatch.setattr("app.api.routes.mercadolibre.get_settings", lambda: CONFIGURED_SETTINGS)
+    respx.post("https://api.mercadolibre.com/oauth/token").mock(
+        return_value=httpx.Response(401, json={"error": "invalid_token", "message": "refresh token revocado"})
+    )
+
+    res = client.post("/api/mercadolibre/importar-ventas")
+
+    assert res.status_code == 401
+    assert "reconectar" in res.json()["detail"].lower()
+    cuenta = db_session.query(MarketplaceAccount).filter_by(id=cuenta_con_token_vencido.id).one()
+    assert cuenta.status == "token_expired"
 
 
 @respx.mock
