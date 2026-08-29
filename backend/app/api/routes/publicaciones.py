@@ -19,8 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_store
 from app.api.routes.rentabilidad import build_profitability_rows
-from app.db.models import ProductVariant
+from app.db.models import ProductVariant, Store
 from app.db.session import get_db
 from app.domain.catalog_selection import SelectionCriteria, classify_product
 from app.domain.listing_draft import build_draft
@@ -28,8 +29,11 @@ from app.domain.listing_draft import build_draft
 router = APIRouter(prefix="/api/publicaciones", tags=["publicaciones"])
 
 
-def _build_one(db: Session, variant_id: int, criteria: SelectionCriteria) -> Optional[dict]:
-    filas, _ = build_profitability_rows(db)
+def _build_one(db: Session, store: Store, variant_id: int, criteria: SelectionCriteria) -> Optional[dict]:
+    # build_profitability_rows ya scopea por tienda — un variant_id de otra
+    # empresa simplemente no aparece en `filas`, así que esto devuelve None
+    # (mismo 404 que "no existe") en vez de filtrar antes/después.
+    filas, _ = build_profitability_rows(db, store)
     fila = next((f for f in filas if f["id"] == variant_id), None)
     if fila is None:
         return None
@@ -51,10 +55,14 @@ def _build_one(db: Session, variant_id: int, criteria: SelectionCriteria) -> Opt
 
 @router.get("/borrador/{variant_id}")
 def obtener_borrador(
-    variant_id: int, canal: str = "tienda", requiere_stock: bool = True, db: Session = Depends(get_db)
+    variant_id: int,
+    canal: str = "tienda",
+    requiere_stock: bool = True,
+    db: Session = Depends(get_db),
+    store: Store = Depends(get_current_store),
 ) -> dict:
     criteria = SelectionCriteria(channel=canal, require_marketplace_stock=requiere_stock)
-    borrador = _build_one(db, variant_id, criteria)
+    borrador = _build_one(db, store, variant_id, criteria)
     if borrador is None:
         raise HTTPException(status_code=404, detail="Producto no encontrado.")
     return borrador
@@ -67,13 +75,15 @@ class PrepararRequest(BaseModel):
 
 
 @router.post("/preparar")
-def preparar_publicaciones(body: PrepararRequest, db: Session = Depends(get_db)) -> dict:
+def preparar_publicaciones(
+    body: PrepararRequest, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
     criteria = SelectionCriteria(channel=body.canal, require_marketplace_stock=body.requiere_stock)
     borradores: list[dict] = []
     no_encontrados: list[int] = []
 
     for variant_id in body.variant_ids:
-        borrador = _build_one(db, variant_id, criteria)
+        borrador = _build_one(db, store, variant_id, criteria)
         if borrador is None:
             no_encontrados.append(variant_id)
         else:

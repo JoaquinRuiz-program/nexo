@@ -25,6 +25,12 @@ Uso por línea de comandos:
 También se usa desde POST /api/costos/importar (app/api/routes/costos.py)
 para que el dueño pueda subir el archivo directamente en el panel, sin
 tocar una terminal.
+
+29 de agosto de 2026 — `store_id` es obligatorio: antes buscaba el SKU en
+TODA la base sin filtrar por tienda (podía actualizar el costo de un
+producto de otra empresa si compartía el mismo SKU como texto). Desde la
+línea de comandos (sin sesión de usuario) hay que pasarlo explícito — ver
+el bloque `__main__` más abajo.
 """
 
 from __future__ import annotations
@@ -39,7 +45,7 @@ from typing import Any, BinaryIO
 import openpyxl
 from sqlalchemy.orm import Session
 
-from app.db.models import ProductVariant
+from app.db.models import ProductVariant, Store
 from app.db.session import SessionLocal
 
 SKU_COLUMN_ALIASES = {"sku"}
@@ -127,11 +133,13 @@ def _read_rows(fileobj: BinaryIO, filename: str) -> list[dict[str, Any]]:
     raise ValueError(f"Formato no soportado ({suffix or 'sin extensión'}). Usa .csv o .xlsx.")
 
 
-def import_costs(fileobj: BinaryIO, filename: str, session: Session) -> ImportResult:
+def import_costs(fileobj: BinaryIO, filename: str, session: Session, store_id: int) -> ImportResult:
     """Punto de entrada usado tanto por la línea de comandos como por
     POST /api/costos/importar — no le importa si el archivo vino de disco o
-    de un upload HTTP, solo necesita algo que se pueda leer (`fileobj`) y el
-    nombre original (para saber si es .csv o .xlsx)."""
+    de un upload HTTP, solo necesita algo que se pueda leer (`fileobj`), el
+    nombre original (para saber si es .csv o .xlsx) y la tienda dueña del
+    catálogo que se está actualizando (nunca busca un SKU fuera de esa
+    tienda)."""
     result = ImportResult()
     for row in _read_rows(fileobj, filename):
         sku_raw = row.get("sku")
@@ -146,7 +154,7 @@ def import_costs(fileobj: BinaryIO, filename: str, session: Session) -> ImportRe
             result.filas_invalidas.append(f"{sku}: costo inválido ({costo_raw!r})")
             continue
 
-        variant = session.query(ProductVariant).filter_by(variant_sku=sku).first()
+        variant = session.query(ProductVariant).filter_by(store_id=store_id, variant_sku=sku).first()
         if variant is None:
             result.no_encontrados.append(sku)
             continue
@@ -157,19 +165,32 @@ def import_costs(fileobj: BinaryIO, filename: str, session: Session) -> ImportRe
     return result
 
 
-def import_costs_from_path(path: Path, session: Session) -> ImportResult:
+def import_costs_from_path(path: Path, session: Session, store_id: int) -> ImportResult:
     with path.open("rb") as f:
-        return import_costs(f, path.name, session)
+        return import_costs(f, path.name, session, store_id)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Uso: python -m app.db.import_costs ruta/al/archivo.csv (o .xlsx)")
+    # Herramienta de línea de comandos (uso manual del dueño/soporte, no
+    # HTTP) — sin sesión de usuario, así que la tienda se pasa explícita en
+    # vez de resolverse sola; por default toma la primera que exista, que
+    # alcanza mientras solo haya una empresa usando esto en desarrollo.
+    if len(sys.argv) not in (2, 3):
+        print("Uso: python -m app.db.import_costs ruta/al/archivo.csv (o .xlsx) [store_id]")
         sys.exit(1)
 
     db = SessionLocal()
     try:
-        resultado = import_costs_from_path(Path(sys.argv[1]), db)
+        if len(sys.argv) == 3:
+            store_id_arg = int(sys.argv[2])
+        else:
+            primera_tienda = db.query(Store).order_by(Store.id).first()
+            if primera_tienda is None:
+                print("No hay ninguna tienda creada todavía (correr app/db/seed_demo.py, o pasar un store_id explícito).")
+                sys.exit(1)
+            store_id_arg = primera_tienda.id
+
+        resultado = import_costs_from_path(Path(sys.argv[1]), db, store_id_arg)
         print(f"Actualizados: {len(resultado.actualizados)}")
         if resultado.no_encontrados:
             print(f"SKU no encontrados en el catálogo ({len(resultado.no_encontrados)}): {', '.join(resultado.no_encontrados[:20])}")

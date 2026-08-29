@@ -40,16 +40,18 @@ reservado para ML que ya se descontó NO se revierte automáticamente — el
 dueño lo ajusta a mano en /api/productos/{id}/stock-mercadolibre si hace
 falta. Revertir automáticamente es una función aparte, no construida todavía.
 
-Sin autenticación de usuarios real todavía (mismo alcance que el resto del
-backend — ver User/AuthSession en app/db/models/users.py, que existen pero
-sin ruta de login en el backend; `lc_session` en el frontend es solo demo):
-opera sobre "la tienda actual", resuelta HOY como la única/primera tienda
-que existe (`_get_default_store`, el único lugar de este archivo con esa
-decisión). El modelo de datos (`MarketplaceAccount.store_id`, `state` con
-`store_id` embebido — ver `_new_state`) ya está armado por-empresa a
-propósito, para que activar multiempresa real más adelante sea reemplazar
-`_get_default_store` por la tienda activa de la sesión — aditivo, no una
-reescritura de este archivo.
+29 de agosto de 2026 — autenticación real: "la tienda actual" se resuelve
+con `Depends(get_current_store)` (app/api/deps.py), desde la sesión del
+usuario logueado — nunca "la primera tienda que exista". `/conectar`,
+`/estado`, `/desconectar`, `/importar-ventas` y `/comisiones/recalcular`
+requieren sesión válida. La única excepción a propósito es `/callback`:
+NO depende de la sesión — el navegador llega ahí recién saliendo de
+autorizar en Mercado Libre, y podría no traer la cookie de Nexo en todos
+los casos (redirect entre dominios). En cambio, `/callback` recupera la
+empresa dueña de la conexión desde el `state` (`store_id` embebido al
+llamar `/conectar`, ver `_new_state`/`_consume_state`) — el mismo
+mecanismo ya estaba armado así desde antes de que existiera login real,
+precisamente para este momento.
 """
 
 from __future__ import annotations
@@ -71,6 +73,7 @@ from app.adapters.mercadolibre import (
     MercadoLibreRequestError,
     generate_pkce_pair,
 )
+from app.api.deps import get_current_store
 from app.config import Settings, get_settings
 from app.db.models import MarketplaceAccount, MercadoLibreCategoryFee, Order, OrderItem, Product, ProductVariant, Store
 from app.db.session import get_db
@@ -101,10 +104,9 @@ def _new_state(store_id: int) -> tuple[str, str]:
     /callback) es lo que hace que la cuenta de Mercado Libre quede asociada
     a la empresa que REALMENTE empezó este flujo — no a la que resulte ser
     "la tienda actual" en el momento en que Mercado Libre responde, que
-    puede ser un instante distinto. Hoy con una sola tienda no cambia nada
-    en la práctica, pero es el punto exacto que hay que enchufar a la
-    sesión del usuario cuando exista login multiempresa real (ver
-    `_get_default_store`)."""
+    puede ser un instante distinto (o, ahora con login real, una sesión
+    distinta). `store_id` viene de `Depends(get_current_store)` en
+    /conectar — nunca de un parámetro que mande el cliente."""
     _cleanup_states()
     state = secrets.token_urlsafe(24)
     code_verifier, code_challenge = generate_pkce_pair()
@@ -160,24 +162,6 @@ def _require_configured(cfg: MercadoLibreConfig, settings: Settings) -> None:
         )
 
 
-def _get_default_store(db: Session) -> Store:
-    """Resuelve "la empresa/tienda actual" para esta request.
-
-    ÚNICO punto de todo este archivo que decide de qué empresa se trata —
-    a propósito: el día que exista login + selector de empresa activa real
-    (ver User/AuthSession en app/db/models/users.py, hoy sin ruta de
-    login en el backend — el `lc_session` del frontend es solo demo), acá
-    es donde se reemplaza "la primera tienda que exista" por "la tienda
-    activa de la sesión autenticada". Todo lo demás en este archivo ya
-    trabaja por `store.id` (MarketplaceAccount, Order, etc.), así que ese
-    reemplazo no obliga a tocar el resto — es aditivo, no una reescritura.
-    No se inventa acá una seguridad multiempresa que todavía no existe."""
-    store = db.query(Store).order_by(Store.id).first()
-    if store is None:
-        raise HTTPException(status_code=404, detail="No hay ninguna tienda creada todavía (correr app/db/seed_demo.py).")
-    return store
-
-
 def _get_account(db: Session, store: Store) -> MarketplaceAccount | None:
     return db.query(MarketplaceAccount).filter_by(store_id=store.id, marketplace=MARKETPLACE).first()
 
@@ -213,22 +197,20 @@ def _account_status(account: MarketplaceAccount | None, configurado: bool) -> di
     }
 
 
-def build_estado_conexion(db: Session, settings: Settings) -> dict:
+def build_estado_conexion(db: Session, store: Store, settings: Settings) -> dict:
     """Misma respuesta que GET /estado — factorizado para que
     app/api/routes/dashboard.py pueda mostrar el estado real de conexión sin
     duplicar la consulta ni inventar un "conectado" que no sea real."""
-    store = _get_default_store(db)
     return _account_status(_get_account(db, store), _build_ml_config(settings).is_configured())
 
 
 @router.get("/estado")
-def estado(db: Session = Depends(get_db)) -> dict:
-    return build_estado_conexion(db, get_settings())
+def estado(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> dict:
+    return build_estado_conexion(db, store, get_settings())
 
 
 @router.get("/conectar")
-def conectar(db: Session = Depends(get_db)) -> dict:
-    store = _get_default_store(db)
+def conectar(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> dict:
     settings = get_settings()
     cfg = _build_ml_config(settings)
     _require_configured(cfg, settings)
@@ -328,11 +310,10 @@ async def callback(
 
 
 @router.post("/desconectar")
-def desconectar(db: Session = Depends(get_db)) -> dict:
+def desconectar(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> dict:
     """Borra la conexión guardada — el dueño puede volver a conectar
     (la misma cuenta u otra) desde cero en cualquier momento. Nunca falla
     si ya estaba desconectado: desconectar es idempotente."""
-    store = _get_default_store(db)
     account = _get_account(db, store)
     if account is not None:
         account.status = "not_connected"
@@ -345,7 +326,7 @@ def desconectar(db: Session = Depends(get_db)) -> dict:
         account.connected_at = None
         account.last_checked_at = None
         db.commit()
-    return build_estado_conexion(db, get_settings())
+    return build_estado_conexion(db, store, get_settings())
 
 
 async def _get_valid_access_token(db: Session, account: MarketplaceAccount, cfg: MercadoLibreConfig, encryption_key: str) -> str:
@@ -386,12 +367,11 @@ async def _get_valid_access_token(db: Session, account: MarketplaceAccount, cfg:
 
 
 @router.post("/importar-ventas")
-async def importar_ventas(db: Session = Depends(get_db)) -> dict:
+async def importar_ventas(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> dict:
     settings = get_settings()
     cfg = _build_ml_config(settings)
     _require_configured(cfg, settings)
 
-    store = _get_default_store(db)
     account = _get_account(db, store)
     if account is None or account.status != "connected":
         raise HTTPException(status_code=400, detail="Mercado Libre no está conectado todavía.")
@@ -485,7 +465,7 @@ async def importar_ventas(db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/comisiones/recalcular")
-async def recalcular_comisiones(db: Session = Depends(get_db)) -> dict:
+async def recalcular_comisiones(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> dict:
     """Consulta la comisión REAL de Mercado Libre (Clásica y Premium, ver
     app/domain/ml_fees.py) para cada producto del catálogo con precio
     cargado — a pedido del dueño (29 de agosto de 2026): "la comisión de
@@ -508,7 +488,6 @@ async def recalcular_comisiones(db: Session = Depends(get_db)) -> dict:
     cfg = _build_ml_config(settings)
     _require_configured(cfg, settings)
 
-    store = _get_default_store(db)
     account = _get_account(db, store)
     if account is None or account.status != "connected":
         raise HTTPException(status_code=400, detail="Mercado Libre no está conectado todavía — conectar primero con GET /api/mercadolibre/conectar.")

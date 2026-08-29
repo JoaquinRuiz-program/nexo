@@ -7,8 +7,9 @@ reusa el mismo código ya probado que usan sus endpoints dedicados
 (GET /api/productos, GET /api/rentabilidad, GET /api/mercadolibre/estado),
 para no duplicar reglas de negocio ni arriesgar que se desincronicen.
 
-Igual que el resto del backend hoy: sin autenticación ni multi-tienda,
-opera sobre la única tienda que existe.
+29 de agosto de 2026 — con login real, cada request resuelve la tienda
+desde la sesión (ver app/api/deps.py:get_current_store), nunca "la primera
+que exista". Un usuario sin sesión válida nunca llega a ver este resumen.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_store
 from app.api.routes.mercadolibre import build_estado_conexion
 from app.api.routes.productos_db import build_producto_fila
 from app.api.routes.rentabilidad import build_profitability_rows
@@ -30,18 +32,17 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 VENTANA_VENTAS_RECIENTES_DIAS = 30
 
 
-def _umbral_stock_bajo(store: Store | None) -> int:
-    if store is not None and store.settings is not None:
+def _umbral_stock_bajo(store: Store) -> int:
+    if store.settings is not None:
         return store.settings.low_stock_threshold
     return 5  # mismo default que StoreSettings.low_stock_threshold
 
 
 @router.get("/resumen")
-def resumen(db: Session = Depends(get_db)) -> dict:
-    store = db.query(Store).order_by(Store.id).first()
+def resumen(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> dict:
     umbral = _umbral_stock_bajo(store)
 
-    productos = db.query(Product).order_by(Product.name).all()
+    productos = db.query(Product).filter_by(store_id=store.id).order_by(Product.name).all()
     pares = [(producto, variante) for producto in productos for variante in producto.variants]
 
     con_stock = [par for par in pares if par[1].stock_status == "instock"]
@@ -54,25 +55,19 @@ def resumen(db: Session = Depends(get_db)) -> dict:
         if par[1].manage_stock and par[1].stock_quantity is not None and 0 < par[1].stock_quantity <= umbral
     ]
 
-    filas_rentabilidad, ml_configurado = build_profitability_rows(db)
+    filas_rentabilidad, ml_configurado = build_profitability_rows(db, store)
     con_costo = [f for f in filas_rentabilidad if f["tieneCosto"]]
     # None si todavía no hay ningún costo cargado — "0 rentables" sería
     # engañoso (parecería que se revisó y ninguno conviene, cuando en
     # realidad no hay con qué calcularlo todavía).
     rentables = len([f for f in con_costo if (f["margenTiendaClp"] or 0) > 0]) if con_costo else None
 
-    total_pedidos = db.query(Order).count()
+    total_pedidos = db.query(Order).filter_by(store_id=store.id).count()
     desde = datetime.now() - timedelta(days=VENTANA_VENTAS_RECIENTES_DIAS)
-    pedidos_recientes = db.query(Order).filter(Order.order_date >= desde).count()
-    ultimo_pedido = db.query(Order).order_by(Order.order_date.desc()).first()
+    pedidos_recientes = db.query(Order).filter_by(store_id=store.id).filter(Order.order_date >= desde).count()
+    ultimo_pedido = db.query(Order).filter_by(store_id=store.id).order_by(Order.order_date.desc()).first()
 
-    mercado_libre = build_estado_conexion(db, get_settings()) if store is not None else {
-        "conectado": False,
-        "estado": "not_connected",
-        "cuentaExternaId": None,
-        "conectadoEn": None,
-        "credencialesConfiguradas": False,
-    }
+    mercado_libre = build_estado_conexion(db, store, get_settings())
 
     return {
         "catalogo": {

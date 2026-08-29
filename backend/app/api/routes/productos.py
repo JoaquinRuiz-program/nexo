@@ -4,11 +4,17 @@ configuradas en .env, trae el catálogo completo (incluyendo variaciones de
 color de productos "variable"), y devuelve el mismo tipo de reporte que ya
 generaba `npm run audit` — reutilizando el adaptador y el análisis ya
 probados, no una lógica nueva.
+
+29 de agosto de 2026: exige sesión válida (Depends(get_current_user)), pero
+NO se scopea por tienda — las credenciales de WooCommerce son globales de
+`.env` (una sola tienda WooCommerce real, la de Librería Central), no un
+dato por empresa en la base todavía. Integrar WooCommerce al modelo
+multiempresa (credenciales por `Store`) queda fuera de esta ronda.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.adapters.woocommerce import (
     WooCommerceAdapter,
@@ -16,7 +22,9 @@ from app.adapters.woocommerce import (
     WooCommerceConfig,
     WooCommerceRequestError,
 )
+from app.api.deps import get_current_user
 from app.config import get_settings
+from app.db.models import User
 from app.domain.analysis import (
     build_productos_list,
     detect_duplicates,
@@ -53,7 +61,7 @@ def _build_adapter() -> WooCommerceAdapter:
 
 
 @router.get("/reporte")
-async def reporte_productos() -> dict:
+async def reporte_productos(usuario: User = Depends(get_current_user)) -> dict:
     """
     Reporte básico del catálogo real de WooCommerce: trae todos los
     productos, expande los "variable" en una fila por color (con SKU/stock

@@ -39,7 +39,7 @@ def test_actualiza_el_costo_de_un_sku_existente_desde_csv(db_session, a_store, n
     csv_path = tmp_path / "costos.csv"
     csv_path.write_text("sku,costo\nLIB-001,8500\n", encoding="utf-8")
 
-    resultado = import_costs_from_path(csv_path, db_session)
+    resultado = import_costs_from_path(csv_path, db_session, a_store.id)
 
     db_session.refresh(variante)
     assert float(variante.cost_price) == 8500.0
@@ -52,7 +52,7 @@ def test_actualiza_el_costo_de_un_sku_existente_desde_xlsx(db_session, a_store, 
     xlsx_path = tmp_path / "costos.xlsx"
     _crear_xlsx(xlsx_path, [("LIB-004", 9990)])
 
-    resultado = import_costs_from_path(xlsx_path, db_session)
+    resultado = import_costs_from_path(xlsx_path, db_session, a_store.id)
 
     db_session.refresh(variante)
     assert float(variante.cost_price) == 9990.0
@@ -69,7 +69,7 @@ def test_xlsx_ignora_filas_vacias_al_final_de_la_hoja(db_session, a_store, now, 
     ws.append([None, None])  # fila en blanco, como suele quedar en un Excel real
     wb.save(xlsx_path)
 
-    resultado = import_costs_from_path(xlsx_path, db_session)
+    resultado = import_costs_from_path(xlsx_path, db_session, a_store.id)
 
     db_session.refresh(variante)
     assert float(variante.cost_price) == 4500.0
@@ -81,7 +81,7 @@ def test_reporta_sku_no_encontrado_sin_crear_nada(db_session, a_store, now, tmp_
     csv_path = tmp_path / "costos.csv"
     csv_path.write_text("sku,costo\nNO-EXISTE,1000\n", encoding="utf-8")
 
-    resultado = import_costs_from_path(csv_path, db_session)
+    resultado = import_costs_from_path(csv_path, db_session, a_store.id)
 
     assert resultado.no_encontrados == ["NO-EXISTE"]
     assert resultado.actualizados == []
@@ -93,7 +93,7 @@ def test_reporta_costo_invalido_sin_aplicarlo(db_session, a_store, now, tmp_path
     csv_path = tmp_path / "costos.csv"
     csv_path.write_text("sku,costo\nLIB-002,no-es-un-numero\n", encoding="utf-8")
 
-    resultado = import_costs_from_path(csv_path, db_session)
+    resultado = import_costs_from_path(csv_path, db_session, a_store.id)
 
     db_session.refresh(variante)
     assert variante.cost_price is None
@@ -105,7 +105,7 @@ def test_acepta_formato_chileno_de_numero_en_csv(db_session, a_store, now, tmp_p
     csv_path = tmp_path / "costos.csv"
     csv_path.write_text("sku,costo\nMOC-001,\"18.500,50\"\n", encoding="utf-8")
 
-    import_costs_from_path(csv_path, db_session)
+    import_costs_from_path(csv_path, db_session, a_store.id)
 
     db_session.refresh(variante)
     assert float(variante.cost_price) == 18500.50
@@ -116,7 +116,7 @@ def test_columnas_en_mayusculas_tambien_funcionan(db_session, a_store, now, tmp_
     csv_path = tmp_path / "costos.csv"
     csv_path.write_text("SKU,Costo\nLIB-003,5000\n", encoding="utf-8")
 
-    import_costs_from_path(csv_path, db_session)
+    import_costs_from_path(csv_path, db_session, a_store.id)
 
     db_session.refresh(variante)
     assert float(variante.cost_price) == 5000.0
@@ -129,7 +129,7 @@ def test_sku_numerico_en_excel_se_normaliza_a_texto(db_session, a_store, now, tm
     xlsx_path = tmp_path / "costos.xlsx"
     _crear_xlsx(xlsx_path, [(12345, 3000)])
 
-    resultado = import_costs_from_path(xlsx_path, db_session)
+    resultado = import_costs_from_path(xlsx_path, db_session, a_store.id)
 
     db_session.refresh(variante)
     assert float(variante.cost_price) == 3000.0
@@ -141,4 +141,4 @@ def test_formato_no_soportado_se_reporta_como_error(db_session, a_store, now, tm
     txt_path.write_text("sku,costo\nLIB-001,8500\n", encoding="utf-8")
 
     with pytest.raises(ValueError):
-        import_costs_from_path(txt_path, db_session)
+        import_costs_from_path(txt_path, db_session, a_store.id)

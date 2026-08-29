@@ -2,20 +2,21 @@
 Configuración de costos por canal de venta (comisión, envío, otros costos
 fijos) — lo que domain/profitability.py necesita para calcular margen neto.
 
-Sin autenticación ni multi-tienda todavía (mismo alcance que
-productos_db.py): opera sobre la única tienda que existe. Nada acá asume un
-valor por defecto para ningún costo — un canal sin configurar simplemente
-no aparece, o aparece con sus campos en null.
+29 de agosto de 2026 — la tienda se resuelve desde la sesión autenticada
+(Depends(get_current_store), ver app/api/deps.py), nunca "la única tienda
+que existe". Nada acá asume un valor por defecto para ningún costo — un
+canal sin configurar simplemente no aparece, o aparece con sus campos en null.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_store
 from app.db.models import ChannelCostSettings, Store
 from app.db.session import get_db
 
@@ -29,13 +30,6 @@ class ChannelCostsUpdate(BaseModel):
     # classic | premium | None ("comparar ambas", ver domain/ml_fees.py) —
     # solo tiene sentido para channel="mercadolibre".
     listing_type_pref: str | None = None
-
-
-def _get_default_store(db: Session) -> Store:
-    store = db.query(Store).order_by(Store.id).first()
-    if store is None:
-        raise HTTPException(status_code=404, detail="No hay ninguna tienda creada todavía (correr app/db/seed_demo.py).")
-    return store
 
 
 def _fila(costos: ChannelCostSettings) -> dict:
@@ -53,15 +47,15 @@ def _fila(costos: ChannelCostSettings) -> dict:
 
 
 @router.get("/canales")
-def listar_canales(db: Session = Depends(get_db)) -> list[dict]:
-    store = _get_default_store(db)
+def listar_canales(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> list[dict]:
     canales = db.query(ChannelCostSettings).filter_by(store_id=store.id).order_by(ChannelCostSettings.channel).all()
     return [_fila(c) for c in canales]
 
 
 @router.put("/canales/{channel}")
-def configurar_canal(channel: str, body: ChannelCostsUpdate, db: Session = Depends(get_db)) -> dict:
-    store = _get_default_store(db)
+def configurar_canal(
+    channel: str, body: ChannelCostsUpdate, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
     costos = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel=channel).first()
     if costos is None:
         costos = ChannelCostSettings(store=store, channel=channel, updated_at=datetime.now())

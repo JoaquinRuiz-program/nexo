@@ -25,6 +25,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_store
 from app.db.models import ChannelCostSettings, MercadoLibreCategoryFee, Product, ProductVariant, Store
 from app.db.session import get_db
 from app.domain.ml_fees import LISTING_TYPE_IDS
@@ -109,19 +110,17 @@ def _fila(db: Session, store_id: int, producto: Product, variante: ProductVarian
     }
 
 
-def build_profitability_rows(db: Session) -> tuple[list[dict], bool]:
+def build_profitability_rows(db: Session, store: Store) -> tuple[list[dict], bool]:
     """Arma las mismas filas que devuelve GET /api/rentabilidad — factorizado
-    acá para que app/api/routes/seleccion.py pueda reusarlas sin duplicar la
-    consulta ni el cálculo de márgenes.
+    acá para que app/api/routes/seleccion.py y publicaciones.py las reusen
+    sin duplicar la consulta ni el cálculo de márgenes.
 
-    Sin ninguna tienda creada todavía (recién instalado, antes de
-    seed_demo.py) devuelve listas vacías en vez de fallar — igual que antes
-    de que esto se scopeara por tienda: dashboard.py y GET /api/rentabilidad
-    dependen de que esto nunca reviente con un 404 en ese caso."""
-    store = db.query(Store).order_by(Store.id).first()
-    if store is None:
-        return [], False
-
+    `store` viene SIEMPRE de la sesión autenticada (ver
+    app/api/deps.py:get_current_store) — nunca se vuelve a resolver "la
+    primera tienda que exista" acá adentro. Con auth obligatorio en todos
+    los endpoints que llaman a esto, no existe un caso real de "request
+    válida sin tienda" — un usuario logueado siempre tiene una (ver
+    POST /api/auth/registro)."""
     config_ml = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel=CHANNEL_MERCADO_LIBRE).first()
     costos_ml = ChannelCosts(
         commission_pct=float(config_ml.commission_pct) if config_ml and config_ml.commission_pct is not None else None,
@@ -140,8 +139,8 @@ def build_profitability_rows(db: Session) -> tuple[list[dict], bool]:
 
 
 @router.get("")
-def reporte_rentabilidad(db: Session = Depends(get_db)) -> dict:
-    filas, ml_configurado = build_profitability_rows(db)
+def reporte_rentabilidad(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> dict:
+    filas, ml_configurado = build_profitability_rows(db, store)
 
     # Prioriza lo que más conviene (mayor margen en tienda) primero; lo que
     # todavía no tiene costo cargado va al final, no se mezcla ordenado como

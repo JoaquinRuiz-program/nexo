@@ -235,6 +235,43 @@ categoría tal como se pidió.
 No se tocó: publicación de productos ni ninguna otra automatización — esto
 es solo información para decidir, igual que el resto de Rentabilidad.
 
+## Séptima ronda (29 de agosto de 2026, mismo día): autenticación real + multiempresa
+
+Base para convertir Nexo en SaaS real: hasta acá, ningún endpoint de
+negocio pedía login — todos operaban sobre "la única tienda que existe"
+(`_get_default_store`, duplicado en varios routers). Dos commits, como se
+acordó de antemano:
+
+**Commit 1 — auth**: `app/api/routes/auth.py` (registro/login/logout/me,
+reusa `User`/`AuthSession`/`Store`/`StoreSettings`/bcrypt que ya existían
+sin usarse) + `app/api/deps.py` (`get_current_user`/`get_current_store` —
+cookie de sesión HttpOnly + SameSite=Lax, nunca localStorage). Migración
+`auth_sessions.active_store_id` (batch mode, SQLite no soporta ALTER TABLE
+ADD CONSTRAINT directo). CORS con `allow_credentials=True`. +16 tests.
+
+**Commit 2 — multiempresa**: todos los routers de negocio migrados a
+`Depends(get_current_store)`, `_get_default_store` eliminado en todos
+lados. Se encontraron y corrigieron dos huecos reales de aislamiento que
+no era solo el bug de `rentabilidad.py` de la ronda anterior:
+`productos_db.py` (`GET/PUT /api/productos/{id}` buscaba la variante SOLO
+por ID, sin verificar tienda — un IDOR real una vez que hubiera más de un
+cliente) y `import_costs.py` (buscaba el SKU en toda la base, sin
+`store_id`). `/api/mercadolibre/callback` NO se tocó a propósito: sigue
+resolviendo la empresa desde el `state` (no desde la sesión), porque el
+navegador llega ahí recién saliendo de Mercado Libre y ese mecanismo ya
+estaba armado así desde antes, precisamente para este momento.
+
+Aislamiento probado por HTTP real por primera vez (antes había que llamar
+funciones directo porque no existía una segunda sesión de usuario posible):
+`tests/test_aislamiento_multiempresa.py` registra dos empresas con
+`POST /api/auth/registro` reales y confirma que ninguna ve, lista ni puede
+modificar (ni adivinando un ID) nada de la otra — catálogo, costos,
+rentabilidad, dashboard, borradores de publicación. **+31 tests
+(16 de auth + 15 de aislamiento). 277/277 tests pasando.**
+
+No se tocó: publicación real, WooCommerce, billing/planes — alcance
+exclusivo auth + multiempresa, como se pidió.
+
 ## Qué hay hoy (22 de agosto de 2026) — y qué NO hay todavía
 
 **Hay:** un adaptador de WooCommerce (`app/adapters/woocommerce.py`), puerto
@@ -446,7 +483,7 @@ pip install -r requirements.txt
 copy .env.example .env        # y completa las credenciales reales (opcional para lo de abajo)
 alembic upgrade head           # crea la base de datos local (ver DATABASE.md)
 python -m app.db.seed_demo    # catálogo de prueba — no necesita WooCommerce
-python -m pytest -q           # 245 tests, no necesita WooCommerce ni Mercado Libre
+python -m pytest -q           # 277 tests, no necesita WooCommerce ni Mercado Libre
 uvicorn app.main:app --reload --port 8000
 ```
 

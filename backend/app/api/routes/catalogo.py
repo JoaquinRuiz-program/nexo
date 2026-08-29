@@ -25,19 +25,13 @@ from io import BytesIO
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_store
 from app.db.models import Product, ProductImage, ProductVariant, Store
 from app.db.session import get_db
 from app.domain.catalog_import import IMPORT_FIELDS, ColumnMapping, RowResult, build_rows, detect_columns, summarize_rows
 from app.domain.spreadsheet_io import UnsupportedSpreadsheetFormat, read_rows
 
 router = APIRouter(prefix="/api/catalogo", tags=["catalogo"])
-
-
-def _get_default_store(db: Session) -> Store:
-    store = db.query(Store).order_by(Store.id).first()
-    if store is None:
-        raise HTTPException(status_code=404, detail="No hay ninguna tienda creada todavía (correr app/db/seed_demo.py).")
-    return store
 
 
 def _read_uploaded_rows(file: UploadFile, contenido: bytes) -> tuple[list[str], list[dict]]:
@@ -78,7 +72,10 @@ def _row_to_dict(r: RowResult) -> dict:
 
 
 @router.post("/importar/analizar")
-async def analizar_archivo(file: UploadFile) -> dict:
+async def analizar_archivo(file: UploadFile, store: Store = Depends(get_current_store)) -> dict:
+    # No escribe nada en la base (ver docstring del módulo) — igual exige
+    # sesión válida (`store` sin usar más abajo, a propósito): nadie
+    # anónimo debería poder ni siquiera previsualizar un archivo acá.
     contenido = await file.read()
     headers, raw_rows = _read_uploaded_rows(file, contenido)
 
@@ -100,6 +97,7 @@ async def confirmar_importacion(
     mapeo: str = Form(..., description="JSON con el mapeo de columnas — misma forma que mapeoPropuesto de /analizar"),
     omitir_errores: bool = Form(True),
     db: Session = Depends(get_db),
+    store: Store = Depends(get_current_store),
 ) -> dict:
     try:
         mapping_dict = json.loads(mapeo)
@@ -110,7 +108,6 @@ async def confirmar_importacion(
     headers, raw_rows = _read_uploaded_rows(file, contenido)
     rows = build_rows(raw_rows, ColumnMapping(mapping=mapping_dict))
 
-    store = _get_default_store(db)
     ahora = datetime.now()
     fuente = "excel_upload" if file.filename.lower().endswith((".xlsx", ".xlsm")) else "csv_upload"
 

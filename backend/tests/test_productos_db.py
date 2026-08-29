@@ -21,6 +21,7 @@ from app.db.base import Base
 from app.db.models import Product, ProductVariant, Store, StoreSettings, User
 from app.db.session import get_db
 from app.domain.security import hash_password
+from tests.auth_helpers import autenticar
 from app.main import app
 
 NOW = datetime(2026, 8, 22, 12, 0, 0)
@@ -68,7 +69,7 @@ def client(db_session):
 
 
 @pytest.fixture()
-def a_store(db_session):
+def a_store(client, db_session):
     usuario = User(
         email="tienda@ejemplo.cl",
         password_hash=hash_password("no-se-usa-todavia"),
@@ -81,6 +82,7 @@ def a_store(db_session):
     db_session.add(tienda)
     db_session.add(StoreSettings(store=tienda, company_name="Tienda de prueba", store_name="Tienda de prueba"))
     db_session.commit()
+    autenticar(client, db_session, usuario, tienda, ahora=NOW)
     return tienda
 
 
@@ -132,7 +134,7 @@ def _producto_variable(db_session, tienda, *, nombre, colores_stock):
     return producto
 
 
-def test_listar_productos_vacio_devuelve_lista_vacia(client):
+def test_listar_productos_vacio_devuelve_lista_vacia(client, a_store):
     res = client.get("/api/productos")
     assert res.status_code == 200
     assert res.json() == []
@@ -180,7 +182,7 @@ def test_obtener_producto_por_id(client, db_session, a_store):
     assert res.json()["sku"] == "LIB-002"
 
 
-def test_obtener_producto_inexistente_devuelve_404(client):
+def test_obtener_producto_inexistente_devuelve_404(client, a_store):
     res = client.get("/api/productos/999999")
     assert res.status_code == 404
 
@@ -228,7 +230,7 @@ def test_no_se_puede_configurar_un_tope_negativo(client, db_session, a_store):
     assert res.status_code == 400
 
 
-def test_configurar_stock_ml_de_producto_inexistente_devuelve_404(client):
+def test_configurar_stock_ml_de_producto_inexistente_devuelve_404(client, a_store):
     res = client.put("/api/productos/999999/stock-mercadolibre", json={"cantidad": 5})
     assert res.status_code == 404
 
@@ -273,12 +275,12 @@ def test_no_se_puede_cargar_un_costo_negativo(client, db_session, a_store):
     assert res.status_code == 400
 
 
-def test_configurar_costo_de_producto_inexistente_devuelve_404(client):
+def test_configurar_costo_de_producto_inexistente_devuelve_404(client, a_store):
     res = client.put("/api/productos/999999/costo", json={"costo": 100})
     assert res.status_code == 404
 
 
-def test_ruta_reporte_no_es_capturada_por_la_ruta_dinamica(client, monkeypatch):
+def test_ruta_reporte_no_es_capturada_por_la_ruta_dinamica(client, a_store, monkeypatch):
     """Si /api/productos/{variant_id} se matcheara antes que la ruta literal
     /api/productos/reporte, FastAPI intentaría convertir "reporte" a int y
     esta request devolvería 422 — en vez de eso debe llegar al handler de

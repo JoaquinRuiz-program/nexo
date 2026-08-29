@@ -35,6 +35,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.domain.security import hash_password
+from tests.auth_helpers import autenticar
 from app.domain.token_crypto import decrypt_token
 from app.main import app
 
@@ -97,13 +98,14 @@ def client(db_session):
 
 
 @pytest.fixture()
-def a_store(db_session):
+def a_store(client, db_session):
     usuario = User(email="tienda@ejemplo.cl", password_hash=hash_password("x"), full_name="Dueño", created_at=NOW, updated_at=NOW)
     db_session.add(usuario)
     tienda = Store(owner=usuario, name="Tienda de prueba", created_at=NOW)
     db_session.add(tienda)
     db_session.add(StoreSettings(store=tienda, company_name="Tienda", store_name="Tienda"))
     db_session.commit()
+    autenticar(client, db_session, usuario, tienda, ahora=NOW)
     return tienda
 
 

@@ -22,6 +22,7 @@ from app.db.base import Base
 from app.db.models import MarketplaceAccount, Order, Product, ProductVariant, Store, StoreSettings, User
 from app.db.session import get_db
 from app.domain.security import hash_password
+from tests.auth_helpers import autenticar
 from app.main import app
 
 NOW = datetime(2026, 8, 24, 12, 0, 0)
@@ -62,13 +63,14 @@ def client(db_session):
 
 
 @pytest.fixture()
-def a_store(db_session):
+def a_store(client, db_session):
     usuario = User(email="tienda@ejemplo.cl", password_hash=hash_password("x"), full_name="Dueño", created_at=NOW, updated_at=NOW)
     db_session.add(usuario)
     tienda = Store(owner=usuario, name="Tienda de prueba", created_at=NOW)
     db_session.add(tienda)
     db_session.add(StoreSettings(store=tienda, company_name="Tienda", store_name="Tienda", low_stock_threshold=5))
     db_session.commit()
+    autenticar(client, db_session, usuario, tienda, ahora=NOW)
     return tienda
 
 
@@ -164,10 +166,21 @@ def test_mercado_libre_refleja_la_cuenta_conectada_de_verdad(client, db_session,
     assert body["mercadoLibre"]["cuentaExternaId"] == "999"
 
 
-def test_dashboard_sin_tienda_creada_no_revienta(client):
-    # Sin app/db/seed_demo.py corrido todavía: no hay ninguna Store. El
-    # dashboard tiene que responder con ceros, no un 404/500 — es la primera
-    # pantalla que ve un dueño nuevo.
+def test_dashboard_de_un_usuario_recien_registrado_sin_catalogo_no_revienta(client, a_store):
+    # 29 de agosto de 2026: con auth obligatorio, "ninguna Store en toda la
+    # base" ya no es un estado alcanzable por una request autenticada real
+    # (POST /api/auth/registro siempre crea una junto con el usuario) — lo
+    # que sí sigue siendo el primer estado real de un dueño nuevo es "mi
+    # empresa existe, pero todavía no subí ningún catálogo". El dashboard
+    # tiene que responder con ceros ahí también, no un 404/500.
     res = client.get("/api/dashboard/resumen")
     assert res.status_code == 200
     assert res.json()["catalogo"]["total"] == 0
+
+
+def test_dashboard_sin_sesion_devuelve_401(client):
+    # Sin cookie de sesión (nadie logueado) — nunca debe devolver datos,
+    # ni siquiera "en ceros": eso seguiría confirmando que el endpoint
+    # existe y responde sin pedir credenciales.
+    res = client.get("/api/dashboard/resumen")
+    assert res.status_code == 401

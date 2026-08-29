@@ -13,7 +13,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_store
 from app.api.routes.rentabilidad import build_profitability_rows
+from app.db.models import Store
 from app.db.session import get_db
 from app.domain.catalog_selection import SelectionCriteria, select, summarize_selection
 
@@ -28,8 +30,9 @@ def seleccionar_productos(
     top: Optional[int] = Query(None, ge=1, description='"Los N productos más rentables"'),
     requiere_stock: bool = Query(True, description="Exigir marketplaceStock > 0 para considerarlo publicable"),
     db: Session = Depends(get_db),
+    store: Store = Depends(get_current_store),
 ) -> dict:
-    filas, _ = build_profitability_rows(db)
+    filas, _ = build_profitability_rows(db, store)
     criterios = SelectionCriteria(
         min_margin_clp=margen_minimo_clp,
         min_margin_pct=margen_minimo_pct,
