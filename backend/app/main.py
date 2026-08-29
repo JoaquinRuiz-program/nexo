@@ -8,14 +8,19 @@ desde cualquier Excel/CSV (app/api/routes/catalogo.py), motor de
 rentabilidad configurable por canal, selección de qué conviene publicar
 (app/api/routes/seleccion.py), lectura de WooCommerce, y OAuth real de
 Mercado Libre con importación de sus ventas — sin escribir todavía en
-WooCommerce ni en Mercado Libre, y sin autenticación de usuarios del panel.
-Ver DATABASE.md para el detalle de cada fase.
+WooCommerce ni en Mercado Libre.
+
+29 de agosto de 2026 — autenticación real de usuarios (app/api/routes/auth.py,
+app/api/deps.py): cada request a un endpoint de negocio pasa a resolver
+"de qué empresa es esto" desde la sesión (cookie HttpOnly), nunca desde "la
+primera tienda que exista". Ver DATABASE.md para el detalle de cada fase.
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
+    auth,
     catalogo,
     configuracion,
     costos,
@@ -56,11 +61,19 @@ app.add_middleware(
     # borra nada, así que no hace falta DELETE.
     allow_methods=["GET", "PUT", "POST"],
     allow_headers=["*"],
+    # 29 de agosto de 2026 — autenticación real por cookie de sesión
+    # (app/api/deps.py): sin esto, el navegador nunca manda la cookie en un
+    # fetch() entre orígenes distintos (frontend:5500 -> backend:8000), sin
+    # importar que sea HttpOnly/SameSite=Lax. Es justo por esto que
+    # allow_origins NUNCA puede ser "*" (el spec de CORS lo prohíbe junto
+    # con credenciales) — ya listamos orígenes exactos arriba.
+    allow_credentials=True,
 )
 
 # Orden importante: productos.router registra /api/productos/reporte antes
 # de que productos_db.router registre /api/productos/{variant_id} — así una
 # request a /reporte siempre matchea la ruta literal primero.
+app.include_router(auth.router)
 app.include_router(productos.router)
 app.include_router(productos_db.router)
 app.include_router(rentabilidad.router)

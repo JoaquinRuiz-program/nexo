@@ -79,6 +79,17 @@ class Settings(BaseSettings):
     # y se guarda en .env — nunca en el código, nunca en Git.
     token_encryption_key: str = ""
 
+    # Sesión de usuario real (29 de agosto de 2026 — ver app/api/deps.py y
+    # app/api/routes/auth.py). Cookie HttpOnly, nunca localStorage (mismo
+    # criterio ya aplicado a los tokens de Mercado Libre). `secure=False`
+    # por defecto porque en desarrollo local el backend corre en HTTP
+    # (http://localhost:8000) — un navegador nunca manda una cookie
+    # "Secure" a un origen sin HTTPS. En producción SIEMPRE hay que poner
+    # esto en True (backend real detrás de HTTPS) — ver DATABASE.md.
+    session_cookie_secure: bool = False
+    session_ttl_hours: int = 24  # sesión normal ("Recordarme" desmarcado)
+    session_ttl_hours_recordarme: int = 24 * 30  # "Recordarme" marcado
+
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding="utf-8",
