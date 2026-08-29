@@ -19,7 +19,7 @@
 window.LC = window.LC || {};
 
 (function () {
-  const { escapeHtml, toast, openModal, infoModal, icon } = LC.ui;
+  const { escapeHtml, toast, openModal, icon } = LC.ui;
 
   const CAMPOS_LABEL = {
     sku: "SKU", nombre: "Nombre del producto", marca: "Marca", categoria: "Categoría",
@@ -593,8 +593,10 @@ window.LC = window.LC || {};
 
   function renderPasoListo() {
     const { resumen } = state.preparacion;
+    const selResumen = state.seleccion ? state.seleccion.resumen : null;
+    const totalProcesados = state.confirmarResultado ? state.confirmarResultado.creados + state.confirmarResultado.actualizados : null;
     return `
-      <div class="panel-card text-center py-12">
+      <div class="panel-card text-center py-10 mb-5">
         <div class="text-5xl mb-4">${icon("checkCircle")}</div>
         <h2 class="text-xl font-semibold mb-2">${resumen.listosParaPublicar + resumen.requierenRevision} publicaciones quedaron guardadas como borrador</h2>
         <p class="text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-6">Todavía no se envió nada a Mercado Libre — vas a poder publicarlas de verdad en cuanto conectes tu cuenta.</p>
@@ -603,17 +605,32 @@ window.LC = window.LC || {};
           <button id="btn-importar-otro" class="btn-primary">Importar otro catálogo</button>
         </div>
       </div>
+      ${
+        selResumen
+          ? `<div class="panel-card">
+              <h3 class="panel-title mb-1">Resumen de la importación</h3>
+              <p class="panel-subtitle mb-4">${totalProcesados != null ? `${totalProcesados} productos procesados en tu catálogo.` : "Así quedó tu catálogo después de importar."}</p>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+                <div><p class="stat-label">Buenas oportunidades</p><p class="stat-value stat-value--sm stat-value--success">${selResumen.rentables}</p></div>
+                <div><p class="stat-label">Sin costo cargado</p><p class="stat-value stat-value--sm stat-value--warning">${selResumen.sinDatos}</p></div>
+                <div><p class="stat-label">Margen bajo</p><p class="stat-value stat-value--sm stat-value--warning">${selResumen.margenBajo}</p></div>
+                <div><p class="stat-label">No conviene</p><p class="stat-value stat-value--sm stat-value--danger">${selResumen.noRentables}</p></div>
+              </div>
+              <button id="btn-ver-oportunidades" class="btn-secondary">Ver oportunidades →</button>
+            </div>`
+          : ""
+      }
     `;
   }
 
   function wirePasoListo(main) {
-    document.getElementById("btn-conectar-ml").addEventListener("click", () => {
-      infoModal("Conectar Mercado Libre", "La conexión real está preparada en el backend, pero todavía no la activamos desde acá — hace falta que el dueño genere sus credenciales primero.");
-    });
+    document.getElementById("btn-conectar-ml").addEventListener("click", () => LC.router.navigate("/integraciones"));
     document.getElementById("btn-importar-otro").addEventListener("click", () => {
       state = estadoInicial();
       render(main);
     });
+    const verOportunidadesBtn = document.getElementById("btn-ver-oportunidades");
+    if (verOportunidadesBtn) verOportunidadesBtn.addEventListener("click", () => LC.router.navigate("/oportunidades"));
   }
 
   // ------------------------------------------------------------------

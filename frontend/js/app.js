@@ -354,6 +354,7 @@ window.LC = window.LC || {};
           </div>
         </div>
 
+        ${esReal ? renderOnboarding(resumen) : ""}
         ${esReal ? renderQueHacerAhora(resumen) : ""}
         ${esReal ? renderRentabilidadVentasPanel(resumen) : ""}
 
@@ -438,6 +439,48 @@ window.LC = window.LC || {};
     });
   }
 
+  // Onboarding — 5 pasos genéricos para cualquier rubro (nunca se asume
+  // Mercado Libre como única fuente). Cada "hecho" sale de datos reales que
+  // ya trae /api/dashboard/resumen; el paso de automatizaciones queda
+  // siempre pendiente a propósito — no hay motor de automatización real
+  // todavía (ver pantalla Automatizaciones). Se oculta solo cuando los 5
+  // pasos ya están completos, para no mostrar tareas innecesarias.
+  function buildPasosOnboarding(resumen) {
+    return [
+      { titulo: "Configura tu empresa", hecho: true },
+      { titulo: "Conecta tus fuentes de información", hecho: !!(resumen.mercadoLibre && resumen.mercadoLibre.conectado) },
+      { titulo: "Importa tus productos", hecho: resumen.total > 0 },
+      { titulo: "Revisa tus oportunidades", hecho: !!(resumen.rentabilidad && resumen.rentabilidad.productosConCosto > 0) },
+      { titulo: "Activa tus automatizaciones", hecho: false },
+    ];
+  }
+
+  function renderOnboarding(resumen) {
+    const pasos = buildPasosOnboarding(resumen);
+    const completados = pasos.filter((p) => p.hecho).length;
+    if (completados === pasos.length) return "";
+    return `
+      <div class="panel-card mb-6">
+        <div class="flex items-center justify-between gap-3 mb-1 flex-wrap">
+          <h3 class="panel-title">Primeros pasos en Nexo</h3>
+          <span class="text-sm text-slate-400">${completados} de ${pasos.length} pasos completados</span>
+        </div>
+        <div class="progress-track my-3"><div class="progress-fill" style="width:${Math.round((completados / pasos.length) * 100)}%"></div></div>
+        <div class="space-y-2 mt-3">
+          ${pasos
+            .map(
+              (p) => `
+            <div class="flex items-center gap-2.5 text-sm">
+              <span class="dot ${p.hecho ? "dot--green" : "dot--gray"}"></span>
+              <span class="${p.hecho ? "text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-200"}">${escapeHtml(p.titulo)}</span>
+            </div>`
+            )
+            .join("")}
+        </div>
+      </div>
+    `;
+  }
+
   // "Qué hacer ahora" — el corazón de la sección Oportunidades del
   // Dashboard: sintetiza en 1-3 frases accionables lo que ya devolvió
   // /api/dashboard/resumen, sin pedir ningún dato nuevo al backend ni
@@ -445,7 +488,6 @@ window.LC = window.LC || {};
   function buildAccionesRecomendadas(resumen) {
     const acciones = [];
     const rent = resumen.rentabilidad;
-    const cat = resumen.catalogo;
     const ml = resumen.mercadoLibre;
 
     if (rent && rent.totalProductos > 0 && rent.productosConCosto < rent.totalProductos) {
@@ -454,8 +496,8 @@ window.LC = window.LC || {};
         tono: "warning",
         texto: `${faltan} producto${faltan === 1 ? "" : "s"} sin costo registrado`,
         detalle: "Sin costo no podemos calcular si conviene venderlos.",
-        cta: "Completar costos",
-        ruta: "/importar",
+        cta: "Revisar productos",
+        ruta: "/oportunidades",
       });
     }
     if (rent && rent.productosRentables > 0) {
@@ -467,10 +509,10 @@ window.LC = window.LC || {};
         ruta: "/oportunidades",
       });
     }
-    if (cat && cat.stockBajo > 0) {
+    if (resumen.stockBajo > 0) {
       acciones.push({
         tono: "warning",
-        texto: `${cat.stockBajo} producto${cat.stockBajo === 1 ? "" : "s"} con stock bajo`,
+        texto: `${resumen.stockBajo} producto${resumen.stockBajo === 1 ? "" : "s"} con stock bajo`,
         detalle: "Podrían agotarse pronto.",
         cta: "Ver productos",
         ruta: "/productos",
@@ -901,6 +943,109 @@ window.LC = window.LC || {};
   // Detalle de producto
   // ------------------------------------------------------------------
 
+  // Evaluación de rentabilidad de un producto — mismos 5 estados que ya usa
+  // Oportunidades/el asistente de importación (reco-badge), para que
+  // "conviene o no conviene" se vea igual en toda la aplicación.
+  const EVALUACION_LABEL = {
+    rentable: "Buena oportunidad",
+    margen_bajo: "Requiere revisión",
+    no_rentable: "No recomendable",
+    sin_stock: "Sin stock reservado",
+    sin_datos: "Requiere revisión",
+  };
+
+  function renderRentabilidadDetalle(row, rentabilidad) {
+    if (!rentabilidad) {
+      return `
+        <div class="panel-card mb-5">
+          <h3 class="panel-title mb-1">Rentabilidad</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400">Todavía no hay datos de rentabilidad para este producto.</p>
+        </div>
+      `;
+    }
+    const sinCosto = !rentabilidad.tieneCosto;
+    return `
+      <div class="panel-card mb-5">
+        <div class="flex items-center justify-between gap-3 mb-4">
+          <h3 class="panel-title">Rentabilidad</h3>
+          ${sinCosto ? "" : `<span class="reco-badge reco-${rentabilidad.clasificacion}">${EVALUACION_LABEL[rentabilidad.clasificacion] || rentabilidad.clasificacion}</span>`}
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+          <div><p class="stat-label">Costo de compra</p><p class="text-lg font-semibold mt-1">${rentabilidad.costo != null ? formatCLP(rentabilidad.costo) : "Sin registrar"}</p></div>
+          <div><p class="stat-label">Ganancia estimada</p><p class="text-lg font-semibold mt-1 ${rentabilidad.margenTiendaClp != null && rentabilidad.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${rentabilidad.margenTiendaClp != null ? formatCLP(rentabilidad.margenTiendaClp) : "—"}</p></div>
+          <div><p class="stat-label">Margen</p><p class="text-lg font-semibold mt-1">${rentabilidad.margenTiendaPct != null ? `${rentabilidad.margenTiendaPct.toFixed(1)}%` : "—"}</p></div>
+          <div><p class="stat-label">Mercado Libre</p><p class="text-lg font-semibold mt-1">${rentabilidad.mercadoLibreConfigurado ? "Configurado" : "Sin configurar"}</p></div>
+        </div>
+        <p class="text-xs text-slate-400 dark:text-slate-500 mb-4">Calculado con tu costo y precio reales — sin asumir ninguna comisión que no hayas confirmado.</p>
+        ${
+          sinCosto
+            ? `<button id="detail-agregar-costo" class="btn-primary">Agregar costo</button>`
+            : `<button data-nav="/oportunidades" class="btn-secondary">Ver en Oportunidades →</button>`
+        }
+      </div>
+    `;
+  }
+
+  // Modal simple de "Agregar costo" — con feedback Guardando… / ✓
+  // actualizado en el propio botón, para que nunca quede la duda de si
+  // funcionó (pedido explícito: nunca dejar al usuario preguntándose).
+  function abrirEditorCosto(producto, onGuardado) {
+    const root = document.getElementById("modal-root");
+    root.innerHTML = `
+      <div class="modal-overlay fixed inset-0 bg-slate-900/50 dark:bg-slate-950/70 flex items-center justify-center z-[60] p-4">
+        <div class="modal-card bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-sm w-full p-6">
+          <h3 class="text-lg font-semibold mb-1">Agregar costo</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">${escapeHtml(producto.nombre)}</p>
+          <label class="form-label" for="costo-input">Precio de compra</label>
+          <input id="costo-input" type="number" min="0" step="1" inputmode="numeric" class="form-input" placeholder="$" value="${producto.costo ?? ""}" />
+          <p id="costo-feedback" class="text-sm mt-2 min-h-[1.25rem]"></p>
+          <div class="flex justify-end gap-3 mt-3">
+            <button id="costo-cancelar" class="btn-secondary">Cancelar</button>
+            <button id="costo-guardar" class="btn-primary">Guardar</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const close = () => {
+      root.innerHTML = "";
+    };
+    root.querySelector(".modal-overlay").addEventListener("click", (e) => {
+      if (e.target.classList.contains("modal-overlay")) close();
+    });
+    document.getElementById("costo-cancelar").addEventListener("click", close);
+    document.getElementById("costo-input").focus();
+
+    document.getElementById("costo-guardar").addEventListener("click", async () => {
+      const feedback = document.getElementById("costo-feedback");
+      const valor = document.getElementById("costo-input").value.trim();
+      const costo = valor === "" ? null : Number(valor);
+      if (costo !== null && (!Number.isFinite(costo) || costo < 0)) {
+        feedback.textContent = "Ingresa un número válido.";
+        feedback.className = "text-sm mt-2 min-h-[1.25rem] text-red-600 dark:text-red-400";
+        return;
+      }
+      const btn = document.getElementById("costo-guardar");
+      btn.disabled = true;
+      btn.textContent = "Guardando…";
+      feedback.textContent = "";
+
+      const res = await LC.backendApi.actualizarCostoProducto(producto.id, costo);
+      if (!res.ok) {
+        btn.disabled = false;
+        btn.textContent = "Guardar";
+        feedback.textContent = res.error.mensaje;
+        feedback.className = "text-sm mt-2 min-h-[1.25rem] text-red-600 dark:text-red-400";
+        return;
+      }
+      btn.textContent = "✓ Costo actualizado";
+      toast("success", "Costo actualizado.");
+      setTimeout(() => {
+        close();
+        onGuardado();
+      }, 500);
+    });
+  }
+
   async function renderProductDetail(main, id) {
     const detalle = await LC.dataSource.getProductoDetalle(id);
     if (!detalle) {
@@ -908,7 +1053,7 @@ window.LC = window.LC || {};
       main.querySelector("[data-back]").addEventListener("click", () => LC.router.navigate("/productos"));
       return;
     }
-    const { row, variantes, historial, creado } = detalle;
+    const { row, variantes, historial, creado, rentabilidad } = detalle;
     const ind = stockIndicator(row);
 
     main.innerHTML = `
@@ -934,6 +1079,8 @@ window.LC = window.LC || {};
             <div><p class="stat-label">Creado</p><p class="text-lg font-semibold mt-1">${formatDate(creado)}</p></div>
           </div>
         </div>
+
+        ${renderRentabilidadDetalle(row, rentabilidad)}
 
         ${variantes && variantes.length ? `
         <div class="panel-card mb-5">
@@ -981,6 +1128,15 @@ window.LC = window.LC || {};
     document.getElementById("link-ml-btn").addEventListener("click", () => {
       infoModal("Vincular con Mercado Libre", "La vinculación de productos con Mercado Libre estará disponible cuando conectemos la integración real.");
     });
+    main.querySelectorAll("[data-nav]").forEach((btn) => {
+      btn.addEventListener("click", () => LC.router.navigate(btn.dataset.nav));
+    });
+    const agregarCostoBtn = document.getElementById("detail-agregar-costo");
+    if (agregarCostoBtn) {
+      agregarCostoBtn.addEventListener("click", () => {
+        abrirEditorCosto({ id: row.id, nombre: row.nombre, costo: rentabilidad ? rentabilidad.costo : null }, () => renderProductDetail(main, id));
+      });
+    }
   }
 
   // ------------------------------------------------------------------
@@ -1253,6 +1409,50 @@ window.LC = window.LC || {};
     no_seleccionado: "Fuera del límite",
   };
 
+  // Agrupado por importancia (no una tabla plana): qué mirar primero y por
+  // qué — mismas 5 clasificaciones que ya calcula el backend, solo
+  // organizadas para que la atención vaya a lo que más importa primero.
+  const GRUPOS_OPORTUNIDAD = [
+    { id: "rentable", clasificaciones: ["rentable"], titulo: "Alta oportunidad", desc: "Ganancia potencial y buen margen — buenos candidatos para vender más." },
+    { id: "revision", clasificaciones: ["margen_bajo", "sin_datos", "sin_stock"], titulo: "Requiere revisión", desc: "Información incompleta o margen ajustado — conviene completarlos." },
+    { id: "no_rentable", clasificaciones: ["no_rentable"], titulo: "Baja rentabilidad", desc: "Hoy no conviene venderlos — revisa el costo o el precio." },
+  ];
+
+  function filaOportunidad(p) {
+    const accion =
+      p.clasificacion === "sin_datos"
+        ? `<button data-agregar-costo="${p.id}" class="btn-secondary !py-1.5 !text-xs">Agregar costo</button>`
+        : `<button data-open="${p.id}" class="btn-secondary !py-1.5 !text-xs">Ver producto</button>`;
+    return `
+      <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0">
+        <td class="px-3 py-2.5">
+          <p class="font-medium text-slate-800 dark:text-slate-100">${escapeHtml(p.nombre)}</p>
+          <p class="text-xs text-slate-400 font-mono">${escapeHtml(p.sku || "—")}</p>
+        </td>
+        <td class="px-3 py-2.5 text-right">${p.precio != null ? formatCLP(p.precio) : "—"}</td>
+        <td class="px-3 py-2.5 text-right">${p.costo != null ? formatCLP(p.costo) : "—"}</td>
+        <td class="px-3 py-2.5 text-right font-medium ${p.margenTiendaClp != null && p.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${p.margenTiendaClp != null ? formatCLP(p.margenTiendaClp) : "—"}</td>
+        <td class="px-3 py-2.5 text-right">${p.margenTiendaPct != null ? `${p.margenTiendaPct.toFixed(1)}%` : "—"}</td>
+        <td class="px-3 py-2.5">${accion}</td>
+      </tr>`;
+  }
+
+  function tablaOportunidades(productos) {
+    return `<div class="table-wrap"><table class="w-full text-sm">
+      <thead>
+        <tr class="text-left border-b border-slate-200 dark:border-slate-700">
+          <th class="px-3 py-2 font-medium">Producto</th>
+          <th class="px-3 py-2 font-medium text-right">Precio</th>
+          <th class="px-3 py-2 font-medium text-right">Costo</th>
+          <th class="px-3 py-2 font-medium text-right">Ganancia estimada</th>
+          <th class="px-3 py-2 font-medium text-right">Margen</th>
+          <th class="px-3 py-2 font-medium"></th>
+        </tr>
+      </thead>
+      <tbody>${productos.map((p) => filaOportunidad(p)).join("")}</tbody>
+    </table></div>`;
+  }
+
   async function renderOportunidades(main) {
     const [modo, data] = await Promise.all([LC.dataSource.getModo(), LC.dataSource.getOportunidades()]);
     const esReal = modo === "real";
@@ -1271,49 +1471,35 @@ window.LC = window.LC || {};
           <div class="stat-card"><p class="stat-label">Falta información</p><p class="stat-value stat-value--sm">${r.sinDatos ?? 0}</p></div>
         </div>
 
-        <div class="panel-card">
-          <h3 class="panel-title mb-1">Qué conviene revisar</h3>
-          <p class="panel-subtitle mb-4">Calculado con tus costos y precios reales — sin asumir ninguna comisión que no hayas confirmado.</p>
-          ${
-            productos.length
-              ? `<div class="table-wrap"><table class="w-full text-sm">
-                  <thead>
-                    <tr class="text-left border-b border-slate-200 dark:border-slate-700">
-                      <th class="px-3 py-2 font-medium">Producto</th>
-                      <th class="px-3 py-2 font-medium text-right">Precio</th>
-                      <th class="px-3 py-2 font-medium text-right">Costo</th>
-                      <th class="px-3 py-2 font-medium text-right">Ganancia estimada</th>
-                      <th class="px-3 py-2 font-medium text-right">Margen</th>
-                      <th class="px-3 py-2 font-medium">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${productos
-                      .map(
-                        (p) => `
-                      <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0 ${p.id ? "cursor-pointer" : ""}" ${p.id ? `data-open="${p.id}"` : ""}>
-                        <td class="px-3 py-2.5">
-                          <p class="font-medium text-slate-800 dark:text-slate-100">${escapeHtml(p.nombre)}</p>
-                          <p class="text-xs text-slate-400 font-mono">${escapeHtml(p.sku || "—")}</p>
-                        </td>
-                        <td class="px-3 py-2.5 text-right">${p.precio != null ? formatCLP(p.precio) : "—"}</td>
-                        <td class="px-3 py-2.5 text-right">${p.costo != null ? formatCLP(p.costo) : "—"}</td>
-                        <td class="px-3 py-2.5 text-right font-medium ${p.margenTiendaClp != null && p.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${p.margenTiendaClp != null ? formatCLP(p.margenTiendaClp) : "—"}</td>
-                        <td class="px-3 py-2.5 text-right">${p.margenTiendaPct != null ? `${p.margenTiendaPct.toFixed(1)}%` : "—"}</td>
-                        <td class="px-3 py-2.5"><span class="reco-badge reco-${p.clasificacion}">${OPORTUNIDAD_LABEL[p.clasificacion] || p.clasificacion}</span></td>
-                      </tr>`
-                      )
-                      .join("")}
-                  </tbody>
-                </table></div>`
-              : `<div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("bulb")}</div><p class="empty-state-title">Todavía no hay productos para revisar</p><p class="empty-state-desc">Sube tu catálogo para que calculemos qué te conviene vender.</p></div>`
-          }
-        </div>
+        ${
+          productos.length
+            ? GRUPOS_OPORTUNIDAD.map((g) => {
+                const items = productos.filter((p) => g.clasificaciones.includes(p.clasificacion));
+                if (!items.length) return "";
+                return `
+                <div class="panel-card mb-5">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="dot ${g.id === "rentable" ? "dot--green" : g.id === "revision" ? "dot--amber" : "dot--red"}"></span>
+                    <h3 class="panel-title">${g.titulo}</h3>
+                    <span class="text-sm text-slate-400">(${items.length})</span>
+                  </div>
+                  <p class="panel-subtitle mb-4">${g.desc}</p>
+                  ${tablaOportunidades(items)}
+                </div>`;
+              }).join("")
+            : `<div class="panel-card"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("bulb")}</div><p class="empty-state-title">Todavía no hay productos para revisar</p><p class="empty-state-desc">Sube tu catálogo para que calculemos qué te conviene vender.</p></div></div>`
+        }
       </div>
     `;
 
-    main.querySelectorAll("[data-open]").forEach((tr) => {
-      tr.addEventListener("click", () => LC.router.navigate(`/productos/${tr.dataset.open}`));
+    main.querySelectorAll("[data-open]").forEach((btn) => {
+      btn.addEventListener("click", () => LC.router.navigate(`/productos/${btn.dataset.open}`));
+    });
+    main.querySelectorAll("[data-agregar-costo]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const p = productos.find((x) => String(x.id) === btn.dataset.agregarCosto);
+        abrirEditorCosto(p, () => renderOportunidades(main));
+      });
     });
   }
 

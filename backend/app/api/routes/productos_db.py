@@ -29,6 +29,11 @@ class MarketplaceStockUpdate(BaseModel):
     cantidad: int | None = None
 
 
+class CostoUpdate(BaseModel):
+    # None = borrar el costo cargado (vuelve a "sin costo", nunca $0).
+    costo: float | None = None
+
+
 def build_producto_fila(producto: Product, variante: ProductVariant) -> dict:
     return {
         "id": variante.id,
@@ -85,6 +90,25 @@ def configurar_stock_mercado_libre(
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
+    db.commit()
+    db.refresh(variante)
+    return build_producto_fila(variante.product, variante)
+
+
+@router.put("/{variant_id}/costo")
+def configurar_costo(variant_id: int, body: CostoUpdate, db: Session = Depends(get_db)) -> dict:
+    """Cierra el círculo de "Oportunidades": completar el costo de compra de
+    UN producto puntual, sin tener que volver a subir todo el catálogo por
+    Excel. `cost_price` es el mismo campo que ya lee domain/profitability.py
+    — el margen se recalcula solo la próxima vez que se pida (acá no se
+    guarda ningún margen, solo el costo real, igual que en la importación)."""
+    variante = db.get(ProductVariant, variant_id)
+    if variante is None:
+        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+    if body.costo is not None and body.costo < 0:
+        raise HTTPException(status_code=400, detail="El costo no puede ser negativo.")
+
+    variante.cost_price = body.costo
     db.commit()
     db.refresh(variante)
     return build_producto_fila(variante.product, variante)

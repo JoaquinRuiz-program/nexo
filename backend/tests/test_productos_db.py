@@ -233,6 +233,51 @@ def test_configurar_stock_ml_de_producto_inexistente_devuelve_404(client):
     assert res.status_code == 404
 
 
+def test_agregar_costo_a_un_producto_puntual(client, db_session, a_store):
+    """Cierra el flujo de Oportunidades: completar el costo de UN producto
+    sin volver a subir el catálogo entero por Excel."""
+    _producto_simple(db_session, a_store, sku="LIB-010", nombre="Producto sin costo", precio=10000, stock=5)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.put(f"/api/productos/{variant_id}/costo", json={"costo": 6000})
+
+    assert res.status_code == 200
+    variante = db_session.get(ProductVariant, variant_id)
+    assert float(variante.cost_price) == 6000
+
+    # El margen ya se recalcula solo con el mismo dato, sin duplicar lógica.
+    rentabilidad = client.get("/api/rentabilidad").json()
+    fila = next(f for f in rentabilidad["productos"] if f["id"] == variant_id)
+    assert fila["tieneCosto"] is True
+    assert fila["margenTiendaClp"] == 4000
+
+
+def test_borrar_el_costo_lo_deja_sin_datos_no_en_cero(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="LIB-011", nombre="Producto con costo", precio=10000, stock=5)
+    variant_id = db_session.query(ProductVariant).one().id
+    client.put(f"/api/productos/{variant_id}/costo", json={"costo": 6000})
+
+    res = client.put(f"/api/productos/{variant_id}/costo", json={"costo": None})
+
+    assert res.status_code == 200
+    variante = db_session.get(ProductVariant, variant_id)
+    assert variante.cost_price is None
+
+
+def test_no_se_puede_cargar_un_costo_negativo(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="LIB-012", nombre="Producto", precio=10000, stock=5)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.put(f"/api/productos/{variant_id}/costo", json={"costo": -100})
+
+    assert res.status_code == 400
+
+
+def test_configurar_costo_de_producto_inexistente_devuelve_404(client):
+    res = client.put("/api/productos/999999/costo", json={"costo": 100})
+    assert res.status_code == 404
+
+
 def test_ruta_reporte_no_es_capturada_por_la_ruta_dinamica(client, monkeypatch):
     """Si /api/productos/{variant_id} se matcheara antes que la ruta literal
     /api/productos/reporte, FastAPI intentaría convertir "reporte" a int y

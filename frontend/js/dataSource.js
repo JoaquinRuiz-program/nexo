@@ -163,7 +163,14 @@ window.LC = window.LC || {};
       // sin endpoint propio) ni fecha de creación por variante — se muestra
       // vacío en vez de inventar eventos, la pantalla ya soporta un
       // historial vacío sin romperse.
-      return { row, variantes, historial: [], creado: null };
+
+      // Rentabilidad/clasificación del producto — se reusa /api/seleccion
+      // (misma fuente que la pantalla Oportunidades) en vez de pedir un
+      // endpoint nuevo solo para el detalle.
+      const oportunidades = await getOportunidades();
+      const fila = (oportunidades.productos || []).find((p) => p.id === row.id) || null;
+
+      return { row, variantes, historial: [], creado: null, rentabilidad: fila };
     }
 
     const numId = Number(id);
@@ -172,7 +179,7 @@ window.LC = window.LC || {};
     const raw = LC.demoData.getProductoRaw(numId);
     const variantes = raw && raw.tipo === "variable" ? raw.variantes : [];
     const historial = LC.demoData.getHistorial(row);
-    return { row, variantes, historial, creado: raw ? raw.creado : null };
+    return { row, variantes, historial, creado: raw ? raw.creado : null, rentabilidad: null };
   }
 
   // ------------------------------------------------------------------

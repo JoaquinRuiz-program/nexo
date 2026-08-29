@@ -108,6 +108,12 @@ window.LC = window.LC || {};
     return request(`/api/productos/${id}`);
   }
 
+  // Cierra el flujo de Oportunidades: completar el costo de UN producto
+  // puntual sin volver a subir el catálogo entero (PUT /api/productos/:id/costo).
+  async function actualizarCostoProducto(id, costo) {
+    return request(`/api/productos/${id}/costo`, { method: "PUT", body: { costo } });
+  }
+
   async function fetchMercadoLibreEstado() {
     return request("/api/mercadolibre/estado");
   }
@@ -159,6 +165,7 @@ window.LC = window.LC || {};
     fetchDashboardResumen,
     fetchProductos,
     fetchProductoDetalle,
+    actualizarCostoProducto,
     fetchMercadoLibreEstado,
     analizarCatalogo,
     confirmarImportacion,
