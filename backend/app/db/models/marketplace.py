@@ -2,10 +2,14 @@
 Conexión con Mercado Libre (u otro marketplace futuro — por eso el campo
 `marketplace` es texto, no algo hardcodeado a "mercadolibre").
 
-Hoy `MarketplaceAccount` no tiene ningún token real: Mercado Libre no está
-conectado todavía (fuera de alcance de esta fase). La columna existe para
-cuando se implemente el OAuth real, pero se guarda `access_token_ref` como
-NULL hasta entonces — nunca un token de verdad en esta fase.
+Actualizado 24 de agosto de 2026 — OAuth real de Mercado Libre
+(app/adapters/mercadolibre.py): `access_token_ref` (el placeholder de
+cuando esto no existía todavía) se reemplaza por
+`access_token_encrypted`/`refresh_token_encrypted` — el token real, SIEMPRE
+cifrado (nunca texto plano, ver app/domain/token_crypto.py) con la clave de
+`TOKEN_ENCRYPTION_KEY`. `external_account_id` pasa a usarse de verdad: el
+`user_id` numérico que Mercado Libre devuelve en `/users/me`, necesario
+para pedir los pedidos del vendedor.
 
 Igual que con WooCommerce: el ID de Mercado Libre vive acá, nunca como
 clave primaria de nada más. La forma de saber que "este producto de
@@ -26,6 +30,7 @@ from app.db.base import Base
 
 class MarketplaceAccount(Base):
     __tablename__ = "marketplace_accounts"
+    __table_args__ = (UniqueConstraint("store_id", "marketplace", name="uq_marketplace_account_store_marketplace"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
@@ -33,10 +38,12 @@ class MarketplaceAccount(Base):
     external_account_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # not_connected | connected | error | token_expired
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="not_connected")
-    # Reservado para el token de OAuth real — NUNCA se guarda el token en
-    # texto plano; en esta fase queda siempre NULL porque no hay conexión
-    # real todavía.
-    access_token_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Tokens de OAuth real, SIEMPRE cifrados (ver app/domain/token_crypto.py
+    # y TOKEN_ENCRYPTION_KEY) — nunca texto plano, ni siquiera en un backup.
+    # NULL hasta que exista una conexión real (no se inventa ningún valor).
+    access_token_encrypted: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    refresh_token_encrypted: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     connected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

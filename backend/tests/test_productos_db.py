@@ -150,6 +150,8 @@ def test_producto_simple_devuelve_una_fila(client, db_session, a_store):
     assert filas[0]["colorVariante"] is None
     assert filas[0]["stockQuantity"] == 34
     assert filas[0]["precio"] == 12990
+    # Sin configurar todavía -> no se está ofreciendo por Mercado Libre.
+    assert filas[0]["marketplaceStock"] is None
 
 
 def test_producto_variable_devuelve_una_fila_por_color(client, db_session, a_store):
@@ -180,6 +182,54 @@ def test_obtener_producto_por_id(client, db_session, a_store):
 
 def test_obtener_producto_inexistente_devuelve_404(client):
     res = client.get("/api/productos/999999")
+    assert res.status_code == 404
+
+
+def test_configurar_stock_mercado_libre_no_toca_el_stock_de_woocommerce(client, db_session, a_store):
+    """El ejemplo del dueño: Producto X con stock físico desconocido y 5
+    unidades reservadas para ML — stockQuantity (WooCommerce) y
+    marketplaceStock son campos completamente separados."""
+    _producto_simple(db_session, a_store, sku="LIB-006", nombre="Producto X", precio=9990, stock=999)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.put(f"/api/productos/{variant_id}/stock-mercadolibre", json={"cantidad": 5})
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["marketplaceStock"] == 5
+    assert body["stockQuantity"] == 999  # intacto — no es lo mismo que el stock reservado para ML
+
+
+def test_el_dueno_puede_cambiar_el_tope_varias_veces(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="LIB-007", nombre="Producto Y", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    for cantidad in (5, 10, 0):
+        res = client.put(f"/api/productos/{variant_id}/stock-mercadolibre", json={"cantidad": cantidad})
+        assert res.json()["marketplaceStock"] == cantidad
+
+
+def test_poner_en_null_deja_de_ofrecer_por_ml(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="LIB-008", nombre="Producto Z", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+    client.put(f"/api/productos/{variant_id}/stock-mercadolibre", json={"cantidad": 5})
+
+    res = client.put(f"/api/productos/{variant_id}/stock-mercadolibre", json={"cantidad": None})
+
+    assert res.json()["marketplaceStock"] is None
+
+
+def test_no_se_puede_configurar_un_tope_negativo(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="LIB-009", nombre="Producto W", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.put(f"/api/productos/{variant_id}/stock-mercadolibre", json={"cantidad": -1})
+
+    assert res.status_code == 400
+
+
+def test_configurar_stock_ml_de_producto_inexistente_devuelve_404(client):
+    res = client.put("/api/productos/999999/stock-mercadolibre", json={"cantidad": 5})
     assert res.status_code == 404
 
 

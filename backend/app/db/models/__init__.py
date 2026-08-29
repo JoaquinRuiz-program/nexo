@@ -6,6 +6,7 @@ primero en otro lado del código.
 """
 
 from app.db.base import Base
+from app.db.models.channel_costs import ChannelCostSettings  # noqa: F401
 from app.db.models.marketplace import (  # noqa: F401
     MarketplaceAccount,
     MarketplaceListing,
@@ -39,6 +40,7 @@ __all__ = [
     "ProductVariant",
     "WooCommerceProduct",
     "WooCommerceVariation",
+    "ChannelCostSettings",
     "MarketplaceAccount",
     "MarketplaceListing",
     "MarketplaceListingVariant",

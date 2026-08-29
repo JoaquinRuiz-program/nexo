@@ -1154,7 +1154,7 @@ window.LC = window.LC || {};
           <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
             <div>
               <p class="stat-label">Plan actual</p>
-              <p class="text-2xl font-bold mt-1">${escapeHtml(sus.plan.nombre)} <span class="text-sm font-normal text-slate-400">(precio demo)</span></p>
+              <p class="text-2xl font-bold mt-1">${escapeHtml(sus.plan.nombre)}</p>
               <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">${escapeHtml(sus.plan.precio)} / mes · Próxima renovación: ${formatDate(sus.fechaRenovacion)}</p>
             </div>
             <button id="manage-sub-btn" class="btn-secondary">Administrar suscripción</button>
@@ -1184,7 +1184,7 @@ window.LC = window.LC || {};
                   <p class="text-xs text-slate-400 mt-0.5">${p.limite ? `Hasta ${p.limite.toLocaleString("es-CL")} productos` : "Sin límite fijo"}</p>
                 </div>
                 <p class="text-2xl font-bold">${escapeHtml(p.precio)}<span class="text-sm font-normal text-slate-400"> ${p.id === "enterprise" ? "" : "/ mes"}</span></p>
-                <p class="text-xs text-slate-400">${p.id === "enterprise" ? "Precio a coordinar" : "Precio demo"}</p>
+                <p class="text-xs text-slate-400">${p.id === "enterprise" ? "Precio a coordinar" : "Aún no definido"}</p>
                 <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-1.5 flex-1">
                   ${p.features.map((f) => `<li class="flex items-start gap-1.5"><span class="text-emerald-500">✓</span>${escapeHtml(f)}</li>`).join("")}
                 </ul>
@@ -1194,7 +1194,7 @@ window.LC = window.LC || {};
             })
             .join("")}
         </div>
-        <p class="text-xs text-slate-400 dark:text-slate-500 mt-4">Los precios mostrados son de ejemplo, solo para esta demostración — se definirán antes de operar con clientes reales.</p>
+        <p class="text-xs text-slate-400 dark:text-slate-500 mt-4">Los precios todavía no están definidos — se confirmarán antes de operar con clientes reales.</p>
       </div>
     `;
 

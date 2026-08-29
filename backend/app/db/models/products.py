@@ -74,6 +74,23 @@ class ProductVariant(Base):
     # deja como texto libre por si algún día se varía por otro atributo.
     variant_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Precio de compra (lo que le cuesta al dueño, no lo que cobra) — nunca
+    # viene de WooCommerce ni de Mercado Libre, ninguno de los dos lo expone.
+    # Hoy solo existe en un Excel del dueño; se carga acá vía
+    # app/db/import_costs.py. NULL hasta que se cargue — un producto sin
+    # costo no debe mostrar ningún margen inventado (ver domain/profitability.py).
+    cost_price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Unidades que el dueño decide RESERVAR para vender por Mercado Libre —
+    # NO es (ni pretende ser) el stock físico de la tienda. Decisión
+    # explícita del dueño (24 de agosto de 2026): el sistema no debe
+    # convertirse en un control de inventario físico completo (sin
+    # movimientos, ajustes ni transferencias) — la tienda presencial se
+    # sigue controlando "al ojo", fuera del sistema. Esto es solo un tope
+    # manual: "ofrezco N unidades por ML, sin importar cuántas haya en
+    # realidad en el local". None = no se está ofreciendo el producto por
+    # ML todavía (distinto de 0, que es "se ofrecía y el dueño lo pausó o ya
+    # se vendieron todas las reservadas") — ver app/domain/marketplace_stock.py.
+    marketplace_stock: Mapped[int | None] = mapped_column(nullable=True)
     stock_quantity: Mapped[int | None] = mapped_column(nullable=True)  # None = no se gestiona stock
     manage_stock: Mapped[bool] = mapped_column(default=False)
     # instock | outofstock | backorder — igual vocabulario que WooCommerce

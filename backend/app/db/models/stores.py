@@ -33,6 +33,7 @@ class Store(Base):
     subscription: Mapped["Subscription | None"] = relationship(back_populates="store", uselist=False)  # noqa: F821
     marketplace_accounts: Mapped[list["MarketplaceAccount"]] = relationship(back_populates="store")  # noqa: F821
     orders: Mapped[list["Order"]] = relationship(back_populates="store")  # noqa: F821
+    channel_cost_settings: Mapped[list["ChannelCostSettings"]] = relationship(back_populates="store")  # noqa: F821
 
 
 class StoreSettings(Base):

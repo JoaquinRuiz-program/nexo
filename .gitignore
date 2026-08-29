@@ -27,9 +27,13 @@ venv/
 *.sqlite3
 *.db-journal
 
-# Credenciales, claves y tokens sueltos, sea cual sea su nombre o extensión.
+# Credenciales y claves sueltas, sea cual sea su nombre o extensión.
+# OJO: nada de "*token*" acá — el proyecto maneja tokens OAuth como
+# funcionalidad real (app/domain/token_crypto.py y sus tests), y ese patrón
+# terminó ocultando ese código de Git. Los tokens de verdad (valores, no
+# código) solo se guardan en .env (ya excluido arriba) o en la base de
+# datos (*.db, ya excluido abajo) — nunca en un archivo propio.
 *.pem
 *.key
 *credentials*
 *secret*
-*token*

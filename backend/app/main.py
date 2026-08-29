@@ -1,17 +1,17 @@
 """
 Punto de entrada de la app real de Librería Central (backend).
 
-Fase actual: solo lectura de WooCommerce, reutilizando el adaptador y el
-análisis ya probados en scripts/woocommerce-audit/. Nada de esto escribe en
-WooCommerce, ni implementa Mercado Libre, pedidos o autenticación todavía —
-eso es el resto del roadmap ya acordado (ver
-arquitectura-fase0-decisiones.md, sección 7.10).
+Lectura de WooCommerce (reutilizando el adaptador y el análisis ya probados
+en scripts/woocommerce-audit/) + rentabilidad + OAuth real de Mercado Libre
+e importación de sus ventas (app/api/routes/mercadolibre.py) — sin escribir
+todavía en WooCommerce ni en Mercado Libre, y sin autenticación de usuarios
+del panel. Ver DATABASE.md para el detalle de cada fase.
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import productos, productos_db
+from app.api.routes import configuracion, costos, mercadolibre, productos, productos_db, rentabilidad
 from app.config import get_settings, print_env_diagnostics
 
 app = FastAPI(
@@ -36,7 +36,10 @@ DEV_FRONTEND_ORIGINS = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=DEV_FRONTEND_ORIGINS,
-    allow_methods=["GET"],
+    # GET para consultas; PUT (configurar costos de canal) y POST (subir
+    # el archivo de costos) desde que existen esos endpoints — ninguno
+    # borra nada, así que no hace falta DELETE.
+    allow_methods=["GET", "PUT", "POST"],
     allow_headers=["*"],
 )
 
@@ -45,6 +48,10 @@ app.add_middleware(
 # request a /reporte siempre matchea la ruta literal primero.
 app.include_router(productos.router)
 app.include_router(productos_db.router)
+app.include_router(rentabilidad.router)
+app.include_router(configuracion.router)
+app.include_router(costos.router)
+app.include_router(mercadolibre.router)
 
 
 @app.on_event("startup")

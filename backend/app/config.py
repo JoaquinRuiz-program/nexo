@@ -42,6 +42,28 @@ class Settings(BaseSettings):
     # una URL de PostgreSQL vía la variable de entorno DATABASE_URL.
     database_url: str = "sqlite:///./libreria_central.db"
 
+    # OAuth de Mercado Libre (app/adapters/mercadolibre.py) — se generan
+    # registrando una aplicación en https://developers.mercadolibre.cl (o el
+    # sitio del país que corresponda), NO se inventan acá. Vacíos por
+    # defecto: sin esto, /api/mercadolibre/conectar devuelve un error claro
+    # diciendo exactamente qué falta, nunca intenta adivinar un valor.
+    mercadolibre_client_id: str = ""
+    mercadolibre_client_secret: str = ""
+    # URL de este backend que Mercado Libre debe llamar después del login
+    # (tiene que coincidir EXACTO con la registrada en el DevCenter de ML).
+    mercadolibre_redirect_uri: str = ""
+    # Dominio de autorización — depende del país del vendedor (Chile por
+    # default, ya que la tienda real es lalibreriaonlineoficial.cl). Cambiar
+    # solo si la cuenta de Mercado Libre es de otro país.
+    mercadolibre_auth_domain: str = "auth.mercadolibre.cl"
+
+    # Clave con la que se cifran (NUNCA se guardan en texto plano) los
+    # access_token/refresh_token de Mercado Libre en la base de datos — ver
+    # app/domain/token_crypto.py. Se genera una vez con:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # y se guarda en .env — nunca en el código, nunca en Git.
+    token_encryption_key: str = ""
+
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding="utf-8",
@@ -83,3 +105,7 @@ def print_env_diagnostics(settings: Settings) -> None:
     print(f"  WOOCOMMERCE_URL={settings.woocommerce_url or '(no definida)'}")
     print(f"  WOOCOMMERCE_CONSUMER_KEY={mask_secret(settings.woocommerce_consumer_key)}")
     print(f"  WOOCOMMERCE_CONSUMER_SECRET={mask_secret(settings.woocommerce_consumer_secret)}")
+    print(f"  MERCADOLIBRE_CLIENT_ID={settings.mercadolibre_client_id or '(no definida)'}")
+    print(f"  MERCADOLIBRE_CLIENT_SECRET={mask_secret(settings.mercadolibre_client_secret)}")
+    print(f"  MERCADOLIBRE_REDIRECT_URI={settings.mercadolibre_redirect_uri or '(no definida)'}")
+    print(f"  TOKEN_ENCRYPTION_KEY={mask_secret(settings.token_encryption_key)}")

@@ -14,12 +14,19 @@ es lo próximo que habrá que agregar acá cuando exista un usuario autenticado.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db.models import Product, ProductVariant
 from app.db.session import get_db
+from app.domain.marketplace_stock import set_manual_stock
 
 router = APIRouter(prefix="/api/productos", tags=["productos-bd"])
+
+
+class MarketplaceStockUpdate(BaseModel):
+    # None = dejar de ofrecer el producto por Mercado Libre (no configurado).
+    cantidad: int | None = None
 
 
 def _fila(producto: Product, variante: ProductVariant) -> dict:
@@ -33,6 +40,10 @@ def _fila(producto: Product, variante: ProductVariant) -> dict:
         "stockQuantity": variante.stock_quantity,
         "gestionaStock": variante.manage_stock,
         "estadoStock": variante.stock_status,
+        # Tope manual de unidades reservadas para Mercado Libre — NO es
+        # stock físico (ver app/domain/marketplace_stock.py). None = el
+        # dueño todavía no decidió ofrecer este producto por ese canal.
+        "marketplaceStock": variante.marketplace_stock,
         "esVariante": producto.product_type == "variable",
         "colorVariante": variante.variant_label,
         "parentId": producto.id,
@@ -54,4 +65,26 @@ def obtener_producto(variant_id: int, db: Session = Depends(get_db)) -> dict:
     variante = db.get(ProductVariant, variant_id)
     if variante is None:
         raise HTTPException(status_code=404, detail="Producto no encontrado.")
+    return _fila(variante.product, variante)
+
+
+@router.put("/{variant_id}/stock-mercadolibre")
+def configurar_stock_mercado_libre(
+    variant_id: int, body: MarketplaceStockUpdate, db: Session = Depends(get_db)
+) -> dict:
+    """El dueño decide manualmente cuántas unidades ofrecer por Mercado
+    Libre — 5 -> 10 -> 0 -> None, en cualquier momento. Nunca toca
+    stock_quantity (el stock que reporta WooCommerce): son dos números
+    completamente separados a propósito (ver domain/marketplace_stock.py)."""
+    variante = db.get(ProductVariant, variant_id)
+    if variante is None:
+        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+
+    try:
+        variante.marketplace_stock = set_manual_stock(body.cantidad)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+    db.commit()
+    db.refresh(variante)
     return _fila(variante.product, variante)

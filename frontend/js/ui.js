@@ -13,15 +13,12 @@ window.LC = window.LC || {};
     return String(str ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  function formatCLP(value) {
-    if (value === null || value === undefined || value === "") return "—";
-    const n = typeof value === "number" ? value : parseFloat(value);
-    if (Number.isNaN(n)) return "—";
-    try {
-      return new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n);
-    } catch (_e) {
-      return `$${n}`;
-    }
+  function formatCLP(_value) {
+    // Por pedido explícito del dueño (22 de agosto de 2026): no mostrar
+    // montos exactos en la demo para el cliente, ni siquiera de ejemplo —
+    // todo lo que antes pasaba por acá (precios de producto, ventas de
+    // Mercado Libre) ahora muestra este texto en vez de un número.
+    return "Próximamente";
   }
 
   function formatDate(date) {

@@ -17,6 +17,18 @@ bcrypt==4.3.0
 # hace falta para desarrollo/pruebas (que usan SQLite, incluido en Python).
 # psycopg[binary]==3.2.*
 
+# Lectura de .xlsx para importar costos de compra (app/db/import_costs.py) —
+# el dueño tiene su planilla en Excel, no tiene sentido pedirle que la
+# convierta a CSV a mano.
+openpyxl==3.1.5
+# Requerido por FastAPI para recibir archivos subidos (UploadFile) —
+# POST /api/costos/importar.
+python-multipart==0.0.32
+
+# Cifrado simétrico de los tokens OAuth de Mercado Libre en la base de datos
+# (nunca se guardan en texto plano) — ver app/domain/token_crypto.py.
+cryptography==50.0.0
+
 # Dependencias solo para desarrollo/tests (no hacen falta para correr la app):
 pytest==9.1.1
 pytest-asyncio==1.4.0
