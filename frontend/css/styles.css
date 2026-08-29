@@ -468,22 +468,42 @@ body {
 .status-row:last-child {
   border-bottom: none;
 }
-.status-dot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
+/* Punto sólido de color — el indicador de estado en toda la interfaz
+   (antes un emoji de color: 🟢🟡🔴⚪). Un solo punto chico, sin ícono
+   adentro: estilo sobrio, igual al que usan los paneles de estado de
+   servicios (ej. GitHub, Stripe). */
+.dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
   border-radius: 9999px;
-  font-size: 1.1rem;
   flex-shrink: 0;
 }
-.status-dot.status-dot--conectado { background: #ecfdf5; color: #047857; }
-.dark .status-dot.status-dot--conectado { background: #064e3b; color: #34d399; }
-.status-dot.status-dot--demo { background: #fffbeb; color: #92400e; }
-.dark .status-dot.status-dot--demo { background: #451a03; color: #fbbf24; }
-.status-dot.status-dot--pendiente { background: #f1f5f9; color: #64748b; }
-.dark .status-dot.status-dot--pendiente { background: #1e293b; color: #94a3b8; }
+.dot.dot--green { background: #059669; }
+.dark .dot.dot--green { background: #34d399; }
+.dot.dot--amber { background: #d97706; }
+.dark .dot.dot--amber { background: #fbbf24; }
+.dot.dot--red { background: #dc2626; }
+.dark .dot.dot--red { background: #f87171; }
+.dot.dot--gray { background: #94a3b8; }
+.dark .dot.dot--gray { background: #64748b; }
+.dot.dot--blue { background: #2563eb; }
+.dark .dot.dot--blue { background: #60a5fa; }
+
+.status-dot {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+  margin-top: 0.35rem;
+}
+.status-dot.status-dot--conectado { background: #059669; }
+.dark .status-dot.status-dot--conectado { background: #34d399; }
+.status-dot.status-dot--demo { background: #d97706; }
+.dark .status-dot.status-dot--demo { background: #fbbf24; }
+.status-dot.status-dot--pendiente { background: #94a3b8; }
+.dark .status-dot.status-dot--pendiente { background: #64748b; }
 .status-row-label {
   font-size: 1rem;
   font-weight: 600;

@@ -11,7 +11,7 @@
 window.LC = window.LC || {};
 
 (function () {
-  const { escapeHtml, formatCLP, formatDate, initials, toast, infoModal, openModal } = LC.ui;
+  const { escapeHtml, formatCLP, formatDate, initials, toast, infoModal, openModal, icon } = LC.ui;
 
   const SECTION_TITLES = {
     dashboard: "Dashboard",
@@ -102,7 +102,7 @@ window.LC = window.LC || {};
       // El mensaje técnico (err.message) queda plegado en "Ver detalles" —
       // quien ve esta pantalla es el dueño del negocio, no alguien que
       // necesite leer un stack trace para saber que algo salió mal.
-      main.innerHTML = `<div class="page-wrap"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">😕</div><p class="empty-state-title">Algo no funcionó como esperábamos</p><p class="empty-state-desc">Intenta recargar la página. Si el problema sigue, avísanos.</p><details class="mt-4 text-xs text-slate-400"><summary class="cursor-pointer">Ver detalles técnicos</summary><p class="mt-1 font-mono">${escapeHtml(String(err && err.message ? err.message : err))}</p></details></div></div>`;
+      main.innerHTML = `<div class="page-wrap"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("alert")}</div><p class="empty-state-title">Algo no funcionó como esperábamos</p><p class="empty-state-desc">Intenta recargar la página. Si el problema sigue, avísanos.</p><details class="mt-4 text-xs text-slate-400"><summary class="cursor-pointer">Ver detalles técnicos</summary><p class="mt-1 font-mono">${escapeHtml(String(err && err.message ? err.message : err))}</p></details></div></div>`;
     }
 
     if (scrollTarget) {
@@ -135,7 +135,7 @@ window.LC = window.LC || {};
     const session = LC.auth.getSession() || LC.demoData.account;
     document.getElementById("user-name-label").textContent = session.nombre;
     document.getElementById("user-avatar").textContent = initials(session.nombre);
-    document.getElementById("theme-toggle-icon").textContent = LC.theme.isDark() ? "☀️" : "🌙";
+    document.getElementById("theme-toggle-icon").innerHTML = icon(LC.theme.isDark() ? "sun" : "moon");
   }
 
   function openMobileSidebar() {
@@ -162,7 +162,7 @@ window.LC = window.LC || {};
       LC.theme.toggleQuick();
     });
     document.addEventListener("lc:theme-changed", () => {
-      document.getElementById("theme-toggle-icon").textContent = LC.theme.isDark() ? "☀️" : "🌙";
+      document.getElementById("theme-toggle-icon").innerHTML = icon(LC.theme.isDark() ? "sun" : "moon");
     });
 
     const userMenuBtn = document.getElementById("user-menu-btn");
@@ -212,7 +212,7 @@ window.LC = window.LC || {};
     btn.addEventListener("click", () => {
       const show = input.type === "password";
       input.type = show ? "text" : "password";
-      btn.textContent = show ? "🙈" : "👁️";
+      btn.innerHTML = icon(show ? "eyeOff" : "eye");
     });
   }
 
@@ -304,7 +304,6 @@ window.LC = window.LC || {};
     main.innerHTML = `
       <div class="page-wrap app-fade">
         <div class="rounded-xl border ${esReal ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200" : "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200"} px-4 py-3 mb-6 text-sm flex items-center gap-2">
-          <span>${esReal ? "🟢" : "🧪"}</span>
           <span>${
             esReal
               ? "Catálogo real conectado al backend — el bloque de Mercado Libre y \"productos más vendidos\" abajo sigue siendo de ejemplo hasta conectar la sincronización."
@@ -346,7 +345,7 @@ window.LC = window.LC || {};
           <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
             <div class="flex items-center gap-2">
               <h3 class="panel-title">Ventas Mercado Libre</h3>
-              <span class="demo-pill">🟡 Datos de demostración</span>
+              <span class="demo-pill">Datos de demostración</span>
             </div>
             <button data-nav="/mercadolibre" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Ver Mercado Libre →</button>
           </div>
@@ -400,7 +399,7 @@ window.LC = window.LC || {};
             ${
               alertas.length
                 ? alertas.map((r) => stockAlertRow(r)).join("")
-                : `<p class="text-sm text-emerald-600 dark:text-emerald-400 mt-3">🟢 Todo tu stock está en buen estado.</p>`
+                : `<p class="text-sm text-emerald-600 dark:text-emerald-400 mt-3">Todo tu stock está en buen estado.</p>`
             }
             ${alertas.length ? `<button data-nav="/productos" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline mt-3">Ver todos los productos →</button>` : ""}
           </div>
@@ -408,10 +407,10 @@ window.LC = window.LC || {};
             <h3 class="panel-title">Accesos rápidos</h3>
             <p class="panel-subtitle mb-3">${esReal ? "El catálogo es real; Mercado Libre y sincronización siguen en modo de ejemplo." : "Todo lo de acá usa datos de ejemplo por ahora."}</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              ${quickLink("📦", "Ver productos", "/productos")}
-              ${quickLink("📥", "Importar catálogo", "/importar")}
-              ${quickLink("🛒", "Mercado Libre", "/mercadolibre")}
-              ${quickLink("💳", "Suscripción", "/suscripcion")}
+              ${quickLink("box", "Ver productos", "/productos")}
+              ${quickLink("upload", "Importar catálogo", "/importar")}
+              ${quickLink("cart", "Mercado Libre", "/mercadolibre")}
+              ${quickLink("card", "Suscripción", "/suscripcion")}
             </div>
           </div>
         </div>
@@ -473,16 +472,10 @@ window.LC = window.LC || {};
           <p class="text-sm font-medium truncate">${escapeHtml(row.nombre)}</p>
           <p class="text-xs text-slate-400 font-mono">${escapeHtml(row.sku) || "—"}</p>
         </div>
-        <span class="stock-cell text-sm shrink-0">${ind.emoji} ${ind.label}</span>
+        <span class="stock-cell text-sm shrink-0"><span class="dot ${ind.dotClass}"></span> ${ind.label}</span>
       </div>
     `;
   }
-
-  // "conectado" (real, bueno) / "demo" (dato de ejemplo, ni bueno ni malo)
-  // / cualquier otro valor = pendiente de configurar (neutro, no es un
-  // error) — un ícono + color por estado en vez de un simple punto, para
-  // que se entienda de un vistazo sin tener que leer el detalle.
-  const STATUS_ROW_ICON = { demo: "🧪" };
 
   function statusRow(label, info) {
     // "conectado"/"conectada" (concuerda en género con cada label: Mercado
@@ -490,10 +483,9 @@ window.LC = window.LC || {};
     // de armar dos strings distintos para el mismo estado.
     const conectado = info.estado.startsWith("conectad");
     const modificador = conectado ? "status-dot--conectado" : info.estado === "demo" ? "status-dot--demo" : "status-dot--pendiente";
-    const icono = conectado ? "✅" : STATUS_ROW_ICON[info.estado] || "⏳";
     return `
       <div class="status-row">
-        <span class="status-dot ${modificador}">${icono}</span>
+        <span class="status-dot ${modificador}"></span>
         <div class="min-w-0">
           <p class="status-row-label">${escapeHtml(label)}</p>
           <p class="status-row-detail">${escapeHtml(info.detalle)}</p>
@@ -502,10 +494,10 @@ window.LC = window.LC || {};
     `;
   }
 
-  function quickLink(icon, label, path) {
+  function quickLink(iconName, label, path) {
     return `
       <button data-nav="${path}" class="flex items-center gap-2.5 px-3.5 py-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/40 transition text-left text-sm font-medium">
-        <span class="text-lg">${icon}</span> ${escapeHtml(label)}
+        <span class="text-lg">${icon(iconName)}</span> ${escapeHtml(label)}
       </button>
     `;
   }
@@ -516,22 +508,22 @@ window.LC = window.LC || {};
 
   function stockIndicator(row) {
     if (!row.gestionaStock) {
-      if (row.estadoStock === "instock") return { emoji: "🟢", label: "En stock" };
-      if (row.estadoStock === "outofstock") return { emoji: "🔴", label: "Sin stock" };
-      return { emoji: "🟡", label: "Por encargo" };
+      if (row.estadoStock === "instock") return { dotClass: "dot--green", label: "En stock" };
+      if (row.estadoStock === "outofstock") return { dotClass: "dot--red", label: "Sin stock" };
+      return { dotClass: "dot--amber", label: "Por encargo" };
     }
     const qty = row.stockQuantity;
-    if (qty === null || qty === undefined) return { emoji: "⚪", label: "Sin dato" };
-    if (qty <= 0) return { emoji: "🔴", label: String(qty) };
-    if (qty <= LC.settings.getLowStockThreshold()) return { emoji: "🟡", label: String(qty) };
-    return { emoji: "🟢", label: String(qty) };
+    if (qty === null || qty === undefined) return { dotClass: "dot--gray", label: "Sin dato" };
+    if (qty <= 0) return { dotClass: "dot--red", label: String(qty) };
+    if (qty <= LC.settings.getLowStockThreshold()) return { dotClass: "dot--amber", label: String(qty) };
+    return { dotClass: "dot--green", label: String(qty) };
   }
 
   function stockBucket(row) {
     const ind = stockIndicator(row);
-    if (ind.emoji === "🔴") return "sin-stock";
-    if (ind.emoji === "🟡") return "stock-bajo";
-    if (ind.emoji === "🟢") return "con-stock";
+    if (ind.dotClass === "dot--red") return "sin-stock";
+    if (ind.dotClass === "dot--amber") return "stock-bajo";
+    if (ind.dotClass === "dot--green") return "con-stock";
     return "desconocido";
   }
 
@@ -585,9 +577,9 @@ window.LC = window.LC || {};
             </select>
             <select id="filter-stock" class="text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5">
               <option value="todos">Todo el stock</option>
-              <option value="con-stock">🟢 En stock</option>
-              <option value="stock-bajo">🟡 Stock bajo</option>
-              <option value="sin-stock">🔴 Sin stock</option>
+              <option value="con-stock">En stock</option>
+              <option value="stock-bajo">Stock bajo</option>
+              <option value="sin-stock">Sin stock</option>
             </select>
           </div>
 
@@ -685,7 +677,7 @@ window.LC = window.LC || {};
       tbody.innerHTML = "";
       emptyEl.classList.remove("hidden");
       emptyEl.innerHTML = `
-        <div class="empty-state-icon">🔍</div>
+        <div class="empty-state-icon">${icon("search")}</div>
         <p class="empty-state-title">Ningún producto coincide</p>
         <p class="empty-state-desc">Prueba con otro término de búsqueda o quita algún filtro.</p>
       `;
@@ -706,7 +698,7 @@ window.LC = window.LC || {};
               <td class="font-mono text-xs text-slate-500 dark:text-slate-400 cursor-pointer" data-open="${r.id}">${escapeHtml(r.sku) || "—"}</td>
               <td class="font-medium text-slate-800 dark:text-slate-100 cursor-pointer" data-open="${r.id}">${escapeHtml(r.nombre) || "—"}</td>
               <td>${tipoBadge}</td>
-              <td><span class="stock-cell">${ind.emoji} ${ind.label}</span></td>
+              <td><span class="stock-cell"><span class="dot ${ind.dotClass}"></span> ${ind.label}</span></td>
               <td class="text-right font-medium">${formatCLP(r.precio)}</td>
               <td class="relative">
                 <button class="row-menu-btn" data-menu="${r.id}">⋯</button>
@@ -812,7 +804,7 @@ window.LC = window.LC || {};
   async function renderProductDetail(main, id) {
     const detalle = await LC.dataSource.getProductoDetalle(id);
     if (!detalle) {
-      main.innerHTML = `<div class="page-wrap"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">🤔</div><p class="empty-state-title">Producto no encontrado</p><button data-back class="btn-secondary mt-4">← Volver a Productos</button></div></div>`;
+      main.innerHTML = `<div class="page-wrap"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("help")}</div><p class="empty-state-title">Producto no encontrado</p><button data-back class="btn-secondary mt-4">← Volver a Productos</button></div></div>`;
       main.querySelector("[data-back]").addEventListener("click", () => LC.router.navigate("/productos"));
       return;
     }
@@ -832,7 +824,7 @@ window.LC = window.LC || {};
               </div>
               <p class="text-sm text-slate-500 dark:text-slate-400 font-mono">${escapeHtml(row.sku) || "Sin SKU"}</p>
             </div>
-            <span class="stock-cell text-sm font-medium">${ind.emoji} ${ind.label}</span>
+            <span class="stock-cell text-sm font-medium"><span class="dot ${ind.dotClass}"></span> ${ind.label}</span>
           </div>
 
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
@@ -896,7 +888,7 @@ window.LC = window.LC || {};
   // ------------------------------------------------------------------
 
   function orderStatusBadge(estado) {
-    const labels = { pendiente: "🟡 Pendiente", enviado: "🔵 Enviado", entregado: "🟢 Entregado", cancelado: "🔴 Cancelado" };
+    const labels = { pendiente: "Pendiente", enviado: "Enviado", entregado: "Entregado", cancelado: "Cancelado" };
     return `<span class="order-status order-status--${estado}">${labels[estado] || estado}</span>`;
   }
 
@@ -912,8 +904,8 @@ window.LC = window.LC || {};
         <div class="panel-card mb-6">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex flex-wrap items-center gap-2">
-              <span class="demo-pill">🟡 Datos de demostración</span>
-              <span class="connection-pill">⚪ Conexión pendiente</span>
+              <span class="demo-pill">Datos de demostración</span>
+              <span class="connection-pill">Conexión pendiente</span>
             </div>
             <button id="connect-ml-btn" class="btn-primary">Conectar Mercado Libre</button>
           </div>
@@ -973,10 +965,10 @@ window.LC = window.LC || {};
             </div>
             <select id="ml-filter-estado" class="text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5">
               <option value="todos">Todos los estados</option>
-              <option value="pendiente">🟡 Pendiente</option>
-              <option value="enviado">🔵 Enviado</option>
-              <option value="entregado">🟢 Entregado</option>
-              <option value="cancelado">🔴 Cancelado</option>
+              <option value="pendiente">Pendiente</option>
+              <option value="enviado">Enviado</option>
+              <option value="entregado">Entregado</option>
+              <option value="cancelado">Cancelado</option>
             </select>
             <select id="ml-filter-producto" class="text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 max-w-full md:max-w-xs">
               <option value="todos">Todos los productos</option>
@@ -1114,7 +1106,7 @@ window.LC = window.LC || {};
       tbody.innerHTML = "";
       emptyEl.classList.remove("hidden");
       emptyEl.innerHTML = `
-        <div class="empty-state-icon">🔍</div>
+        <div class="empty-state-icon">${icon("search")}</div>
         <p class="empty-state-title">Ningún pedido coincide</p>
         <p class="empty-state-desc">Prueba con otro término de búsqueda o quita algún filtro.</p>
       `;
@@ -1163,9 +1155,9 @@ window.LC = window.LC || {};
         <div class="panel-card mb-5">
           <h3 class="panel-title mb-4">Flujo de sincronización</h3>
           <div class="sync-flow">
-            <div class="sync-node">🏬 WooCommerce</div>
+            <div class="sync-node">${icon("store")} WooCommerce</div>
             <span class="sync-arrow">→</span>
-            <div class="sync-node">🛒 Mercado Libre</div>
+            <div class="sync-node">${icon("cart")} Mercado Libre</div>
             <span class="badge badge-simple ml-2">No configurado</span>
           </div>
           <p class="text-sm text-slate-500 dark:text-slate-400 mt-4">Última ejecución: —</p>
@@ -1315,7 +1307,7 @@ window.LC = window.LC || {};
               .map(
                 (t) => `
               <button data-theme-opt="${t}" class="theme-opt-btn px-4 py-2 text-sm font-medium rounded-lg border ${themePref === t ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300" : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"}">
-                ${t === "light" ? "☀️ Claro" : t === "dark" ? "🌙 Oscuro" : "🖥️ Automático"}
+                ${t === "light" ? "Claro" : t === "dark" ? "Oscuro" : "Automático"}
               </button>`
               )
               .join("")}
@@ -1334,7 +1326,7 @@ window.LC = window.LC || {};
 
         <div class="panel-card">
           <h3 class="panel-title mb-1">Umbral de stock bajo</h3>
-          <p class="panel-subtitle mb-3">Un producto se marca 🟡 cuando su stock es mayor que cero y menor o igual a este número.</p>
+          <p class="panel-subtitle mb-3">Un producto se marca como stock bajo cuando su cantidad es mayor que cero y menor o igual a este número.</p>
           <div class="flex items-center gap-3">
             <input id="cfg-low-stock" type="number" min="0" step="1" value="${LC.settings.getLowStockThreshold()}" class="form-input w-24" />
             <span class="text-sm text-slate-500 dark:text-slate-400">unidades</span>
@@ -1345,8 +1337,8 @@ window.LC = window.LC || {};
           <h3 class="panel-title mb-1">Integraciones</h3>
           <p class="panel-subtitle mb-4">Ninguna está conectada todavía.</p>
           <div class="space-y-3">
-            ${integrationRow("🏬", "WooCommerce", "No conectado")}
-            ${integrationRow("🛒", "Mercado Libre", "No conectado")}
+            ${integrationRow("store", "WooCommerce", "No conectado")}
+            ${integrationRow("cart", "Mercado Libre", "No conectado")}
           </div>
         </div>
 
@@ -1418,11 +1410,11 @@ window.LC = window.LC || {};
     `;
   }
 
-  function integrationRow(icon, label, status) {
+  function integrationRow(iconName, label, status) {
     return `
       <div class="flex items-center justify-between gap-4 py-1">
         <div class="flex items-center gap-2.5">
-          <span class="text-lg">${icon}</span>
+          <span class="text-lg">${icon(iconName)}</span>
           <div>
             <p class="text-sm font-medium">${escapeHtml(label)}</p>
             <p class="text-xs text-slate-400">${escapeHtml(status)}</p>

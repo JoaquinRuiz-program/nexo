@@ -19,7 +19,7 @@
 window.LC = window.LC || {};
 
 (function () {
-  const { escapeHtml, toast, openModal, infoModal } = LC.ui;
+  const { escapeHtml, toast, openModal, infoModal, icon } = LC.ui;
 
   const CAMPOS_LABEL = {
     sku: "SKU", nombre: "Nombre del producto", marca: "Marca", categoria: "Categoría",
@@ -111,9 +111,9 @@ window.LC = window.LC || {};
 
   function sourcePill() {
     if (state.modoBackend === "real") {
-      return `<div class="flex justify-end mb-2"><span class="source-pill source-pill--real">🟢 Backend real conectado</span></div>`;
+      return `<div class="flex justify-end mb-2"><span class="source-pill source-pill--real">Backend real conectado</span></div>`;
     }
-    return `<div class="flex justify-end mb-2"><span class="source-pill source-pill--demo">🟡 Modo demostración — backend no disponible</span></div>`;
+    return `<div class="flex justify-end mb-2"><span class="source-pill source-pill--demo">Modo demostración — backend no disponible</span></div>`;
   }
 
   function stepper() {
@@ -122,10 +122,10 @@ window.LC = window.LC || {};
       <div class="wizard-steps">
         ${PASOS.map((p, i) => {
           const cls = i < idxActual ? "is-done" : i === idxActual ? "is-active" : "";
-          const icon = i < idxActual ? "✓" : i + 1;
+          const stepGlyph = i < idxActual ? "✓" : i + 1;
           return `
             <div class="wizard-step ${cls}">
-              <span class="wizard-step-dot">${icon}</span>
+              <span class="wizard-step-dot">${stepGlyph}</span>
               <span class="wizard-step-label">${escapeHtml(p.titulo)}</span>
             </div>
             ${i < PASOS.length - 1 ? '<span class="wizard-step-connector"></span>' : ""}
@@ -146,7 +146,7 @@ window.LC = window.LC || {};
         <p class="panel-subtitle mb-5">Aceptamos Excel (.xlsx) o CSV. No importa cómo se llamen tus columnas — las reconocemos automáticamente.</p>
         <div id="dropzone" class="dropzone">
           <input type="file" id="file-input" accept=".xlsx,.xlsm,.csv" class="hidden" />
-          <div class="text-4xl mb-3">📄</div>
+          <div class="text-4xl mb-3">${icon("document")}</div>
           <p class="font-medium text-slate-700 dark:text-slate-200">Arrastra tu archivo aquí, o haz clic para elegirlo</p>
           <p class="text-sm text-slate-400 mt-1">.xlsx o .csv</p>
         </div>
@@ -210,7 +210,7 @@ window.LC = window.LC || {};
   function renderPasoAnalizando() {
     return `
       <div class="panel-card text-center py-16">
-        <div class="text-4xl mb-4 animate-pulse">🔍</div>
+        <div class="text-4xl mb-4 animate-pulse">${icon("search")}</div>
         <p class="font-medium text-slate-700 dark:text-slate-200">Analizando tus productos…</p>
         <p class="text-sm text-slate-400 mt-1">Detectando columnas y revisando cada fila.</p>
       </div>
@@ -265,7 +265,7 @@ window.LC = window.LC || {};
         <div class="space-y-2">
           ${conProblemas.map((f) => `
             <div class="flex items-start gap-3 text-sm border-b border-slate-100 dark:border-slate-800 pb-2 last:border-0">
-              <span class="reco-badge ${f.estado === "error" ? "reco-no_rentable" : "reco-margen_bajo"} shrink-0">${f.estado === "error" ? "❌ Error" : "⚠️ Revisar"}</span>
+              <span class="reco-badge ${f.estado === "error" ? "reco-no_rentable" : "reco-margen_bajo"} shrink-0">${f.estado === "error" ? "Error" : "Revisar"}</span>
               <div class="min-w-0">
                 <p class="font-medium truncate">${escapeHtml(f.nombre || "(sin nombre)")}</p>
                 <p class="text-xs text-slate-400">${escapeHtml(f.problemas.join(" · "))}</p>
@@ -322,7 +322,7 @@ window.LC = window.LC || {};
   async function cargarOportunidades(main) {
     state.fase = "analizando";
     renderFase(main);
-    document.querySelector(".page-wrap").innerHTML = `<div class="panel-card text-center py-16"><div class="text-4xl mb-4">📊</div><p class="font-medium">Calculando rentabilidad…</p></div>`;
+    document.querySelector(".page-wrap").innerHTML = `<div class="panel-card text-center py-16"><div class="text-4xl mb-4">${icon("dashboard")}</div><p class="font-medium">Calculando rentabilidad…</p></div>`;
 
     if (state.modoBackend === "demo") {
       state.seleccion = LC.demoImportResult.seleccion;
@@ -342,11 +342,11 @@ window.LC = window.LC || {};
   }
 
   const RECO_LABEL = {
-    rentable: "🟢 Recomendado",
-    margen_bajo: "🟡 Margen bajo",
-    no_rentable: "❌ No recomendado",
-    sin_stock: "⚪ Sin stock reservado",
-    sin_datos: "⚪ Faltan datos",
+    rentable: "Recomendado",
+    margen_bajo: "Margen bajo",
+    no_rentable: "No recomendado",
+    sin_stock: "Sin stock reservado",
+    sin_datos: "Faltan datos",
     no_seleccionado: "— Fuera del cupo",
   };
 
@@ -460,10 +460,10 @@ window.LC = window.LC || {};
         title: "¿Seleccionar toda la tienda?",
         body: `<p>Vas a seleccionar los <strong>${r.total} productos</strong> de tu catálogo, incluyendo los que no conviene publicar:</p>
           <ul class="mt-2 space-y-1 text-sm">
-            <li>🟢 ${r.rentables} recomendados</li>
-            <li>🟡 ${r.margenBajo} con margen bajo</li>
-            <li>❌ ${r.noRentables} no recomendados (perderías dinero)</li>
-            <li>⚪ ${r.sinDatos} sin costo cargado todavía</li>
+            <li>${r.rentables} recomendados</li>
+            <li>${r.margenBajo} con margen bajo</li>
+            <li>${r.noRentables} no recomendados (perderías dinero)</li>
+            <li>${r.sinDatos} sin costo cargado todavía</li>
           </ul>
           <p class="mt-2">No vamos a publicar nada todavía — solo prepararemos el borrador para que lo revises.</p>`,
         primaryLabel: "Seleccionar todos igual",
@@ -501,7 +501,7 @@ window.LC = window.LC || {};
   async function prepararPublicaciones(main) {
     state.fase = "analizando";
     renderFase(main);
-    document.querySelector(".page-wrap").innerHTML = `<div class="panel-card text-center py-16"><div class="text-4xl mb-4">📝</div><p class="font-medium">Preparando publicaciones…</p></div>`;
+    document.querySelector(".page-wrap").innerHTML = `<div class="panel-card text-center py-16"><div class="text-4xl mb-4">${icon("document")}</div><p class="font-medium">Preparando publicaciones…</p></div>`;
 
     if (state.modoBackend === "demo") {
       state.preparacion = LC.demoImportResult.preparar;
@@ -550,7 +550,7 @@ window.LC = window.LC || {};
             </div>
             ${b.advertencias.length ? `
               <div class="text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950 rounded-lg px-3 py-2 mt-2">
-                ${b.advertencias.map((a) => `<p>⚠️ ${escapeHtml(a)}</p>`).join("")}
+                ${b.advertencias.map((a) => `<p>${escapeHtml(a)}</p>`).join("")}
               </div>` : ""}
             <details class="mt-3">
               <summary class="text-sm text-indigo-600 dark:text-indigo-400 cursor-pointer">Ver detalles</summary>
@@ -573,7 +573,7 @@ window.LC = window.LC || {};
   }
 
   function estadoLabel(estado) {
-    return { listo_para_publicar: "🟢 Listo para publicar", requiere_revision: "🟡 Requiere revisión", no_recomendado: "❌ No recomendado" }[estado] || estado;
+    return { listo_para_publicar: "Listo para publicar", requiere_revision: "Requiere revisión", no_recomendado: "No recomendado" }[estado] || estado;
   }
 
   function wirePasoPublicaciones(main) {
@@ -595,7 +595,7 @@ window.LC = window.LC || {};
     const { resumen } = state.preparacion;
     return `
       <div class="panel-card text-center py-12">
-        <div class="text-5xl mb-4">🎉</div>
+        <div class="text-5xl mb-4">${icon("checkCircle")}</div>
         <h2 class="text-xl font-semibold mb-2">${resumen.listosParaPublicar + resumen.requierenRevision} publicaciones quedaron guardadas como borrador</h2>
         <p class="text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-6">Todavía no se envió nada a Mercado Libre — vas a poder publicarlas de verdad en cuanto conectes tu cuenta.</p>
         <div class="flex items-center justify-center gap-3">

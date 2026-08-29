@@ -17,7 +17,7 @@ corriendo — `js/dataSource.js` chequea `GET /api/health` una vez por carga
 de página y usa datos reales si responde. **Si el backend no está
 corriendo, cada pantalla cae sola a Demo Mode**, sin romperse y sin mezclar
 nunca datos reales con datos de ejemplo en la misma vista — un indicador
-visible (pill verde "🟢 real" o amarillo "🟡 demo", según la pantalla) dice
+visible (pill verde "real" o amarillo "demo", según la pantalla) dice
 siempre cuál de los dos estás viendo.
 
 Mercado Libre (ventas/pedidos/gráfico) y Sincronización siguen en Demo Mode

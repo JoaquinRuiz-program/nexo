@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/styles.css?v=2" />
+  <link rel="stylesheet" href="css/styles.css?v=3" />
 </head>
 <body class="min-h-screen w-full bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200">
 
@@ -64,7 +64,7 @@
             <label class="form-label" for="login-password">Contraseña</label>
             <div class="relative">
               <input id="login-password" type="password" required autocomplete="current-password" placeholder="••••••••" class="form-input form-input--icon-right" />
-              <button type="button" id="login-toggle-password" class="password-toggle" aria-label="Mostrar contraseña">👁️</button>
+              <button type="button" id="login-toggle-password" class="password-toggle" aria-label="Mostrar contraseña"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10Z"/><circle cx="10" cy="10" r="2.3"/></svg></button>
             </div>
           </div>
           <div class="flex items-center justify-between text-sm">
@@ -105,7 +105,7 @@
             <label class="form-label" for="signup-password">Contraseña</label>
             <div class="relative">
               <input id="signup-password" type="password" required autocomplete="new-password" placeholder="••••••••" class="form-input form-input--icon-right" />
-              <button type="button" id="signup-toggle-password" class="password-toggle" aria-label="Mostrar contraseña">👁️</button>
+              <button type="button" id="signup-toggle-password" class="password-toggle" aria-label="Mostrar contraseña"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10Z"/><circle cx="10" cy="10" r="2.3"/></svg></button>
             </div>
           </div>
           <div>
@@ -152,25 +152,25 @@
 
         <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto" id="sidebar-nav">
           <a href="#/dashboard" data-route="dashboard" class="nav-link">
-            <span class="nav-icon">📊</span> Dashboard
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="10" width="3" height="7" rx="0.5"/><rect x="8.5" y="6" width="3" height="11" rx="0.5"/><rect x="14" y="3" width="3" height="14" rx="0.5"/></svg></span> Dashboard
           </a>
           <a href="#/productos" data-route="productos" class="nav-link">
-            <span class="nav-icon">📦</span> Productos
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5 17 6.5v7L10 17.5 3 13.5v-7z"/><path d="M3 6.5 10 10.5l7-4"/><path d="M10 10.5v7"/></svg></span> Productos
           </a>
           <a href="#/importar" data-route="importar" class="nav-link">
-            <span class="nav-icon">📥</span> Importar catálogo
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v9"/><path d="M6.5 6.5 10 3l3.5 3.5"/><path d="M3.5 13v2a1.5 1.5 0 0 0 1.5 1.5h10a1.5 1.5 0 0 0 1.5-1.5v-2"/></svg></span> Importar catálogo
           </a>
           <a href="#/mercadolibre" data-route="mercadolibre" class="nav-link">
-            <span class="nav-icon">🛒</span> Mercado Libre
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h2l1.6 9.2a1.5 1.5 0 0 0 1.48 1.3h6.44a1.5 1.5 0 0 0 1.47-1.2L17.5 7H6"/><circle cx="8.5" cy="16.5" r="1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="16.5" r="1" fill="currentColor" stroke="none"/></svg></span> Mercado Libre
           </a>
           <a href="#/sincronizacion" data-route="sincronizacion" class="nav-link">
-            <span class="nav-icon">🔄</span> Sincronización
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5.5A6.5 6.5 0 0 0 5 8"/><path d="M4 3v3.5h3.5"/><path d="M4 14.5A6.5 6.5 0 0 0 15 12"/><path d="M16 17v-3.5h-3.5"/></svg></span> Sincronización
           </a>
           <a href="#/suscripcion" data-route="suscripcion" class="nav-link">
-            <span class="nav-icon">💳</span> Suscripción
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><path d="M2.5 8.5h15"/></svg></span> Suscripción
           </a>
           <a href="#/configuracion" data-route="configuracion" class="nav-link">
-            <span class="nav-icon">⚙️</span> Configuración
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h4.4M12.6 6H16"/><circle cx="10.5" cy="6" r="1.6" fill="currentColor" stroke="none"/><path d="M4 10.5h2M9 10.5H16"/><circle cx="6.5" cy="10.5" r="1.6" fill="currentColor" stroke="none"/><path d="M4 15h8.4M16 15h.01"/><circle cx="14" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></span> Configuración
           </a>
         </nav>
 
@@ -183,7 +183,7 @@
       <div class="flex-1 flex flex-col min-w-0">
         <header class="h-16 shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-6 gap-3">
           <div class="flex items-center gap-3 min-w-0">
-            <button id="hamburger-btn" class="md:hidden text-slate-500 dark:text-slate-300 text-xl leading-none" aria-label="Abrir menú">☰</button>
+            <button id="hamburger-btn" class="md:hidden text-slate-500 dark:text-slate-300 text-xl leading-none" aria-label="Abrir menú"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
             <h1 id="page-title" class="text-lg font-semibold truncate">Dashboard</h1>
           </div>
 
@@ -191,7 +191,7 @@
             <span class="demo-pill hidden sm:inline-flex items-center gap-1.5">● Modo demostración</span>
 
             <button id="theme-toggle-btn" class="icon-btn" aria-label="Cambiar tema" title="Cambiar tema">
-              <span id="theme-toggle-icon">🌙</span>
+              <span id="theme-toggle-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.5 12.9A6.5 6.5 0 0 1 7.1 4.5a6.5 6.5 0 1 0 8.4 8.4z" fill="currentColor" stroke="none"/></svg></span>
             </button>
 
             <div class="relative">
@@ -216,7 +216,7 @@
     </div>
   </div>
 
-  <script src="js/ui.js?v=2"></script>
+  <script src="js/ui.js?v=3"></script>
   <script src="js/theme.js?v=2"></script>
   <script src="js/settings.js?v=2"></script>
   <script src="js/chart.js?v=2"></script>
@@ -224,9 +224,9 @@
   <script src="js/dataSource.js?v=3"></script>
   <script src="js/backendApi.js?v=4"></script>
   <script src="js/demoImportResult.js?v=2"></script>
-  <script src="js/importFlow.js?v=2"></script>
+  <script src="js/importFlow.js?v=3"></script>
   <script src="js/auth.js?v=2"></script>
-  <script src="js/app.js?v=5"></script>
+  <script src="js/app.js?v=6"></script>
   <script src="js/router.js?v=2"></script>
 </body>
 </html>
