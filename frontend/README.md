@@ -9,15 +9,20 @@ Vive fuera de `src/` (el prototipo React original, que no se toca) y de
 `backend/` (el backend real en FastAPI) — es su propio proyecto estático,
 sin build ni dependencias que instalar.
 
-## Demo Mode (actualizado 22 de agosto de 2026)
+## Demo Mode + backend real (actualizado 29 de agosto de 2026)
 
-Por pedido explícito del dueño, esta fase se enfoca solo en dejar la
-interfaz completa, navegable y profesional — **sin conectar todavía
-WooCommerce ni Mercado Libre real**, aunque el backend (`backend/`) ya
-funciona contra la tienda real. El frontend hoy NO llama a ese backend:
-todos los datos que ves (productos, stock, precios, ventas y pedidos de
-Mercado Libre, suscripción, cuenta) son de ejemplo, generados en el
-navegador por `js/demoData.js`.
+Dashboard, Productos, detalle de producto e Importar catálogo ya hablan con
+el backend real (`backend/`, `http://localhost:8000`) cuando está
+corriendo — `js/dataSource.js` chequea `GET /api/health` una vez por carga
+de página y usa datos reales si responde. **Si el backend no está
+corriendo, cada pantalla cae sola a Demo Mode**, sin romperse y sin mezclar
+nunca datos reales con datos de ejemplo en la misma vista — un indicador
+visible (pill verde "🟢 real" o amarillo "🟡 demo", según la pantalla) dice
+siempre cuál de los dos estás viendo.
+
+Mercado Libre (ventas/pedidos/gráfico) y Sincronización siguen en Demo Mode
+siempre, incluso con el backend corriendo — no hay agregación de ventas por
+fecha ni motor de sincronización real todavía (ver "Qué falta" más abajo).
 
 El catálogo demo tiene 58 productos base (75 filas contando variantes de
 color) con nombres reales de librería — no "Producto modelo N". También
@@ -36,19 +41,19 @@ cuando no lo está.
 y contraseña permiten entrar (`js/auth.js`) — no hay backend de
 autenticación real todavía. La contraseña nunca se guarda en ningún lado.
 
-## Arquitectura: dónde se conecta el backend real más adelante
+## Arquitectura: cómo se decide real vs. demo
 
-Las pantallas (`js/app.js`) nunca leen `js/demoData.js` directamente — todas
-piden datos a través de `js/dataSource.js`, que es la única puerta de
-entrada. Cuando llegue el momento de conectar el backend real:
+Las pantallas (`js/app.js`) nunca leen `js/demoData.js` ni llaman a
+`fetch()` directamente — todas piden datos a través de `js/dataSource.js`,
+la única puerta de entrada. `js/dataSource.js` es también el único archivo
+que decide el modo (`getModo()`, con `LC.backendApi.checkHealth()`) y hacia
+dónde caer si el backend no responde — ninguna pantalla necesita saber de
+dónde vino el dato.
 
-1. `js/dataSource.js` es el único archivo que hay que reescribir, para que
-   sus funciones llamen a `js/backendApi.js` (el cliente HTTP real, ya
-   construido y probado en la fase anterior contra `GET
-   /api/productos/reporte`) en vez de a los datos de ejemplo.
-2. Ninguna pantalla ni componente visual necesita cambios.
-
-`js/backendApi.js` no se usa todavía, pero queda listo para ese momento.
+`js/importFlow.js` (la pantalla "Importar catálogo") sigue el mismo patrón
+por su cuenta: chequea el backend al entrar y usa
+`js/demoImportResult.js` (una fotografía estática de una respuesta real,
+no lógica reimplementada) si no está disponible.
 
 ## Estructura
 
@@ -70,24 +75,33 @@ frontend/
     demoData.js        Catálogo (58 productos, nombres reales de librería),
                        planes, cuenta y 149 pedidos de ejemplo de Mercado
                        Libre (cada uno referencia un SKU real del catálogo).
-    dataSource.js       Única puerta de datos para las pantallas — hoy lee
-                       demoData.js; el día de mañana hablará con el
-                       backend real sin que las pantallas cambien.
-    backendApi.js       Cliente HTTP del backend real (FastAPI). Construido
-                       y probado, pero NO se usa todavía (ver Demo Mode).
+    dataSource.js       Única puerta de datos para las pantallas — decide
+                       real vs. demo (getModo()) y cae a demoData.js sola
+                       si el backend no responde.
+    backendApi.js       Cliente HTTP del backend real (FastAPI) — usado por
+                       dataSource.js e importFlow.js.
+    demoImportResult.js  Fotografía estática de una respuesta real del
+                       asistente de importación, para su Demo Mode propio.
+    importFlow.js        Pantalla "Importar catálogo": asistente de 6 pasos
+                       (subir → mapeo → confirmar → oportunidades →
+                       publicaciones → listo), conectado al backend real.
     auth.js             Sesión mock (login/registro/logout).
     app.js               Todas las pantallas: dashboard, productos, detalle
                        de producto, Mercado Libre, sincronización,
                        suscripción, configuración, y el shell (sidebar,
                        header, menú de usuario).
-    router.js           Router de hash (#/dashboard, #/productos/:id, etc.),
-                       protege las rutas según haya o no sesión.
+    router.js           Router de hash (#/dashboard, #/productos/:id,
+                       #/importar, etc.), protege las rutas según haya o no
+                       sesión.
   README.md
 ```
 
 ## Cómo correrlo
 
-No necesita el backend corriendo — todo funciona con datos de ejemplo.
+No necesita el backend corriendo — todo funciona con datos de ejemplo. Si
+querés ver datos reales (Dashboard, Productos, Importar catálogo), levantá
+también `backend/` (ver `backend/README.md`) antes de abrir el navegador —
+el frontend lo detecta solo, no hace falta configurar nada acá.
 
 **1. Sirve el frontend con un servidor local** (no lo abras con doble clic
 — algunas cosas, como el guardado de preferencias, funcionan mejor servidas
@@ -124,11 +138,16 @@ indicador "Modo demostración" visible en todo momento.
 - **Tema** (claro/oscuro/automático): se ajusta en Configuración → Apariencia,
   o con el botón de sol/luna en el header. También se recuerda.
 
-## Qué es Demo Mode y qué está preparado para el backend real
+## Qué es real hoy y qué sigue en Demo Mode
 
-Ver el informe completo entregado junto con este frontend (sección "C" y
-"D" del reporte final) para el detalle pantalla por pantalla. En resumen:
-todo lo que hoy se ve (catálogo, cuenta, suscripción, sincronización) es de
-ejemplo; lo que ya está preparado es la arquitectura (`dataSource.js` +
-`backendApi.js`) y el endpoint real del backend (`/api/productos/reporte`,
-que ya expone `productos: [...]` con los campos que la tabla necesita).
+**Real cuando el backend está corriendo:** Dashboard (stock, alertas,
+rentabilidad, ventas importadas, estado de Mercado Libre), Productos y
+detalle de producto, e Importar catálogo (el asistente completo, incluida
+la preparación de publicaciones — sigue siendo un borrador, nunca publica
+de verdad en Mercado Libre).
+
+**Siempre en Demo Mode todavía, con o sin backend corriendo:** cuenta/login
+(no hay autenticación real de usuarios del panel), suscripción, la sección
+de ventas/pedidos/gráfico de Mercado Libre (no hay agregación por fecha en
+el backend todavía) y sincronización (no hay motor real). La contraseña
+nunca se guarda en ningún lado, sea Demo Mode o no.

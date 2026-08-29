@@ -78,6 +78,36 @@ publicación":**
 
 195/195 tests pasando.
 
+## Tercera ronda (28-29 de agosto de 2026): OAuth blindado + dashboard real
+
+- **OAuth de Mercado Libre endurecido** (`app/api/routes/mercadolibre.py`):
+  una `TOKEN_ENCRYPTION_KEY` mal formada ya no escapa como 500 sin headers
+  CORS — ahora es un 400 con el detalle exacto, tanto en `/callback` como al
+  renovar un token vencido. Una renovación fallida por red (no por rechazo
+  de autenticación) devuelve 502 en vez de marcar la cuenta como
+  desconectada. +10 tests (caída total de red agotando reintentos,
+  `/callback` con error de red o código vencido, renovación automática de
+  token vencido en `/importar-ventas` con éxito y con rechazo, clave de
+  cifrado inválida). 202/202 tests.
+- **`GET /api/dashboard/resumen`** (`app/api/routes/dashboard.py`) — el
+  único endpoint que arma todo el Dashboard del frontend en una sola
+  llamada: catálogo (stock/alertas), rentabilidad (productos con costo,
+  rentables — `None` si no hay costos cargados, nunca un `0` engañoso),
+  ventas importadas (conteos, nunca montos) y estado real de conexión con
+  Mercado Libre. Reusa `build_profitability_rows` y un nuevo
+  `build_estado_conexion` (factorizado de `mercadolibre.py`) — no duplica
+  ninguna regla de negocio. `productos_db.py`: `_fila` renombrado a
+  `build_producto_fila` (público) para que el dashboard reuse el mismo
+  armado de fila que `/api/productos`. +7 tests. **209/209 tests pasando.**
+- **Frontend conectado de verdad** (`frontend/js/dataSource.js`): Dashboard,
+  Productos y el detalle de producto ya hablan con este backend cuando está
+  corriendo, y caen solos a Demo Mode si no responde — ver
+  `frontend/README.md`.
+
+Sin credenciales reales de Mercado Libre configuradas todavía (ver sección
+"Mercado Libre real" en `DATABASE.md`) — nada de eso se puede probar de
+punta a punta hasta que el dueño las genere en developers.mercadolibre.cl.
+
 ## Qué hay hoy (22 de agosto de 2026) — y qué NO hay todavía
 
 **Hay:** un adaptador de WooCommerce (`app/adapters/woocommerce.py`), puerto
@@ -243,6 +273,13 @@ backend/
       costos.py                POST /api/costos/importar (sube .xlsx/.csv)
       mercadolibre.py         GET .../estado, .../conectar, .../callback,
                           POST .../importar-ventas
+      catalogo.py              POST /api/catalogo/importar/analizar,
+                          /confirmar — importador universal por Excel/CSV
+      seleccion.py              GET /api/seleccion — qué conviene publicar
+      publicaciones.py          GET/POST /api/publicaciones/... — borrador
+                          de publicación, simulado
+      dashboard.py              GET /api/dashboard/resumen — todo el
+                          Dashboard del frontend en una sola llamada
     db/                    Base de datos propia — ver DATABASE.md
       seed_demo.py           Catálogo de prueba (python -m app.db.seed_demo)
       import_costs.py         Importa costos desde .xlsx o .csv
@@ -282,7 +319,7 @@ pip install -r requirements.txt
 copy .env.example .env        # y completa las credenciales reales (opcional para lo de abajo)
 alembic upgrade head           # crea la base de datos local (ver DATABASE.md)
 python -m app.db.seed_demo    # catálogo de prueba — no necesita WooCommerce
-python -m pytest -q           # 140 tests, no necesita WooCommerce ni Mercado Libre
+python -m pytest -q           # 209 tests, no necesita WooCommerce ni Mercado Libre
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -293,6 +330,21 @@ credenciales configuradas.
 Con el servidor corriendo: `http://localhost:8000/api/health` (chequeo
 básico) y `http://localhost:8000/api/productos/reporte` (el reporte real,
 una vez que el `.env` tenga las credenciales de verdad).
+
+### Volver a un estado limpio (antes de entregar, o entre pruebas)
+
+`libreria_central.db` es un archivo local (gitignored, nunca se sube) — el
+catálogo de `seed_demo.py` es solo para desarrollo/demo, nunca datos reales
+del dueño. Para borrar todo (catálogo de prueba, costos, cuentas de
+Mercado Libre de prueba, pedidos importados en pruebas) y dejar la base
+vacía, lista para datos reales o para volver a sembrar el catálogo demo:
+
+```bash
+cd backend
+rm libreria_central.db        # Windows: del libreria_central.db
+alembic upgrade head           # recrea el esquema vacío
+python -m app.db.seed_demo    # opcional — solo si querés el catálogo demo de nuevo
+```
 
 ## Frontend
 
