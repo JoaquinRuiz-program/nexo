@@ -27,15 +27,21 @@ window.LC = window.LC || {};
   // normal (lee y valida cada fila) — timeout más generoso solo para eso.
   const UPLOAD_TIMEOUT_MS = 30000;
 
+  // Mensajes de respaldo cuando el servidor no manda un "detail" propio —
+  // en lenguaje simple, sin códigos HTTP ni palabras técnicas: quien lee
+  // esto es el dueño del negocio, no alguien que sepa qué es un 500.
+  // Cuando SÍ hay un "detail" (lo redacta el propio backend, ver
+  // app/api/routes/), se usa tal cual — ya está pensado para explicar qué
+  // falta y cómo resolverlo.
   function classifyHttpError(status, detail, bodyParseFailed) {
-    if (status === 500) return { tipo: "servidor", mensaje: detail || "El backend no pudo completar la operación." };
+    if (status === 500) return { tipo: "servidor", mensaje: detail || "Hubo un problema procesando esto. Intenta de nuevo en un momento." };
     if (status === 502) {
       const esAuth = !!detail && /autenticaci[oó]n/i.test(detail);
-      return { tipo: "integracion", mensaje: detail || "No se pudo conectar con el servicio externo.", credenciales: esAuth ? "rechazadas" : "sin_conexion" };
+      return { tipo: "integracion", mensaje: detail || "No pudimos conectar con Mercado Libre en este momento. Intenta de nuevo más tarde.", credenciales: esAuth ? "rechazadas" : "sin_conexion" };
     }
-    if (status === 404) return { tipo: "endpoint", mensaje: detail || "No se encontró lo que buscábamos en el backend." };
-    if (status === 400) return { tipo: "datos", mensaje: detail || "Los datos enviados no son válidos." };
-    return { tipo: "http", mensaje: bodyParseFailed ? `El backend respondió HTTP ${status}.` : detail || `El backend respondió HTTP ${status}.` };
+    if (status === 404) return { tipo: "endpoint", mensaje: detail || "No encontramos lo que buscábamos." };
+    if (status === 400) return { tipo: "datos", mensaje: detail || "Algo en los datos ingresados no es válido. Revísalos e intenta de nuevo." };
+    return { tipo: "http", mensaje: detail || "Ocurrió un problema inesperado. Intenta de nuevo." };
   }
 
   // Punto único de fetch — cualquier función de acá abajo pasa por esto,
@@ -71,17 +77,17 @@ window.LC = window.LC || {};
         return { ok: false, error: classifyHttpError(res.status, detail, bodyParseFailed) };
       }
       if (bodyParseFailed || responseBody === null) {
-        return { ok: false, error: { tipo: "json", mensaje: "El backend respondió, pero el contenido no es un JSON válido." } };
+        return { ok: false, error: { tipo: "json", mensaje: "Ocurrió un problema inesperado leyendo la respuesta. Intenta de nuevo." } };
       }
       return { ok: true, data: responseBody };
     } catch (err) {
       clearTimeout(timeoutId);
       if (err && err.name === "AbortError") {
-        return { ok: false, error: { tipo: "timeout", mensaje: `El backend no respondió en ${timeoutMs / 1000} segundos.` } };
+        return { ok: false, error: { tipo: "timeout", mensaje: "El servidor está tardando más de lo normal. Intenta de nuevo en un momento." } };
       }
       return {
         ok: false,
-        error: { tipo: "red", mensaje: "No fue posible conectar con el backend. Verifica que esté corriendo, o que CORS permita este origen." },
+        error: { tipo: "red", mensaje: "No pudimos conectar con el servidor. Verifica tu conexión e intenta de nuevo." },
       };
     }
   }

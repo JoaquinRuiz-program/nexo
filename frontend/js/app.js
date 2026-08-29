@@ -99,7 +99,10 @@ window.LC = window.LC || {};
           main.innerHTML = `<div class="page-wrap">Sección no encontrada.</div>`;
       }
     } catch (err) {
-      main.innerHTML = `<div class="page-wrap"><div class="panel-card"><p class="text-red-600 dark:text-red-400 font-medium">Ocurrió un problema mostrando esta sección.</p><p class="text-sm text-slate-500 mt-1">${escapeHtml(String(err && err.message ? err.message : err))}</p></div></div>`;
+      // El mensaje técnico (err.message) queda plegado en "Ver detalles" —
+      // quien ve esta pantalla es el dueño del negocio, no alguien que
+      // necesite leer un stack trace para saber que algo salió mal.
+      main.innerHTML = `<div class="page-wrap"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">😕</div><p class="empty-state-title">Algo no funcionó como esperábamos</p><p class="empty-state-desc">Intenta recargar la página. Si el problema sigue, avísanos.</p><details class="mt-4 text-xs text-slate-400"><summary class="cursor-pointer">Ver detalles técnicos</summary><p class="mt-1 font-mono">${escapeHtml(String(err && err.message ? err.message : err))}</p></details></div></div>`;
     }
 
     if (scrollTarget) {
@@ -475,15 +478,26 @@ window.LC = window.LC || {};
     `;
   }
 
+  // "conectado" (real, bueno) / "demo" (dato de ejemplo, ni bueno ni malo)
+  // / cualquier otro valor = pendiente de configurar (neutro, no es un
+  // error) — un ícono + color por estado en vez de un simple punto, para
+  // que se entienda de un vistazo sin tener que leer el detalle.
+  const STATUS_ROW_ICON = { demo: "🧪" };
+
   function statusRow(label, info) {
-    const dotClass = info.estado === "demo" ? "bg-amber-400" : "bg-red-400";
+    // "conectado"/"conectada" (concuerda en género con cada label: Mercado
+    // Libre/WooCommerce vs. Base de datos) — se compara por prefijo en vez
+    // de armar dos strings distintos para el mismo estado.
+    const conectado = info.estado.startsWith("conectad");
+    const modificador = conectado ? "status-dot--conectado" : info.estado === "demo" ? "status-dot--demo" : "status-dot--pendiente";
+    const icono = conectado ? "✅" : STATUS_ROW_ICON[info.estado] || "⏳";
     return `
       <div class="status-row">
-        <div class="flex items-center gap-2.5">
-          <span class="status-dot ${dotClass}"></span>
-          <span class="text-sm font-medium">${escapeHtml(label)}</span>
+        <span class="status-dot ${modificador}">${icono}</span>
+        <div class="min-w-0">
+          <p class="status-row-label">${escapeHtml(label)}</p>
+          <p class="status-row-detail">${escapeHtml(info.detalle)}</p>
         </div>
-        <span class="text-xs font-medium text-slate-500 dark:text-slate-400">${escapeHtml(info.detalle)}</span>
       </div>
     `;
   }
