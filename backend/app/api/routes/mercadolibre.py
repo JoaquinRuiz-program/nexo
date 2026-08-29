@@ -136,11 +136,17 @@ def _account_status(account: MarketplaceAccount | None, configurado: bool) -> di
     }
 
 
+def build_estado_conexion(db: Session, settings: Settings) -> dict:
+    """Misma respuesta que GET /estado — factorizado para que
+    app/api/routes/dashboard.py pueda mostrar el estado real de conexión sin
+    duplicar la consulta ni inventar un "conectado" que no sea real."""
+    store = _get_default_store(db)
+    return _account_status(_get_account(db, store), _build_ml_config(settings).is_configured())
+
+
 @router.get("/estado")
 def estado(db: Session = Depends(get_db)) -> dict:
-    store = _get_default_store(db)
-    settings = get_settings()
-    return _account_status(_get_account(db, store), _build_ml_config(settings).is_configured())
+    return build_estado_conexion(db, get_settings())
 
 
 @router.get("/conectar")

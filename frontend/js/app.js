@@ -287,20 +287,26 @@ window.LC = window.LC || {};
   // ------------------------------------------------------------------
 
   async function renderDashboard(main) {
-    const [resumen, estado, resumenML, masVendidos] = await Promise.all([
+    const [modo, resumen, estado, resumenML, masVendidos] = await Promise.all([
+      LC.dataSource.getModo(),
       LC.dataSource.getDashboardResumen(),
       LC.dataSource.getEstadoSistema(),
       LC.dataSource.getResumenMercadoLibre(),
       LC.dataSource.getProductosMasVendidosMercadoLibre("30d", 5),
     ]);
+    const esReal = modo === "real";
 
     const alertas = [...resumen.alertasSinStock, ...resumen.alertasStockBajo].slice(0, 5);
 
     main.innerHTML = `
       <div class="page-wrap app-fade">
-        <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 mb-6 text-sm text-amber-800 dark:text-amber-200 flex items-center gap-2">
-          <span>🧪</span>
-          <span>Estás viendo datos de demostración (catálogo y ventas de Mercado Libre). Cuando conectemos tu WooCommerce y tu Mercado Libre reales, estos números reflejarán tu negocio real.</span>
+        <div class="rounded-xl border ${esReal ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200" : "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200"} px-4 py-3 mb-6 text-sm flex items-center gap-2">
+          <span>${esReal ? "🟢" : "🧪"}</span>
+          <span>${
+            esReal
+              ? "Catálogo real conectado al backend — el bloque de Mercado Libre y \"productos más vendidos\" abajo sigue siendo de ejemplo hasta conectar la sincronización."
+              : "Estás viendo datos de demostración (catálogo y ventas de Mercado Libre). Cuando conectemos tu WooCommerce y tu Mercado Libre reales, estos números reflejarán tu negocio real."
+          }</span>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
@@ -327,9 +333,11 @@ window.LC = window.LC || {};
           <div class="stat-card">
             <p class="stat-label">Última actualización</p>
             <p class="stat-value stat-value--sm">${formatDate(resumen.ultimaActualizacion)}</p>
-            <p class="stat-hint">Datos de demostración</p>
+            <p class="stat-hint">${esReal ? "Catálogo real" : "Datos de demostración"}</p>
           </div>
         </div>
+
+        ${esReal ? renderRentabilidadVentasPanel(resumen) : ""}
 
         <div class="panel-card mb-6">
           <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
@@ -366,7 +374,7 @@ window.LC = window.LC || {};
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
           <div class="panel-card">
             <h3 class="panel-title">Estado del sistema</h3>
-            <p class="panel-subtitle mb-2">Ninguna de estas conexiones está activa todavía.</p>
+            <p class="panel-subtitle mb-2">${esReal ? "Base de datos real conectada — WooCommerce y Mercado Libre según su estado real." : "Ninguna de estas conexiones está activa todavía."}</p>
             <div>
               ${statusRow("WooCommerce", estado.woocommerce)}
               ${statusRow("Mercado Libre", estado.mercadoLibre)}
@@ -395,11 +403,11 @@ window.LC = window.LC || {};
           </div>
           <div class="panel-card">
             <h3 class="panel-title">Accesos rápidos</h3>
-            <p class="panel-subtitle mb-3">Todo lo de acá usa datos de ejemplo por ahora.</p>
+            <p class="panel-subtitle mb-3">${esReal ? "El catálogo es real; Mercado Libre y sincronización siguen en modo de ejemplo." : "Todo lo de acá usa datos de ejemplo por ahora."}</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               ${quickLink("📦", "Ver productos", "/productos")}
+              ${quickLink("📥", "Importar catálogo", "/importar")}
               ${quickLink("🛒", "Mercado Libre", "/mercadolibre")}
-              ${quickLink("🔄", "Sincronización", "/sincronizacion")}
               ${quickLink("💳", "Suscripción", "/suscripcion")}
             </div>
           </div>
@@ -410,6 +418,34 @@ window.LC = window.LC || {};
     main.querySelectorAll("[data-nav]").forEach((btn) => {
       btn.addEventListener("click", () => LC.router.navigate(btn.dataset.nav));
     });
+  }
+
+  function renderRentabilidadVentasPanel(resumen) {
+    const rent = resumen.rentabilidad;
+    const ventas = resumen.ventas;
+    return `
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
+        <div class="panel-card">
+          <h3 class="panel-title mb-1">Rentabilidad</h3>
+          <p class="panel-subtitle mb-3">${rent.productosConCosto === 0 ? "Todavía no hay costos de compra cargados — importa un Excel/CSV con costo para ver esto." : "Calculado con tus costos y precios reales."}</p>
+          <div class="grid grid-cols-3 gap-3">
+            <div><p class="stat-label">Con costo cargado</p><p class="stat-value stat-value--sm mt-1">${rent.productosConCosto} / ${rent.totalProductos}</p></div>
+            <div><p class="stat-label">Rentables</p><p class="stat-value stat-value--sm stat-value--success mt-1">${rent.productosRentables ?? "—"}</p></div>
+            <div><p class="stat-label">Mercado Libre configurado</p><p class="stat-value stat-value--sm mt-1">${rent.canalesConfigurados.includes("mercadolibre") ? "Sí" : "No"}</p></div>
+          </div>
+          <button data-nav="/importar" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline mt-3">Importar catálogo con costos →</button>
+        </div>
+        <div class="panel-card">
+          <h3 class="panel-title mb-1">Ventas importadas</h3>
+          <p class="panel-subtitle mb-3">${ventas.pedidosImportados === 0 ? "Todavía no se importó ninguna venta de Mercado Libre." : "Pedidos reales importados desde Mercado Libre."}</p>
+          <div class="grid grid-cols-2 gap-3">
+            <div><p class="stat-label">Pedidos importados</p><p class="stat-value stat-value--sm mt-1">${ventas.pedidosImportados}</p></div>
+            <div><p class="stat-label">Últimos 30 días</p><p class="stat-value stat-value--sm mt-1">${ventas.pedidosUltimos30Dias}</p></div>
+          </div>
+          <p class="text-xs text-slate-400 dark:text-slate-500 mt-3">${ventas.ultimaVentaImportada ? `Última venta importada: ${formatDate(new Date(ventas.ultimaVentaImportada))}` : "Ninguna venta importada todavía."}</p>
+        </div>
+      </div>
+    `;
   }
 
   function rankRow(posicion, item, maxCantidad) {
@@ -830,7 +866,7 @@ window.LC = window.LC || {};
               )
               .join("")}
           </div>
-          <p class="text-xs text-slate-400 dark:text-slate-500 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">Historial de ejemplo — se reemplazará por el historial real del producto.</p>
+          <p class="text-xs text-slate-400 dark:text-slate-500 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">${historial.length ? "Historial de ejemplo — se reemplazará por el historial real del producto." : "Todavía no hay historial de cambios registrado para este producto."}</p>
         </div>
       </div>
     `;

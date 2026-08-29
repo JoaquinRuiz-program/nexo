@@ -29,7 +29,7 @@ class MarketplaceStockUpdate(BaseModel):
     cantidad: int | None = None
 
 
-def _fila(producto: Product, variante: ProductVariant) -> dict:
+def build_producto_fila(producto: Product, variante: ProductVariant) -> dict:
     return {
         "id": variante.id,
         "sku": variante.variant_sku or "",
@@ -57,7 +57,7 @@ def _fila(producto: Product, variante: ProductVariant) -> dict:
 @router.get("")
 def listar_productos(db: Session = Depends(get_db)) -> list[dict]:
     productos = db.query(Product).order_by(Product.name).all()
-    return [_fila(producto, variante) for producto in productos for variante in producto.variants]
+    return [build_producto_fila(producto, variante) for producto in productos for variante in producto.variants]
 
 
 @router.get("/{variant_id}")
@@ -65,7 +65,7 @@ def obtener_producto(variant_id: int, db: Session = Depends(get_db)) -> dict:
     variante = db.get(ProductVariant, variant_id)
     if variante is None:
         raise HTTPException(status_code=404, detail="Producto no encontrado.")
-    return _fila(variante.product, variante)
+    return build_producto_fila(variante.product, variante)
 
 
 @router.put("/{variant_id}/stock-mercadolibre")
@@ -87,4 +87,4 @@ def configurar_stock_mercado_libre(
 
     db.commit()
     db.refresh(variante)
-    return _fila(variante.product, variante)
+    return build_producto_fila(variante.product, variante)

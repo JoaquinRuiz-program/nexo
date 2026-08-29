@@ -4,51 +4,32 @@
  * Librería Central — capa de datos.
  *
  * Esta es la ÚNICA puerta por la que las pantallas (js/app.js) piden datos.
- * Hoy todo viene de js/demoData.js (Demo Mode). Cuando conectemos el
- * backend real, este es el ÚNICO archivo que hay que reescribir — cambiar
- * estas funciones para que llamen a js/backendApi.js en vez de a los datos
- * de ejemplo — sin tocar ninguna pantalla ni componente visual.
+ * Ningún componente visual llama a fetch() ni a js/demoData.js directo.
  *
- * `LC.dataSource.mode` es siempre "demo" en esta fase. No intenta conectar
- * con WooCommerce, Mercado Libre ni con el backend real todavía.
+ * 29 de agosto de 2026 — dashboard/productos ya hablan con el backend real
+ * cuando está disponible: `getModo()` resuelve "real"/"demo" una sola vez
+ * por carga de página con LC.backendApi.checkHealth(), y cada función de
+ * acá cae a Demo Mode sola si el backend no responde. Nunca se mezclan
+ * datos reales con datos de ejemplo en la misma pantalla — app.js usa
+ * `getModo()` para decidir qué aviso mostrar.
+ *
+ * getSincronizacion() y las funciones de ventas/pedidos de Mercado Libre
+ * (getResumenMercadoLibre y el resto) siguen en Demo Mode: no hay motor de
+ * sincronización real todavía, y el agregado de ventas por rango de fechas
+ * no tiene endpoint propio (solo el conteo que ya expone
+ * /api/dashboard/resumen) — quedan para una próxima etapa, no esta.
  *
  * ---------------------------------------------------------------------
- * De Demo Mode a datos reales (Fase 3, base de datos ya diseñada — ver
- * backend/DATABASE.md): cada función de acá seguirá devolviendo la MISMA
- * forma de datos, pero pidiéndola a un endpoint nuevo en vez de a
- * demoData.js. No hace falta esperar a tener la sincronización con
- * Mercado Libre funcionando para reemplazar Demo Mode — apenas la base de
- * datos tenga productos reales (importados de WooCommerce), ya se puede
- * conectar todo lo de acá excepto getSincronizacion, que sí depende del
- * motor de sincronización real:
- *
+ * Endpoints reales usados hoy (ver backend/app/api/routes/):
  *   getDashboardResumen()   -> GET /api/dashboard/resumen
- *                              (cuenta ProductVariant por store_id: total,
- *                              con/sin stock, stock bajo según
- *                              StoreSettings.low_stock_threshold)
- *   getEstadoSistema()      -> GET /api/estado-sistema
- *                              (existe WooCommerceProduct sincronizado
- *                              reciente? existe MarketplaceAccount con
- *                              status="connected"? — nunca inventar un
- *                              "conectado" que no sea real)
+ *   getEstadoSistema()      -> GET /api/mercadolibre/estado (WooCommerce
+ *                              sigue sin ser prioridad — nunca se inventa
+ *                              un "conectado" para eso)
  *   getProductos()          -> GET /api/productos
- *                              (join Product + ProductVariant + su
- *                              WooCommerceProduct/Variation opcional —
- *                              misma forma de fila que ya arma
- *                              build_productos_list en el backend hoy)
- *   getProductoDetalle(id)  -> GET /api/productos/:id
- *                              (Product + sus ProductVariant + su
- *                              WooCommerceProduct + sus
- *                              MarketplaceListing, si existen; el
- *                              historial viene de StockMovement)
- *   getSincronizacion()     -> GET /api/sincronizacion
- *                              (último SyncJob por store_id + sus SyncLog)
- *   getSuscripcion()        -> GET /api/suscripcion
- *                              (Subscription + Plan de la tienda; conteo
- *                              de ProductVariant como "productos usados")
- *
- * Ninguna pantalla necesita cambiar para este reemplazo: todas ya reciben
- * los datos a través de estas mismas seis funciones.
+ *   getProductoDetalle(id)  -> GET /api/productos/:id (+ getProductos()
+ *                              para armar la lista de variantes hermanas,
+ *                              mismo criterio que expand_variable_products
+ *                              en el backend)
  * ---------------------------------------------------------------------
  *
  * 22 de agosto de 2026 — se agregaron 5 funciones más para las ventas y
@@ -66,9 +47,19 @@
 window.LC = window.LC || {};
 
 (function () {
-  const MODE = "demo";
+  // Resuelto una sola vez por carga de página (no en cada llamada) — así
+  // todas las pantallas de una misma sesión ven el mismo modo, sin
+  // parpadeos entre real/demo si el backend tarda en responder.
+  let modoResuelto = null;
 
-  async function getDashboardResumen() {
+  async function getModo() {
+    if (modoResuelto === null) {
+      modoResuelto = (await LC.backendApi.checkHealth()) ? "real" : "demo";
+    }
+    return modoResuelto;
+  }
+
+  function demoDashboardResumen() {
     const rows = LC.demoData.catalogRows;
     const total = rows.length;
     const conStock = rows.filter((r) => r.estadoStock === "instock").length;
@@ -86,22 +77,95 @@ window.LC = window.LC || {};
       // número) cuando hay problemas de stock — las primeras 5 de cada tipo.
       alertasStockBajo: filasBajoStock.slice(0, 5),
       alertasSinStock: filasSinStock.slice(0, 5),
+      rentabilidad: null,
+      ventas: null,
+      mercadoLibre: null,
     };
   }
 
-  async function getEstadoSistema() {
+  // El backend devuelve todo agrupado (catalogo/rentabilidad/ventas/
+  // mercadoLibre) — acá se aplana solo lo que las pantallas de stock ya
+  // esperaban (mismos nombres que la versión demo de arriba), y se agregan
+  // las secciones nuevas sin nombre en conflicto para que app.js las use
+  // cuando el modo sea "real".
+  function adaptarDashboardResumen(data) {
     return {
-      woocommerce: { estado: "no_conectado", detalle: "Pendiente de configuración" },
+      total: data.catalogo.total,
+      conStock: data.catalogo.conStock,
+      sinStock: data.catalogo.sinStock,
+      stockBajo: data.catalogo.stockBajo,
+      ultimaActualizacion: new Date(data.ultimaActualizacion),
+      alertasStockBajo: data.catalogo.alertasStockBajo,
+      alertasSinStock: data.catalogo.alertasSinStock,
+      rentabilidad: data.rentabilidad,
+      ventas: data.ventas,
+      mercadoLibre: data.mercadoLibre,
+    };
+  }
+
+  async function getDashboardResumen() {
+    if ((await getModo()) === "real") {
+      const res = await LC.backendApi.fetchDashboardResumen();
+      if (res.ok) return adaptarDashboardResumen(res.data);
+      // El backend estaba arriba en el healthcheck pero esta consulta
+      // puntual falló (se cayó justo ahora, timeout, etc.) — no se rompe
+      // la pantalla, se cae a Demo Mode para esta carga.
+    }
+    return demoDashboardResumen();
+  }
+
+  async function getEstadoSistema() {
+    const base = { woocommerce: { estado: "no_conectado", detalle: "Pendiente de configuración" } };
+    if ((await getModo()) === "real") {
+      const res = await LC.backendApi.fetchMercadoLibreEstado();
+      if (res.ok) {
+        const ml = res.data;
+        return {
+          ...base,
+          mercadoLibre: ml.conectado
+            ? { estado: "conectado", detalle: `Cuenta ${ml.cuentaExternaId}` }
+            : { estado: "no_conectado", detalle: ml.credencialesConfiguradas ? "Credenciales configuradas — falta autorizar la cuenta" : "Pendiente de configuración" },
+          baseDeDatos: { estado: "conectada", detalle: "Backend real conectado" },
+        };
+      }
+    }
+    return {
+      ...base,
       mercadoLibre: { estado: "no_conectado", detalle: "Pendiente de configuración" },
       baseDeDatos: { estado: "demo", detalle: "Demo / Sin conexión" },
     };
   }
 
   async function getProductos() {
+    if ((await getModo()) === "real") {
+      const res = await LC.backendApi.fetchProductos();
+      if (res.ok) return res.data;
+    }
     return LC.demoData.catalogRows;
   }
 
   async function getProductoDetalle(id) {
+    if ((await getModo()) === "real") {
+      const res = await LC.backendApi.fetchProductoDetalle(id);
+      if (!res.ok) return null;
+      const row = res.data;
+      // Variantes hermanas (mismo producto padre, un color cada una) — se
+      // arman filtrando la lista completa, igual que hace demoData con
+      // catalogRaw; el backend no necesita un endpoint aparte para esto.
+      let variantes = [];
+      if (row.esVariante) {
+        const todas = await getProductos();
+        variantes = todas
+          .filter((r) => r.parentId === row.parentId)
+          .map((r) => ({ color: r.colorVariante, sku: r.sku, stockQuantity: r.stockQuantity }));
+      }
+      // El backend todavía no tiene un feed de historial real (StockMovement
+      // sin endpoint propio) ni fecha de creación por variante — se muestra
+      // vacío en vez de inventar eventos, la pantalla ya soporta un
+      // historial vacío sin romperse.
+      return { row, variantes, historial: [], creado: null };
+    }
+
     const numId = Number(id);
     const row = LC.demoData.catalogRows.find((r) => r.id === numId);
     if (!row) return null;
@@ -290,7 +354,7 @@ window.LC = window.LC || {};
   }
 
   LC.dataSource = {
-    mode: MODE,
+    getModo,
     getDashboardResumen,
     getEstadoSistema,
     getProductos,

@@ -19,6 +19,7 @@ from app.api.routes import (
     catalogo,
     configuracion,
     costos,
+    dashboard,
     mercadolibre,
     productos,
     productos_db,
@@ -69,6 +70,7 @@ app.include_router(mercadolibre.router)
 app.include_router(catalogo.router)
 app.include_router(seleccion.router)
 app.include_router(publicaciones.router)
+app.include_router(dashboard.router)
 
 
 @app.on_event("startup")

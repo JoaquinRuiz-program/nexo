@@ -4,10 +4,15 @@
  * Librería Central — cliente del backend real (FastAPI).
  *
  * 24 de agosto de 2026: este archivo empieza a usarse de verdad — antes
- * solo `fetchReporte()` existía, sin usar. `js/importFlow.js` es el primer
+ * solo `fetchReporte()` existía, sin usar. `js/importFlow.js` fue el primer
  * consumidor real: sube un catálogo, lo analiza, calcula rentabilidad,
  * arma la selección y prepara publicaciones — todo contra el backend real,
  * cuando está disponible.
+ *
+ * 29 de agosto de 2026: `js/dataSource.js` también consume este archivo
+ * ahora (dashboard/productos) — sigue siendo el único lugar que hace
+ * fetch() de verdad; dataSource.js decide cuándo usarlo y cuándo caer a
+ * Demo Mode.
  *
  * Nunca maneja API keys, secrets ni contraseñas — solo habla con este
  * backend propio, nunca directo con WooCommerce ni Mercado Libre.
@@ -85,6 +90,22 @@ window.LC = window.LC || {};
     return request("/api/productos/reporte");
   }
 
+  async function fetchDashboardResumen() {
+    return request("/api/dashboard/resumen");
+  }
+
+  async function fetchProductos() {
+    return request("/api/productos");
+  }
+
+  async function fetchProductoDetalle(id) {
+    return request(`/api/productos/${id}`);
+  }
+
+  async function fetchMercadoLibreEstado() {
+    return request("/api/mercadolibre/estado");
+  }
+
   // Chequeo rápido y silencioso — usado por importFlow.js para decidir si
   // mostrar el flujo real o el de demostración. Nunca lanza un error, ni
   // muestra un toast: es solo una pregunta de "¿estás ahí?".
@@ -129,6 +150,10 @@ window.LC = window.LC || {};
     API_BASE_URL,
     fetchReporte,
     checkHealth,
+    fetchDashboardResumen,
+    fetchProductos,
+    fetchProductoDetalle,
+    fetchMercadoLibreEstado,
     analizarCatalogo,
     confirmarImportacion,
     obtenerSeleccion,
