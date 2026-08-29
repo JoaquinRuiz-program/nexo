@@ -38,6 +38,8 @@ window.LC = window.LC || {};
     alert: '<circle cx="10" cy="10" r="8"/><path d="M10 6v5"/><circle cx="10" cy="14" r="0.9" fill="currentColor" stroke="none"/>',
     checkCircle: '<circle cx="10" cy="10" r="8"/><path d="M6.5 10.3l2.3 2.3 4.7-5"/>',
     store: '<path d="M3 8.5 4 3.5h12l1 5"/><path d="M3 8.5v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/><path d="M7.5 16.5v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4"/>',
+    bulb: '<path d="M7 15.5h6M8.5 18h3"/><path d="M10 2.5a5.5 5.5 0 0 0-3 10.1c.7.5 1.1 1.3 1.1 2.1h3.8c0-.8.4-1.6 1.1-2.1a5.5 5.5 0 0 0-3-10.1Z"/>',
+    link: '<path d="M8.2 11.8a4 4 0 0 1 0-5.5l1.8-1.8a4 4 0 0 1 5.5 5.5l-.9.9"/><path d="M11.8 8.2a4 4 0 0 1 0 5.5l-1.8 1.8a4 4 0 0 1-5.5-5.5l.9-.9"/>',
   };
 
   function icon(name, cls) {

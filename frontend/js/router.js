@@ -1,12 +1,14 @@
 "use strict";
 
 /**
- * Librería Central — router de hash, sin dependencias.
+ * Nexo — router de hash, sin dependencias.
  *
  * Rutas: #/login, #/signup, #/dashboard, #/productos, #/productos/:id,
- * #/mercadolibre, #/sincronizacion, #/suscripcion, #/configuracion.
- * Protege las rutas de la app (redirige a /login si no hay sesión) y las
- * de autenticación (redirige a /dashboard si ya hay sesión).
+ * #/oportunidades, #/importar, #/integraciones, #/mercadolibre,
+ * #/automatizaciones (#/sincronizacion redirige ahí), #/suscripcion,
+ * #/configuracion. Protege las rutas de la app (redirige a /login si no
+ * hay sesión) y las de autenticación (redirige a /dashboard si ya hay
+ * sesión).
  */
 
 window.LC = window.LC || {};

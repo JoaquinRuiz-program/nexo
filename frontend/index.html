@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Librería Central — Panel</title>
+  <title>Nexo — Panel</title>
 
   <!-- Evita el "flash" del tema equivocado: aplica la preferencia guardada
        antes de que se pinte la página. La versión completa (con listeners)
@@ -46,14 +46,14 @@
   <div id="auth-screens" class="hidden min-h-screen w-full flex items-center justify-center px-4 py-10">
     <div class="w-full max-w-md">
       <div class="flex items-center justify-center gap-2 mb-8">
-        <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-semibold">LC</div>
-        <span class="text-lg font-semibold">Librería Central</span>
+        <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-semibold">NX</div>
+        <span class="text-lg font-semibold">Nexo</span>
       </div>
 
       <!-- ---- LOGIN ---- -->
       <div id="screen-login" class="auth-card">
         <h1 class="text-xl font-semibold mb-1">Iniciar sesión</h1>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Entra a tu panel de Librería Central.</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Entra a tu panel de Nexo.</p>
 
         <form id="login-form" class="space-y-4" novalidate>
           <div>
@@ -90,7 +90,7 @@
       <!-- ---- SIGNUP ---- -->
       <div id="screen-signup" class="auth-card hidden">
         <h1 class="text-xl font-semibold mb-1">Crear cuenta</h1>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Prueba Librería Central sin compromiso.</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Prueba Nexo sin compromiso.</p>
 
         <form id="signup-form" class="space-y-4" novalidate>
           <div>
@@ -142,10 +142,10 @@
       <!-- Sidebar -->
       <aside id="sidebar" class="sidebar-panel fixed md:static z-40 -translate-x-full md:translate-x-0 w-72 shrink-0 h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-transform duration-200">
         <div class="h-16 flex items-center gap-2 px-5 border-b border-slate-200 dark:border-slate-800 shrink-0">
-          <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-semibold text-sm">LC</div>
-          <div>
-            <p class="text-sm font-semibold leading-tight">Librería Central</p>
-            <p class="text-xs text-slate-400 dark:text-slate-500 leading-tight">Panel interno</p>
+          <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-semibold text-sm">NX</div>
+          <div class="min-w-0">
+            <p class="text-sm font-semibold leading-tight">Nexo</p>
+            <p id="sidebar-empresa-activa" class="text-xs text-slate-400 dark:text-slate-500 leading-tight truncate">Empresa</p>
           </div>
           <button id="sidebar-close-btn" class="ml-auto md:hidden text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none" aria-label="Cerrar menú">✕</button>
         </div>
@@ -157,14 +157,17 @@
           <a href="#/productos" data-route="productos" class="nav-link">
             <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5 17 6.5v7L10 17.5 3 13.5v-7z"/><path d="M3 6.5 10 10.5l7-4"/><path d="M10 10.5v7"/></svg></span> Productos
           </a>
+          <a href="#/oportunidades" data-route="oportunidades" class="nav-link">
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 15.5h6M8.5 18h3"/><path d="M10 2.5a5.5 5.5 0 0 0-3 10.1c.7.5 1.1 1.3 1.1 2.1h3.8c0-.8.4-1.6 1.1-2.1a5.5 5.5 0 0 0-3-10.1Z"/></svg></span> Oportunidades
+          </a>
           <a href="#/importar" data-route="importar" class="nav-link">
             <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v9"/><path d="M6.5 6.5 10 3l3.5 3.5"/><path d="M3.5 13v2a1.5 1.5 0 0 0 1.5 1.5h10a1.5 1.5 0 0 0 1.5-1.5v-2"/></svg></span> Importar catálogo
           </a>
-          <a href="#/mercadolibre" data-route="mercadolibre" class="nav-link">
-            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h2l1.6 9.2a1.5 1.5 0 0 0 1.48 1.3h6.44a1.5 1.5 0 0 0 1.47-1.2L17.5 7H6"/><circle cx="8.5" cy="16.5" r="1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="16.5" r="1" fill="currentColor" stroke="none"/></svg></span> Mercado Libre
+          <a href="#/integraciones" data-route="integraciones" class="nav-link">
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.2 11.8a4 4 0 0 1 0-5.5l1.8-1.8a4 4 0 0 1 5.5 5.5l-.9.9"/><path d="M11.8 8.2a4 4 0 0 1 0 5.5l-1.8 1.8a4 4 0 0 1-5.5-5.5l.9-.9"/></svg></span> Integraciones
           </a>
-          <a href="#/sincronizacion" data-route="sincronizacion" class="nav-link">
-            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5.5A6.5 6.5 0 0 0 5 8"/><path d="M4 3v3.5h3.5"/><path d="M4 14.5A6.5 6.5 0 0 0 15 12"/><path d="M16 17v-3.5h-3.5"/></svg></span> Sincronización
+          <a href="#/automatizaciones" data-route="automatizaciones" class="nav-link">
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5.5A6.5 6.5 0 0 0 5 8"/><path d="M4 3v3.5h3.5"/><path d="M4 14.5A6.5 6.5 0 0 0 15 12"/><path d="M16 17v-3.5h-3.5"/></svg></span> Automatizaciones
           </a>
           <a href="#/suscripcion" data-route="suscripcion" class="nav-link">
             <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><path d="M2.5 8.5h15"/></svg></span> Suscripción
@@ -175,7 +178,7 @@
         </nav>
 
         <div class="px-4 py-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-400 dark:text-slate-500 shrink-0">
-          Librería Central · Fase 3
+          Nexo · Centro de automatización
         </div>
       </aside>
 
@@ -216,17 +219,17 @@
     </div>
   </div>
 
-  <script src="js/ui.js?v=3"></script>
+  <script src="js/ui.js?v=4"></script>
   <script src="js/theme.js?v=2"></script>
   <script src="js/settings.js?v=2"></script>
   <script src="js/chart.js?v=2"></script>
   <script src="js/demoData.js?v=2"></script>
-  <script src="js/dataSource.js?v=3"></script>
+  <script src="js/dataSource.js?v=4"></script>
   <script src="js/backendApi.js?v=4"></script>
   <script src="js/demoImportResult.js?v=2"></script>
   <script src="js/importFlow.js?v=3"></script>
   <script src="js/auth.js?v=2"></script>
-  <script src="js/app.js?v=6"></script>
-  <script src="js/router.js?v=2"></script>
+  <script src="js/app.js?v=7"></script>
+  <script src="js/router.js?v=3"></script>
 </body>
 </html>

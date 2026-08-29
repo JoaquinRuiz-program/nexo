@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Librería Central — orquestador de pantallas.
+ * Nexo — orquestador de pantallas.
  *
  * Todo lo que se ve viene de LC.dataSource (Demo Mode hoy). Este archivo no
  * sabe de dónde vienen los datos, solo cómo pintarlos — cuando dataSource
@@ -16,9 +16,12 @@ window.LC = window.LC || {};
   const SECTION_TITLES = {
     dashboard: "Dashboard",
     productos: "Productos",
+    oportunidades: "Oportunidades",
     importar: "Importar catálogo",
+    integraciones: "Integraciones",
     mercadolibre: "Mercado Libre",
-    sincronizacion: "Sincronización",
+    automatizaciones: "Automatizaciones",
+    sincronizacion: "Automatizaciones",
     suscripcion: "Suscripción",
     configuracion: "Configuración",
   };
@@ -65,7 +68,7 @@ window.LC = window.LC || {};
     wireShell();
     closeMobileSidebar();
     setActiveNav(routeName);
-    document.getElementById("page-title").textContent = SECTION_TITLES[routeName] || "Librería Central";
+    document.getElementById("page-title").textContent = SECTION_TITLES[routeName] || "Nexo";
     updateUserHeader();
 
     const main = document.getElementById("main-content");
@@ -80,14 +83,21 @@ window.LC = window.LC || {};
           if (param) await renderProductDetail(main, param);
           else await renderProductos(main);
           break;
+        case "oportunidades":
+          await renderOportunidades(main);
+          break;
         case "importar":
           await LC.importFlow.render(main);
+          break;
+        case "integraciones":
+          await renderIntegraciones(main);
           break;
         case "mercadolibre":
           await renderMercadoLibre(main);
           break;
-        case "sincronizacion":
-          await renderSincronizacion(main);
+        case "automatizaciones":
+        case "sincronizacion": // ruta anterior — misma pantalla, concepto ampliado
+          await renderAutomatizaciones(main);
           break;
         case "suscripcion":
           await renderSuscripcion(main);
@@ -136,6 +146,11 @@ window.LC = window.LC || {};
     document.getElementById("user-name-label").textContent = session.nombre;
     document.getElementById("user-avatar").textContent = initials(session.nombre);
     document.getElementById("theme-toggle-icon").innerHTML = icon(LC.theme.isDark() ? "sun" : "moon");
+    // "Empresa activa" — hoy siempre la misma (sin multiempresa real en el
+    // backend todavía), pero ya sale del nombre configurable en
+    // Configuración > General, no hardcodeada: el día que exista un
+    // selector de empresas, esto es lo único que hay que reemplazar.
+    document.getElementById("sidebar-empresa-activa").textContent = LC.settings.getAll().companyName;
   }
 
   function openMobileSidebar() {
@@ -280,7 +295,7 @@ window.LC = window.LC || {};
       }
       errorEl.classList.add("hidden");
       LC.auth.signup(nombre, email);
-      toast("success", "Cuenta creada. ¡Bienvenido a Librería Central!");
+      toast("success", "Cuenta creada. ¡Bienvenido a Nexo!");
       LC.router.navigate("/dashboard");
     });
   }
@@ -339,6 +354,7 @@ window.LC = window.LC || {};
           </div>
         </div>
 
+        ${esReal ? renderQueHacerAhora(resumen) : ""}
         ${esReal ? renderRentabilidadVentasPanel(resumen) : ""}
 
         <div class="panel-card mb-6">
@@ -405,12 +421,12 @@ window.LC = window.LC || {};
           </div>
           <div class="panel-card">
             <h3 class="panel-title">Accesos rápidos</h3>
-            <p class="panel-subtitle mb-3">${esReal ? "El catálogo es real; Mercado Libre y sincronización siguen en modo de ejemplo." : "Todo lo de acá usa datos de ejemplo por ahora."}</p>
+            <p class="panel-subtitle mb-3">${esReal ? "El catálogo es real; las ventas de Mercado Libre de abajo siguen siendo de ejemplo." : "Todo lo de acá usa datos de ejemplo por ahora."}</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               ${quickLink("box", "Ver productos", "/productos")}
+              ${quickLink("bulb", "Oportunidades", "/oportunidades")}
               ${quickLink("upload", "Importar catálogo", "/importar")}
-              ${quickLink("cart", "Mercado Libre", "/mercadolibre")}
-              ${quickLink("card", "Suscripción", "/suscripcion")}
+              ${quickLink("link", "Integraciones", "/integraciones")}
             </div>
           </div>
         </div>
@@ -420,6 +436,90 @@ window.LC = window.LC || {};
     main.querySelectorAll("[data-nav]").forEach((btn) => {
       btn.addEventListener("click", () => LC.router.navigate(btn.dataset.nav));
     });
+  }
+
+  // "Qué hacer ahora" — el corazón de la sección Oportunidades del
+  // Dashboard: sintetiza en 1-3 frases accionables lo que ya devolvió
+  // /api/dashboard/resumen, sin pedir ningún dato nuevo al backend ni
+  // inventar ninguna métrica que no venga de ahí.
+  function buildAccionesRecomendadas(resumen) {
+    const acciones = [];
+    const rent = resumen.rentabilidad;
+    const cat = resumen.catalogo;
+    const ml = resumen.mercadoLibre;
+
+    if (rent && rent.totalProductos > 0 && rent.productosConCosto < rent.totalProductos) {
+      const faltan = rent.totalProductos - rent.productosConCosto;
+      acciones.push({
+        tono: "warning",
+        texto: `${faltan} producto${faltan === 1 ? "" : "s"} sin costo registrado`,
+        detalle: "Sin costo no podemos calcular si conviene venderlos.",
+        cta: "Completar costos",
+        ruta: "/importar",
+      });
+    }
+    if (rent && rent.productosRentables > 0) {
+      acciones.push({
+        tono: "success",
+        texto: `${rent.productosRentables} producto${rent.productosRentables === 1 ? "" : "s"} con buena oportunidad de venta`,
+        detalle: "Ya tienen costo y precio cargados, y dejan margen positivo.",
+        cta: "Ver oportunidades",
+        ruta: "/oportunidades",
+      });
+    }
+    if (cat && cat.stockBajo > 0) {
+      acciones.push({
+        tono: "warning",
+        texto: `${cat.stockBajo} producto${cat.stockBajo === 1 ? "" : "s"} con stock bajo`,
+        detalle: "Podrían agotarse pronto.",
+        cta: "Ver productos",
+        ruta: "/productos",
+      });
+    }
+    if (ml) {
+      acciones.push(
+        ml.conectado
+          ? { tono: "success", texto: "Mercado Libre está conectado correctamente", detalle: "", cta: "Ver integración", ruta: "/integraciones" }
+          : {
+              tono: "neutral",
+              texto: "Mercado Libre todavía no está conectado",
+              detalle: ml.credencialesConfiguradas ? "Las credenciales ya están listas — falta autorizar la cuenta." : "Conéctalo para vender por ese canal.",
+              cta: "Conectar",
+              ruta: "/integraciones",
+            }
+      );
+    }
+    return acciones;
+  }
+
+  function renderQueHacerAhora(resumen) {
+    const acciones = buildAccionesRecomendadas(resumen);
+    const dotClass = { success: "dot--green", warning: "dot--amber", neutral: "dot--gray" };
+    return `
+      <div class="panel-card mb-6">
+        <h3 class="panel-title mb-1">Qué hacer ahora</h3>
+        <p class="panel-subtitle mb-4">Lo más importante para revisar hoy en tu empresa.</p>
+        ${
+          acciones.length
+            ? acciones
+                .map(
+                  (a) => `
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
+            <div class="flex items-start gap-3 min-w-0">
+              <span class="dot ${dotClass[a.tono]} mt-2"></span>
+              <div class="min-w-0">
+                <p class="text-sm font-medium">${escapeHtml(a.texto)}</p>
+                ${a.detalle ? `<p class="text-xs text-slate-400 mt-0.5">${escapeHtml(a.detalle)}</p>` : ""}
+              </div>
+            </div>
+            <button data-nav="${a.ruta}" class="btn-secondary !py-1.5 !text-xs shrink-0">${escapeHtml(a.cta)}</button>
+          </div>`
+                )
+                .join("")
+            : `<p class="text-sm text-emerald-600 dark:text-emerald-400">Todo está en orden — no hay nada urgente que revisar.</p>`
+        }
+      </div>
+    `;
   }
 
   function renderRentabilidadVentasPanel(resumen) {
@@ -1138,51 +1238,151 @@ window.LC = window.LC || {};
   }
 
   // ------------------------------------------------------------------
-  // Sincronización
+  // Oportunidades — qué conviene revisar o vender ahora, para cualquier
+  // rubro: reusa el mismo motor de rentabilidad que ya usa el asistente de
+  // importación (GET /api/seleccion vía LC.dataSource.getOportunidades()),
+  // pero como una pantalla propia a la que se vuelve sin re-subir nada.
   // ------------------------------------------------------------------
 
-  async function renderSincronizacion(main) {
-    const sync = await LC.dataSource.getSincronizacion();
+  const OPORTUNIDAD_LABEL = {
+    rentable: "Buena oportunidad",
+    margen_bajo: "Margen bajo",
+    no_rentable: "No conviene todavía",
+    sin_stock: "Sin stock reservado",
+    sin_datos: "Falta información",
+    no_seleccionado: "Fuera del límite",
+  };
+
+  async function renderOportunidades(main) {
+    const [modo, data] = await Promise.all([LC.dataSource.getModo(), LC.dataSource.getOportunidades()]);
+    const esReal = modo === "real";
+    const productos = [...(data.productos || [])].sort((a, b) => (b.margenTiendaClp ?? -Infinity) - (a.margenTiendaClp ?? -Infinity));
+    const r = data.resumen || {};
+
     main.innerHTML = `
       <div class="page-wrap app-fade">
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div class="stat-card"><p class="stat-label">Estado</p><p class="stat-value stat-value--sm">No conectado</p></div>
-          <div class="stat-card"><p class="stat-label">Última sincronización</p><p class="stat-value stat-value--sm">${sync.ultimaSincronizacion ? formatDate(sync.ultimaSincronizacion) : "—"}</p></div>
-          <div class="stat-card"><p class="stat-label">Productos sincronizados</p><p class="stat-value stat-value--sm">—</p></div>
-          <div class="stat-card"><p class="stat-label">Pendientes / Errores</p><p class="stat-value stat-value--sm">—</p></div>
+        ${esReal ? "" : `<div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 mb-6 text-sm text-amber-800 dark:text-amber-200">Estás viendo datos de demostración — sube tu catálogo en "Importar catálogo" para ver tus oportunidades reales.</div>`}
+
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
+          <div class="stat-card"><p class="stat-label">Total</p><p class="stat-value stat-value--sm">${r.total ?? productos.length}</p></div>
+          <div class="stat-card"><p class="stat-label">Buenas oportunidades</p><p class="stat-value stat-value--sm stat-value--success">${r.rentables ?? 0}</p></div>
+          <div class="stat-card"><p class="stat-label">Margen bajo</p><p class="stat-value stat-value--sm stat-value--warning">${r.margenBajo ?? 0}</p></div>
+          <div class="stat-card"><p class="stat-label">No conviene</p><p class="stat-value stat-value--sm stat-value--danger">${r.noRentables ?? 0}</p></div>
+          <div class="stat-card"><p class="stat-label">Falta información</p><p class="stat-value stat-value--sm">${r.sinDatos ?? 0}</p></div>
         </div>
 
-        <div class="panel-card mb-5">
-          <h3 class="panel-title mb-4">Flujo de sincronización</h3>
-          <div class="sync-flow">
-            <div class="sync-node">${icon("store")} WooCommerce</div>
-            <span class="sync-arrow">→</span>
-            <div class="sync-node">${icon("cart")} Mercado Libre</div>
-            <span class="badge badge-simple ml-2">No configurado</span>
-          </div>
-          <p class="text-sm text-slate-500 dark:text-slate-400 mt-4">Última ejecución: —</p>
-        </div>
-
-        <div class="panel-card max-w-2xl">
-          <div class="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <h3 class="panel-title mb-1">Sincronizar ahora</h3>
-              <p class="text-sm text-slate-500 dark:text-slate-400">Trae y actualiza publicaciones de Mercado Libre a partir de tu catálogo.</p>
-            </div>
-            <button id="sync-now-btn" class="btn-primary shrink-0">Sincronizar ahora</button>
-          </div>
-          <p class="text-xs text-slate-400 dark:text-slate-500 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-            Este panel no simula sincronizaciones que no ocurrieron: los valores de arriba solo cambiarán cuando la sincronización real exista.
-          </p>
+        <div class="panel-card">
+          <h3 class="panel-title mb-1">Qué conviene revisar</h3>
+          <p class="panel-subtitle mb-4">Calculado con tus costos y precios reales — sin asumir ninguna comisión que no hayas confirmado.</p>
+          ${
+            productos.length
+              ? `<div class="table-wrap"><table class="w-full text-sm">
+                  <thead>
+                    <tr class="text-left border-b border-slate-200 dark:border-slate-700">
+                      <th class="px-3 py-2 font-medium">Producto</th>
+                      <th class="px-3 py-2 font-medium text-right">Precio</th>
+                      <th class="px-3 py-2 font-medium text-right">Costo</th>
+                      <th class="px-3 py-2 font-medium text-right">Ganancia estimada</th>
+                      <th class="px-3 py-2 font-medium text-right">Margen</th>
+                      <th class="px-3 py-2 font-medium">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${productos
+                      .map(
+                        (p) => `
+                      <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0 ${p.id ? "cursor-pointer" : ""}" ${p.id ? `data-open="${p.id}"` : ""}>
+                        <td class="px-3 py-2.5">
+                          <p class="font-medium text-slate-800 dark:text-slate-100">${escapeHtml(p.nombre)}</p>
+                          <p class="text-xs text-slate-400 font-mono">${escapeHtml(p.sku || "—")}</p>
+                        </td>
+                        <td class="px-3 py-2.5 text-right">${p.precio != null ? formatCLP(p.precio) : "—"}</td>
+                        <td class="px-3 py-2.5 text-right">${p.costo != null ? formatCLP(p.costo) : "—"}</td>
+                        <td class="px-3 py-2.5 text-right font-medium ${p.margenTiendaClp != null && p.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${p.margenTiendaClp != null ? formatCLP(p.margenTiendaClp) : "—"}</td>
+                        <td class="px-3 py-2.5 text-right">${p.margenTiendaPct != null ? `${p.margenTiendaPct.toFixed(1)}%` : "—"}</td>
+                        <td class="px-3 py-2.5"><span class="reco-badge reco-${p.clasificacion}">${OPORTUNIDAD_LABEL[p.clasificacion] || p.clasificacion}</span></td>
+                      </tr>`
+                      )
+                      .join("")}
+                  </tbody>
+                </table></div>`
+              : `<div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("bulb")}</div><p class="empty-state-title">Todavía no hay productos para revisar</p><p class="empty-state-desc">Sube tu catálogo para que calculemos qué te conviene vender.</p></div>`
+          }
         </div>
       </div>
     `;
-    document.getElementById("sync-now-btn").addEventListener("click", () => {
-      infoModal("Sincronización no disponible", "La sincronización todavía no está disponible porque Mercado Libre no está conectado.", {
-        secondaryLabel: "Conectar Mercado Libre",
-        onSecondary: () => LC.router.navigate("/mercadolibre"),
-      });
+
+    main.querySelectorAll("[data-open]").forEach((tr) => {
+      tr.addEventListener("click", () => LC.router.navigate(`/productos/${tr.dataset.open}`));
     });
+  }
+
+  // ------------------------------------------------------------------
+  // Integraciones — con qué sistemas puede conectarse la empresa. Mercado
+  // Libre es UNA integración más, no el centro de la plataforma.
+  // ------------------------------------------------------------------
+
+  const INTEGRACION_ICON = { mercadolibre: "cart", woocommerce: "store", excel: "upload", shopify: "cart", sheets: "document" };
+  const INTEGRACION_ESTADO_LABEL = { conectado: "Conectado", no_conectado: "No conectado", disponible: "Disponible", proximamente: "Próximamente" };
+  const INTEGRACION_ESTADO_DOT = { conectado: "dot--green", no_conectado: "dot--gray", disponible: "dot--green", proximamente: "dot--gray" };
+  const INTEGRACION_CTA = { conectado: "Ver detalles", no_conectado: "Conectar", disponible: "Usar ahora", proximamente: "" };
+
+  async function renderIntegraciones(main) {
+    const data = await LC.dataSource.getIntegraciones();
+    main.innerHTML = `
+      <div class="page-wrap app-fade">
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6 max-w-2xl">Estas son las integraciones con las que tu empresa puede conectarse. Algunas ya están disponibles hoy; otras están planificadas.</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          ${data.integraciones
+            .map(
+              (i) => `
+            <div class="panel-card">
+              <div class="flex items-center justify-between gap-3 mb-1">
+                <h3 class="panel-title">${escapeHtml(i.nombre)}</h3>
+                <span class="dot ${INTEGRACION_ESTADO_DOT[i.estado]}"></span>
+              </div>
+              <p class="text-xs text-slate-400 mb-3">${escapeHtml(i.categoria)} · ${INTEGRACION_ESTADO_LABEL[i.estado]}</p>
+              <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">${escapeHtml(i.detalle)}</p>
+              ${i.ruta ? `<button data-nav="${i.ruta}" class="btn-secondary">${INTEGRACION_CTA[i.estado]}</button>` : `<span class="btn-disabled">Próximamente</span>`}
+            </div>`
+            )
+            .join("")}
+        </div>
+      </div>
+    `;
+    main.querySelectorAll("[data-nav]").forEach((btn) => {
+      btn.addEventListener("click", () => LC.router.navigate(btn.dataset.nav));
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Automatizaciones — qué está haciendo el sistema por la empresa sin
+  // que nadie tenga que hacerlo a mano. Hoy no hay ningún motor de
+  // automatización real corriendo (ni programado) — se muestra un estado
+  // vacío honesto, nunca una ejecución inventada.
+  // ------------------------------------------------------------------
+
+  const TIPOS_AUTOMATIZACION = [
+    "Actualizar catálogo", "Sincronizar ventas", "Analizar rentabilidad",
+    "Actualizar precios", "Generar reportes", "Detectar oportunidades",
+  ];
+
+  async function renderAutomatizaciones(main) {
+    main.innerHTML = `
+      <div class="page-wrap app-fade max-w-3xl">
+        <div class="panel-card text-center py-12 mb-5">
+          <div class="empty-state-icon">${icon("sync")}</div>
+          <p class="empty-state-title">Todavía no tienes automatizaciones activas</p>
+          <p class="empty-state-desc mx-auto">Cuando actives una, vas a poder ver acá su estado, cuándo corrió por última vez y cuándo vuelve a correr.</p>
+        </div>
+        <div class="panel-card">
+          <h3 class="panel-title mb-3">Lo que vas a poder automatizar</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            ${TIPOS_AUTOMATIZACION.map((t) => `<div class="flex items-center gap-2.5 text-sm text-slate-600 dark:text-slate-300"><span class="dot dot--gray"></span>${escapeHtml(t)}</div>`).join("")}
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   // ------------------------------------------------------------------
@@ -1334,11 +1534,22 @@ window.LC = window.LC || {};
         </div>
 
         <div class="panel-card">
-          <h3 class="panel-title mb-1">Integraciones</h3>
-          <p class="panel-subtitle mb-4">Ninguna está conectada todavía.</p>
-          <div class="space-y-3">
-            ${integrationRow("store", "WooCommerce", "No conectado")}
-            ${integrationRow("cart", "Mercado Libre", "No conectado")}
+          <div class="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h3 class="panel-title mb-1">Integraciones</h3>
+              <p class="panel-subtitle">Mercado Libre, WooCommerce, Excel y las que se agreguen más adelante.</p>
+            </div>
+            <button data-nav="/integraciones" class="btn-secondary shrink-0">Ver integraciones</button>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h3 class="panel-title mb-1">Usuarios y permisos</h3>
+              <p class="panel-subtitle">Todavía solo hay una cuenta por empresa — más adelante vas a poder invitar a tu equipo con distintos permisos.</p>
+            </div>
+            <span class="btn-disabled shrink-0">Próximamente</span>
           </div>
         </div>
 
@@ -1382,13 +1593,8 @@ window.LC = window.LC || {};
       toast("success", "Umbral de stock bajo actualizado.");
     });
 
-    main.querySelectorAll("[data-integration-configure]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        infoModal(
-          `Conectar ${btn.dataset.integrationConfigure}`,
-          `La integración con ${btn.dataset.integrationConfigure} estará disponible en una fase posterior del proyecto. Por ahora estás viendo la interfaz en modo demostración.`
-        );
-      });
+    main.querySelectorAll("[data-nav]").forEach((btn) => {
+      btn.addEventListener("click", () => LC.router.navigate(btn.dataset.nav));
     });
 
     document.getElementById("cfg-change-password").addEventListener("click", () => {
@@ -1410,20 +1616,6 @@ window.LC = window.LC || {};
     `;
   }
 
-  function integrationRow(iconName, label, status) {
-    return `
-      <div class="flex items-center justify-between gap-4 py-1">
-        <div class="flex items-center gap-2.5">
-          <span class="text-lg">${icon(iconName)}</span>
-          <div>
-            <p class="text-sm font-medium">${escapeHtml(label)}</p>
-            <p class="text-xs text-slate-400">${escapeHtml(status)}</p>
-          </div>
-        </div>
-        <button data-integration-configure="${escapeHtml(label)}" class="btn-secondary !py-1.5 !text-xs">Configurar</button>
-      </div>
-    `;
-  }
 
   LC.app = { render };
 })();

@@ -176,6 +176,55 @@ window.LC = window.LC || {};
   }
 
   // ------------------------------------------------------------------
+  // Oportunidades — qué conviene vender/revisar. Reusa GET /api/seleccion
+  // (ya construido y probado para el asistente de importación) en vez de
+  // pedir un endpoint nuevo — misma fuente de verdad en ambos lugares.
+  // ------------------------------------------------------------------
+
+  async function getOportunidades() {
+    if ((await getModo()) === "real") {
+      const res = await LC.backendApi.obtenerSeleccion({ canal: "tienda", requiereStock: false });
+      if (res.ok) return res.data;
+    }
+    return LC.demoImportResult.seleccion;
+  }
+
+  // ------------------------------------------------------------------
+  // Integraciones — con qué sistemas puede conectarse la empresa. Mercado
+  // Libre usa su estado real (GET /api/mercadolibre/estado); las demás
+  // todavía no tienen conexión real, así que se muestran honestamente como
+  // "no conectado" o "próximamente" — nunca inventado.
+  // ------------------------------------------------------------------
+
+  async function getIntegraciones() {
+    const modo = await getModo();
+    let ml = { estado: "no_conectado", detalle: "Pendiente de configuración" };
+    if (modo === "real") {
+      const res = await LC.backendApi.fetchMercadoLibreEstado();
+      if (res.ok) {
+        ml = res.data.conectado
+          ? { estado: "conectado", detalle: `Cuenta conectada (${res.data.cuentaExternaId})` }
+          : {
+              estado: "no_conectado",
+              detalle: res.data.credencialesConfiguradas
+                ? "Credenciales configuradas — falta autorizar la cuenta"
+                : "Pendiente de configuración",
+            };
+      }
+    }
+    return {
+      modo,
+      integraciones: [
+        { id: "mercadolibre", nombre: "Mercado Libre", categoria: "Canal de venta", ...ml, ruta: "/mercadolibre" },
+        { id: "woocommerce", nombre: "WooCommerce", categoria: "Canal de venta", estado: "no_conectado", detalle: "Pendiente de configuración", ruta: null },
+        { id: "excel", nombre: "Excel / CSV", categoria: "Importación de catálogo", estado: "disponible", detalle: "Siempre disponible — sube un archivo cuando quieras", ruta: "/importar" },
+        { id: "shopify", nombre: "Shopify", categoria: "Canal de venta", estado: "proximamente", detalle: "Todavía no disponible", ruta: null },
+        { id: "sheets", nombre: "Google Sheets", categoria: "Importación de catálogo", estado: "proximamente", detalle: "Todavía no disponible", ruta: null },
+      ],
+    };
+  }
+
+  // ------------------------------------------------------------------
   // Mercado Libre — ventas/pedidos de demostración (js/demoData.js,
   // LC.demoData.pedidosML). Ningún pedido de acá es real: no hay conexión
   // con Mercado Libre todavía (ver getEstadoSistema, que sigue devolviendo
@@ -359,6 +408,8 @@ window.LC = window.LC || {};
     getEstadoSistema,
     getProductos,
     getProductoDetalle,
+    getOportunidades,
+    getIntegraciones,
     getSincronizacion,
     getSuscripcion,
     getResumenMercadoLibre,
