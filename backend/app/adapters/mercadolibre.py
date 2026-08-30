@@ -248,17 +248,26 @@ class MercadoLibreAdapter:
     async def create_item(self, access_token: str, payload: dict[str, Any]) -> dict[str, Any]:
         """POST /items — crea una publicación REAL en Mercado Libre.
 
-        Sin wirear a ningún endpoint todavía (fase de publicación, commit
-        1/N): nada en el resto del backend llama a este método hoy. Cuando
-        se conecte, tiene que ser SIEMPRE la última llamada de un flujo que
-        ya validó rentabilidad + atributos + duplicados — este método no
-        valida nada, solo manda el payload tal cual se lo pasan y devuelve
-        la respuesta real de Mercado Libre (con el `id`/`user_product_id`
-        reales) o deja que MercadoLibreAuthError/MercadoLibreRequestError
-        suba sin haber escrito nada en la base — eso es responsabilidad de
-        quien llame a esto, nunca del adaptador."""
+        29 de agosto de 2026, commit 4/N: ya conectado — la ÚNICA función
+        de todo el backend que lo llama es
+        _ejecutar_publicacion_real en app/api/routes/publicaciones.py,
+        siempre después de validar rentabilidad + atributos + duplicados.
+        Este método no valida nada, solo manda el payload tal cual se lo
+        pasan y devuelve la respuesta real de Mercado Libre (con el
+        `id`/`user_product_id` reales) o deja que
+        MercadoLibreAuthError/MercadoLibreRequestError suba sin haber
+        escrito nada en la base — eso es responsabilidad de quien llame a
+        esto, nunca del adaptador.
+
+        `retry_on_failure=False` A PROPÓSITO — a diferencia de cualquier
+        otro método de este adaptador: POST /items NO es idempotente (cada
+        llamada exitosa crea una publicación NUEVA). Si Mercado Libre
+        tarda o la conexión se corta después de que el pedido ya salió,
+        reintentar automáticamente podría estar creando una SEGUNDA
+        publicación real sin que nadie lo pidió — mucho peor que dejar que
+        el error suba y que quien llama decida qué decirle al dueño."""
         url = f"{API_BASE_URL}/items"
-        response = await self._request_with_retry("POST", url, access_token, json_body=payload)
+        response = await self._request_with_retry("POST", url, access_token, json_body=payload, retry_on_failure=False)
         return response.json()
 
     async def _get_with_retry(self, path: str, access_token: str) -> dict[str, Any]:
@@ -276,13 +285,20 @@ class MercadoLibreAdapter:
         access_token: Optional[str],
         form_data: Optional[dict[str, str]] = None,
         json_body: Optional[dict[str, Any]] = None,
+        retry_on_failure: bool = True,
     ) -> httpx.Response:
         headers = {"Accept": "application/json"}
         if access_token:
             headers["Authorization"] = f"Bearer {access_token}"
 
+        # retry_on_failure=False (ver create_item): una sola oportunidad,
+        # nunca reintenta un timeout/5xx — para una operación no
+        # idempotente, un reintento automático podría estar duplicando un
+        # efecto real que ya ocurrió del otro lado.
+        max_attempts = (self._cfg.max_retries + 1) if retry_on_failure else 1
+
         last_error: Optional[Exception] = None
-        for attempt in range(self._cfg.max_retries + 1):
+        for attempt in range(max_attempts):
             try:
                 if method == "GET":
                     response = await self._client.get(url, headers=headers, timeout=self._cfg.timeout_s)
@@ -296,7 +312,7 @@ class MercadoLibreAdapter:
                     response = await self._client.post(url, data=form_data, headers=headers, timeout=self._cfg.timeout_s)
             except httpx.HTTPError as err:
                 last_error = err
-                if attempt < self._cfg.max_retries:
+                if attempt < max_attempts - 1:
                     await asyncio.sleep(_backoff_delay_s(attempt))
                     continue
                 raise MercadoLibreRequestError(f"No se pudo conectar con {url}: {err}") from err
@@ -313,7 +329,7 @@ class MercadoLibreAdapter:
                     response.status_code,
                 )
 
-            if response.status_code in RETRYABLE_STATUS and attempt < self._cfg.max_retries:
+            if response.status_code in RETRYABLE_STATUS and attempt < max_attempts - 1:
                 await asyncio.sleep(_backoff_delay_s(attempt))
                 continue
 

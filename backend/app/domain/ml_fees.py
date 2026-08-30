@@ -56,6 +56,28 @@ def parse_listing_fees(raw: list[dict]) -> dict[str, ListingFee]:
     return resultado
 
 
+def resolver_listing_type(raw_fees: list[dict], opcion: str) -> Optional[dict]:
+    """29 de agosto de 2026, commit 4/N (publicación real): busca dentro del
+    array CRUDO de GET /listing_prices el item cuyo `listing_type_name` real
+    coincide (sin distinguir mayúsculas) con "clásica"/"premium" — a
+    propósito, NO usa LISTING_TYPE_IDS acá. El dueño pidió explícitamente
+    que el `listing_type_id` que se manda en POST /items se resuelva en
+    vivo por nombre en el momento de publicar, no confiando ciegamente en
+    la constante de arriba (pensada solo para mostrar comisiones
+    informativas, no para construir el payload real). Devuelve el dict
+    crudo completo (trae listing_type_id, currency_id, sale_fee_amount,
+    etc. reales) o None si esa opción no está disponible para la
+    categoría/cuenta consultada."""
+    nombre_buscado = {"classic": "clásica", "premium": "premium"}.get(opcion)
+    if nombre_buscado is None:
+        return None
+    for item in raw_fees:
+        nombre = (item.get("listing_type_name") or "").strip().lower()
+        if nombre == nombre_buscado:
+            return item
+    return None
+
+
 def elegir_comision_principal(comisiones: dict[str, ListingFee], preferencia: Optional[str]) -> Optional[ListingFee]:
     """Cuál de las comisiones reales (classic/premium) mostrar como "la"
     comisión de Mercado Libre de este producto, según la preferencia del

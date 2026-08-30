@@ -13,9 +13,12 @@ listar ni modificar nada del otro — ni siquiera adivinando/iterando un ID.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import httpx
 import pytest
 import respx
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -24,16 +27,19 @@ from sqlalchemy.pool import StaticPool
 
 from app.config import Settings
 from app.db.base import Base
-from app.db.models import MarketplaceAccount, Store
+from app.db.models import ChannelCostSettings, MarketplaceAccount, MarketplaceListing, ProductImage, ProductVariant, Store
 from app.db.session import get_db
+from app.domain.token_crypto import encrypt_token
 from app.main import app
+
+TEST_ENCRYPTION_KEY = Fernet.generate_key().decode("utf-8")
 
 CONFIGURED_SETTINGS = Settings(
     mercadolibre_client_id="test-client-id",
     mercadolibre_client_secret="test-client-secret",
     mercadolibre_redirect_uri="http://localhost:8000/api/mercadolibre/callback",
     mercadolibre_auth_domain="auth.mercadolibre.cl",
-    token_encryption_key="no-se-usa-en-estos-tests",
+    token_encryption_key=TEST_ENCRYPTION_KEY,
 )
 
 
@@ -222,6 +228,13 @@ def _conectar_cuenta_ml(db_session, empresa_id: int, *, site_id: str = "MLC") ->
         MarketplaceAccount(
             store=store, marketplace="mercadolibre", status="connected",
             external_account_id=str(empresa_id), external_account_site_id=site_id,
+            # Token real (cifrado) — hace falta para /confirmar, que sí
+            # necesita access_token para las llamadas autenticadas
+            # (get_listing_fees, create_item); /preparar y /validar no lo
+            # necesitaban porque solo llaman a endpoints públicos de ML.
+            access_token_encrypted=encrypt_token(f"token-empresa-{empresa_id}", TEST_ENCRYPTION_KEY),
+            refresh_token_encrypted=encrypt_token(f"refresh-empresa-{empresa_id}", TEST_ENCRYPTION_KEY),
+            token_expires_at=datetime(2027, 1, 1),
         )
     )
     db_session.commit()
@@ -316,3 +329,92 @@ def test_ningun_endpoint_de_negocio_responde_sin_sesion(client_a, metodo, ruta):
     endpoint funciona sin credenciales."""
     res = client_a.request(metodo, ruta)
     assert res.status_code == 401
+
+
+# ------------------------------------------------------------------
+# POST /{variant_id}/mercadolibre/confirmar — publicación REAL (29 de
+# agosto de 2026, commit 4/N). Prueba obligatoria de aislamiento: A puede
+# publicar A; A NO puede publicar B; A nunca usa la cuenta/token de B; un
+# store_id mandado por el cliente no cambia el tenant.
+# ------------------------------------------------------------------
+
+
+def _hacer_publicable(db_session, variant_id: int, *, costo: float, marketplace_stock: int = 5) -> None:
+    """_crear_producto (importador CSV) solo carga sku/nombre/precio — para
+    que classify_product pueda devolver "rentable" hace falta además costo,
+    stock reservado para ML y el canal "mercadolibre" configurado, más al
+    menos una imagen (gate real de /confirmar)."""
+    variante = db_session.get(ProductVariant, variant_id)
+    variante.cost_price = costo
+    variante.marketplace_stock = marketplace_stock
+    if not variante.product.images:
+        db_session.add(
+            ProductImage(product=variante.product, url="http://cdn.test/img.png", source="excel_url", position=0, created_at=datetime(2026, 8, 24))
+        )
+    ya_configurado = (
+        db_session.query(ChannelCostSettings).filter_by(store_id=variante.store_id, channel="mercadolibre").first()
+    )
+    if ya_configurado is None:
+        db_session.add(
+            ChannelCostSettings(store_id=variante.store_id, channel="mercadolibre", commission_pct=15.0, updated_at=datetime(2026, 8, 24))
+        )
+    db_session.commit()
+
+
+def test_empresa_a_publica_su_producto_y_nunca_puede_publicar_ni_usar_la_cuenta_de_empresa_b(
+    client_a, client_b, db_session, monkeypatch
+):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    a = _registrar(client_a, email="a15@empresas.cl", empresa="Empresa A15")
+    b = _registrar(client_b, email="b15@empresas.cl", empresa="Empresa B15")
+    # Sites distintos A PROPÓSITO: si A confundiera de cuenta, intentaría
+    # consultar el site de B (MLA, sin mockear acá) y la request fallaría.
+    _conectar_cuenta_ml(db_session, a["empresa"]["id"], site_id="MLC")
+    _conectar_cuenta_ml(db_session, b["empresa"]["id"], site_id="MLA")
+
+    variant_id_a = _crear_producto(client_a, sku="CONF-A", nombre="Producto de A", precio=5000)
+    variant_id_b = _crear_producto(client_b, sku="CONF-B", nombre="Producto de B", precio=5000)
+    _hacer_publicable(db_session, variant_id_a, costo=3000)
+    _hacer_publicable(db_session, variant_id_b, costo=3000)
+
+    atributos = [{"id": "BRAND", "name": "Marca", "tags": {}, "value_type": "string"}]
+    fees = [
+        {
+            "listing_type_id": "gold_special", "listing_type_name": "Clásica", "currency_id": "CLP",
+            "sale_fee_amount": 500, "sale_fee_details": {"fixed_fee": 0, "percentage_fee": 15},
+        }
+    ]
+
+    # A publica SU PROPIO producto, usando solo su propia cuenta (site MLC).
+    with respx.mock:
+        respx.get("https://api.mercadolibre.com/categories/MLC1/attributes").mock(return_value=httpx.Response(200, json=atributos))
+        respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=fees))
+        ruta_items = respx.post("https://api.mercadolibre.com/items").mock(
+            return_value=httpx.Response(201, json={"id": "MLC000000A", "user_product_id": "MLCU000A"})
+        )
+        res_propio = client_a.post(
+            f"/api/publicaciones/{variant_id_a}/mercadolibre/confirmar",
+            json={"category_id": "MLC1", "condition": "new", "listing_type": "classic"},
+        )
+    assert res_propio.status_code == 200, res_propio.text
+    assert ruta_items.calls.call_count == 1
+    assert res_propio.json()["itemId"] == "MLC000000A"
+
+    # A intenta publicar el producto de B, incluso mandando el store_id de
+    # B en el body — nunca lo lee (Pydantic lo descarta), sigue resolviendo
+    # el tenant solo por la sesión de A: 404, nunca 403 (no confirma que el
+    # producto existe). No se mockea /items ni el site MLA de B a propósito
+    # — si el endpoint llegara a intentar usarlos, la request fallaría acá
+    # en vez de devolver un 404 limpio.
+    with respx.mock:
+        respx.get("https://api.mercadolibre.com/categories/MLC1/attributes").mock(return_value=httpx.Response(200, json=atributos))
+        res_ajeno = client_a.post(
+            f"/api/publicaciones/{variant_id_b}/mercadolibre/confirmar",
+            json={"category_id": "MLC1", "condition": "new", "listing_type": "classic", "store_id": b["empresa"]["id"]},
+        )
+    assert res_ajeno.status_code == 404
+
+    # El producto de B nunca quedó publicado por la sesión de A.
+    variante_b = db_session.get(ProductVariant, variant_id_b)
+    publicaciones_de_b = db_session.query(MarketplaceListing).filter_by(product_id=variante_b.product_id).count()
+    assert publicaciones_de_b == 0
