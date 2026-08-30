@@ -80,6 +80,15 @@ class MarketplaceListing(Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("marketplace_accounts.id"), nullable=False)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
     external_listing_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # ID del "User Product" real de Mercado Libre (ej. "MLCU1234567") — lo
+    # devuelve gratis la misma respuesta de POST /items, ver
+    # MercadoLibreAdapter.create_item (29 de agosto de 2026, fase de
+    # publicación). Nadie lo usa todavía en v1 (que no actualiza ni agrupa
+    # variantes) — se guarda ahora para no necesitar otra migración el día
+    # que sí haga falta. Nullable siempre: no todas las publicaciones
+    # necesariamente lo tendrán (ver User Products, ítems previos al
+    # modelo nuevo).
+    user_product_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # not_published | active | paused | closed
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="not_published")
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
