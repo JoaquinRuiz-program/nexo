@@ -13,16 +13,28 @@ listar ni modificar nada del otro — ni siquiera adivinando/iterando un ID.
 
 from __future__ import annotations
 
+import httpx
 import pytest
+import respx
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from app.config import Settings
 from app.db.base import Base
+from app.db.models import MarketplaceAccount, Store
 from app.db.session import get_db
 from app.main import app
+
+CONFIGURED_SETTINGS = Settings(
+    mercadolibre_client_id="test-client-id",
+    mercadolibre_client_secret="test-client-secret",
+    mercadolibre_redirect_uri="http://localhost:8000/api/mercadolibre/callback",
+    mercadolibre_auth_domain="auth.mercadolibre.cl",
+    token_encryption_key="no-se-usa-en-estos-tests",
+)
 
 
 @event.listens_for(Engine, "connect")
@@ -194,6 +206,96 @@ def test_borrador_de_publicacion_de_empresa_b_no_es_visible_para_empresa_a(clien
 
     res = client_a.get(f"/api/publicaciones/borrador/{variant_id_b}")
     assert res.status_code == 404
+
+
+# ------------------------------------------------------------------
+# Publicación real en Mercado Libre — preparar/validar (29 de agosto de
+# 2026, commit 3/N). Cada empresa necesita su propia MarketplaceAccount
+# conectada — sin OAuth real en estos tests, se inserta directo en la
+# base (igual criterio que test_mercadolibre_endpoints.py:cuenta_conectada).
+# ------------------------------------------------------------------
+
+
+def _conectar_cuenta_ml(db_session, empresa_id: int, *, site_id: str = "MLC") -> None:
+    store = db_session.get(Store, empresa_id)
+    db_session.add(
+        MarketplaceAccount(
+            store=store, marketplace="mercadolibre", status="connected",
+            external_account_id=str(empresa_id), external_account_site_id=site_id,
+        )
+    )
+    db_session.commit()
+
+
+def test_empresa_a_no_puede_preparar_publicacion_de_un_producto_de_empresa_b(client_a, client_b, db_session, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    a = _registrar(client_a, email="a9@empresas.cl", empresa="Empresa A9")
+    b = _registrar(client_b, email="b9@empresas.cl", empresa="Empresa B9")
+    _conectar_cuenta_ml(db_session, a["empresa"]["id"])
+    _conectar_cuenta_ml(db_session, b["empresa"]["id"])
+    variant_id_b = _crear_producto(client_b, sku="PREP-B", nombre="Producto de B", precio=10000)
+
+    res = client_a.post(f"/api/publicaciones/{variant_id_b}/mercadolibre/preparar")
+    assert res.status_code == 404  # nunca 403 — no confirma que el producto existe
+
+
+def test_empresa_a_no_puede_validar_publicacion_de_un_producto_de_empresa_b(client_a, client_b, db_session, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    a = _registrar(client_a, email="a11@empresas.cl", empresa="Empresa A11")
+    b = _registrar(client_b, email="b11@empresas.cl", empresa="Empresa B11")
+    _conectar_cuenta_ml(db_session, a["empresa"]["id"])
+    _conectar_cuenta_ml(db_session, b["empresa"]["id"])
+    variant_id_b = _crear_producto(client_b, sku="VAL-B", nombre="Producto de B", precio=10000)
+
+    res = client_a.post(
+        f"/api/publicaciones/{variant_id_b}/mercadolibre/validar",
+        json={"category_id": "MLC180937", "condition": "new"},
+    )
+    assert res.status_code == 404
+
+
+def test_empresa_a_nunca_usa_la_cuenta_ml_de_empresa_b_para_preparar_su_propio_producto(client_a, client_b, db_session, monkeypatch):
+    """Empresa A tiene su cuenta ML conectada con un site_id distinto al
+    de Empresa B — si Nexo confundiera de cuenta, la predicción de
+    categoría se pediría al site de B, no al de A. Se prueba mockeando
+    SOLO el site de A: si el endpoint llamara al site de B, respx (sin esa
+    ruta mockeada) haría fallar la request en vez de devolver 200."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    a = _registrar(client_a, email="a12@empresas.cl", empresa="Empresa A12")
+    b = _registrar(client_b, email="b12@empresas.cl", empresa="Empresa B12")
+    _conectar_cuenta_ml(db_session, a["empresa"]["id"], site_id="MLC")
+    _conectar_cuenta_ml(db_session, b["empresa"]["id"], site_id="MLA")
+    variant_id_a = _crear_producto(client_a, sku="PROPIO-A", nombre="Producto propio de A", precio=5000)
+
+    with respx.mock:
+        ruta_mlc = respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/domain_discovery/search.*").mock(
+            return_value=httpx.Response(200, json=[{"category_id": "MLC180937", "category_name": "Cuadernos"}])
+        )
+        res = client_a.post(f"/api/publicaciones/{variant_id_a}/mercadolibre/preparar")
+
+    assert res.status_code == 200
+    assert ruta_mlc.calls.call_count == 1  # usó el site_id de SU PROPIA cuenta (MLC), nunca el de B (MLA)
+
+
+def test_ningun_store_id_enviado_por_el_cliente_altera_el_tenant_usado(client_a, client_b, db_session, monkeypatch):
+    """El body de /validar no declara ningún campo "store_id" — aunque el
+    cliente lo mande, Pydantic lo descarta sin que el endpoint lo vea. La
+    tienda usada sigue siendo exclusivamente la de la sesión autenticada."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    a = _registrar(client_a, email="a13@empresas.cl", empresa="Empresa A13")
+    b = _registrar(client_b, email="b13@empresas.cl", empresa="Empresa B13")
+    _conectar_cuenta_ml(db_session, a["empresa"]["id"])
+    _conectar_cuenta_ml(db_session, b["empresa"]["id"])
+    variant_id_a = _crear_producto(client_a, sku="STOREID-A", nombre="Producto propio de A", precio=5000)
+
+    with respx.mock:
+        respx.get("https://api.mercadolibre.com/categories/MLC1/attributes").mock(return_value=httpx.Response(200, json=[]))
+        res = client_a.post(
+            f"/api/publicaciones/{variant_id_a}/mercadolibre/validar",
+            json={"category_id": "MLC1", "condition": "new", "store_id": b["empresa"]["id"], "tienda_id": b["empresa"]["id"]},
+        )
+
+    assert res.status_code == 200  # A pudo validar SU PROPIO producto con normalidad
 
 
 @pytest.mark.parametrize(
