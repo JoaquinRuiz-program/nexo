@@ -9,6 +9,11 @@
  * #/configuracion. Protege las rutas de la app (redirige a /login si no
  * hay sesión) y las de autenticación (redirige a /dashboard si ya hay
  * sesión).
+ *
+ * 29 de agosto de 2026 — sesión real: antes de la primera navegación hay
+ * que preguntarle al backend si la cookie que mandó el navegador todavía
+ * vale (LC.auth.hydrate(), una sola vez — ver js/auth.js). Navegaciones
+ * siguientes (hashchange) usan el caché ya hidratado, síncrono.
  */
 
 window.LC = window.LC || {};
@@ -45,8 +50,23 @@ window.LC = window.LC || {};
     LC.app.render(name, param);
   }
 
+  async function init() {
+    await LC.auth.hydrate();
+    handleRoute();
+  }
+
+  // Sesión vencida/revocada en medio de la navegación (un 401 real, ver
+  // backendApi.js) — nunca pasa en la primera carga (eso es hydrate() de
+  // arriba, no esto). Limpia el estado, avisa, y vuelve a /login sin dejar
+  // la pantalla anterior a medio pintar.
+  LC.backendApi.setUnauthorizedHandler(() => {
+    LC.auth.clearCachedSession();
+    LC.ui.toast("info", "Tu sesión expiró. Inicia sesión de nuevo.");
+    navigate("/login");
+  });
+
   window.addEventListener("hashchange", handleRoute);
-  window.addEventListener("DOMContentLoaded", handleRoute);
+  window.addEventListener("DOMContentLoaded", init);
 
   LC.router = { navigate, parseHash, handleRoute };
 })();

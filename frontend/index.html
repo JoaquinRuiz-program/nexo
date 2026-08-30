@@ -75,15 +75,12 @@
             <button type="button" id="login-forgot" class="text-indigo-600 dark:text-indigo-400 hover:underline">¿Olvidaste tu contraseña?</button>
           </div>
           <p id="login-error" class="hidden text-sm text-red-600 dark:text-red-400"></p>
-          <button type="submit" class="btn-primary w-full justify-center">Iniciar sesión</button>
+          <button type="submit" id="login-submit" class="btn-primary w-full justify-center">Iniciar sesión</button>
         </form>
 
         <p class="text-sm text-center text-slate-500 dark:text-slate-400 mt-6">
           ¿No tienes cuenta?
           <a href="#/signup" class="text-indigo-600 dark:text-indigo-400 font-medium hover:underline">Crear cuenta</a>
-        </p>
-        <p class="text-xs text-center text-slate-400 dark:text-slate-500 mt-4">
-          Modo demostración — cualquier email y contraseña funcionan. Esta cuenta no se guarda en ningún servidor real.
         </p>
       </div>
 
@@ -96,6 +93,10 @@
           <div>
             <label class="form-label" for="signup-name">Nombre</label>
             <input id="signup-name" type="text" required autocomplete="name" placeholder="Tu nombre" class="form-input" />
+          </div>
+          <div>
+            <label class="form-label" for="signup-company">Nombre de tu empresa</label>
+            <input id="signup-company" type="text" required autocomplete="organization" placeholder="Ej: Librería Central" class="form-input" />
           </div>
           <div>
             <label class="form-label" for="signup-email">Email</label>
@@ -119,15 +120,12 @@
             </span>
           </label>
           <p id="signup-error" class="hidden text-sm text-red-600 dark:text-red-400"></p>
-          <button type="submit" class="btn-primary w-full justify-center">Crear cuenta</button>
+          <button type="submit" id="signup-submit" class="btn-primary w-full justify-center">Crear cuenta</button>
         </form>
 
         <p class="text-sm text-center text-slate-500 dark:text-slate-400 mt-6">
           ¿Ya tienes cuenta?
           <a href="#/login" class="text-indigo-600 dark:text-indigo-400 font-medium hover:underline">Iniciar sesión</a>
-        </p>
-        <p class="text-xs text-center text-slate-400 dark:text-slate-500 mt-4">
-          Modo demostración — esta cuenta se guarda solo en tu navegador, no en un servidor real.
         </p>
       </div>
     </div>
@@ -221,15 +219,15 @@
 
   <script src="js/ui.js?v=4"></script>
   <script src="js/theme.js?v=2"></script>
-  <script src="js/settings.js?v=2"></script>
+  <script src="js/settings.js?v=3"></script>
   <script src="js/chart.js?v=2"></script>
   <script src="js/demoData.js?v=2"></script>
   <script src="js/dataSource.js?v=6"></script>
-  <script src="js/backendApi.js?v=7"></script>
+  <script src="js/backendApi.js?v=8"></script>
   <script src="js/demoImportResult.js?v=2"></script>
   <script src="js/importFlow.js?v=4"></script>
-  <script src="js/auth.js?v=2"></script>
-  <script src="js/app.js?v=14"></script>
-  <script src="js/router.js?v=3"></script>
+  <script src="js/auth.js?v=3"></script>
+  <script src="js/app.js?v=15"></script>
+  <script src="js/router.js?v=4"></script>
 </body>
 </html>

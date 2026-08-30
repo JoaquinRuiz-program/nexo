@@ -1,70 +1,100 @@
 "use strict";
 
 /**
- * Librería Central — sesión (Demo Mode).
+ * Nexo — sesión real (29 de agosto de 2026).
  *
- * No existe todavía un backend de autenticación real, así que esto es un
- * mock local: cualquier email + contraseña no vacía "inicia sesión". La
- * contraseña NUNCA se guarda en ningún lado, ni siquiera acá — se recibe
- * como argumento y se descarta apenas se valida que no esté vacía. Lo único
- * que se guarda es la sesión visible (nombre, email), para que la interfaz
- * sepa que "hay alguien conectado". Cuando exista un backend de
- * autenticación real, este es el único archivo que habrá que reescribir.
+ * Reemplaza el mock anterior (cualquier email/contraseña entraba,
+ * localStorage/sessionStorage) por el backend real
+ * (app/api/routes/auth.py). La sesión vive SOLO en la cookie HttpOnly que
+ * pone el backend — este archivo nunca la lee, nunca la escribe, nunca la
+ * guarda en localStorage/sessionStorage. Lo único que se cachea acá es una
+ * copia EN MEMORIA (una variable de módulo, se pierde al recargar la
+ * página a propósito) de los datos no sensibles que ya devolvió el backend
+ * (nombre, email, empresa) — para que isLoggedIn()/getSession() puedan ser
+ * síncronos en el resto de la app sin volver a pedir /me en cada chequeo.
+ *
+ * Por eso hace falta hidratar ese caché UNA vez al cargar la página, antes
+ * del primer render — ver hydrate() y su uso en js/router.js.
  */
 
 window.LC = window.LC || {};
 
 (function () {
-  const SESSION_KEY = "lc_session";
+  let cachedSession = null; // null = no hay sesión (o todavía no se hidrató)
+  let hydrated = false;
 
-  function readSession() {
-    try {
-      const raw = window.localStorage.getItem(SESSION_KEY) || window.sessionStorage.getItem(SESSION_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch (_e) {
-      return null;
-    }
+  function sesionDesdeRespuesta(data) {
+    // Misma forma que _sesion_publica() en app/api/routes/auth.py —
+    // aplanada acá para que el resto de la app siga leyendo
+    // session.nombre/session.email como ya hacía con el mock anterior.
+    return {
+      nombre: data.usuario.nombre,
+      email: data.usuario.email,
+      empresa: data.empresa, // {id, nombre} — el nombre REAL, nunca de LC.settings
+    };
   }
 
-  function writeSession(session, remember) {
-    try {
-      const raw = JSON.stringify(session);
-      if (remember) {
-        window.localStorage.setItem(SESSION_KEY, raw);
-        window.sessionStorage.removeItem(SESSION_KEY);
-      } else {
-        window.sessionStorage.setItem(SESSION_KEY, raw);
-        window.localStorage.removeItem(SESSION_KEY);
-      }
-    } catch (_e) {}
-  }
-
-  function clearSession() {
-    try {
-      window.localStorage.removeItem(SESSION_KEY);
-      window.sessionStorage.removeItem(SESSION_KEY);
-    } catch (_e) {}
+  // Se llama UNA vez al cargar la página (ver js/router.js) — pregunta al
+  // backend "¿hay una sesión válida en la cookie que mandó el navegador?".
+  // Un 401 acá es el caso normal de "todavía nadie inició sesión", nunca
+  // un error (por eso backendApi.js lo excluye del interceptor global).
+  async function hydrate() {
+    const res = await LC.backendApi.me();
+    cachedSession = res.ok ? sesionDesdeRespuesta(res.data) : null;
+    hydrated = true;
+    if (res.ok) LC.backendApi.resetUnauthorizedGuard();
+    return cachedSession;
   }
 
   function isLoggedIn() {
-    return !!readSession();
+    return !!cachedSession;
   }
 
-  function login(email, remember) {
-    const session = { nombre: LC.demoData.account.nombre, email: email || LC.demoData.account.email };
-    writeSession(session, remember);
-    return session;
+  function getSession() {
+    return cachedSession;
   }
 
-  function signup(nombre, email) {
-    const session = { nombre: nombre || LC.demoData.account.nombre, email };
-    writeSession(session, true);
-    return session;
+  async function login(email, password, rememberMe) {
+    const res = await LC.backendApi.login(email, password, rememberMe);
+    if (!res.ok) return { ok: false, mensaje: res.error.mensaje };
+    cachedSession = sesionDesdeRespuesta(res.data);
+    LC.backendApi.resetUnauthorizedGuard();
+    return { ok: true };
   }
 
-  function logout() {
-    clearSession();
+  async function signup(fullName, email, password, companyName, rememberMe) {
+    const res = await LC.backendApi.registro(email, password, fullName, companyName, rememberMe);
+    if (!res.ok) return { ok: false, mensaje: res.error.mensaje };
+    cachedSession = sesionDesdeRespuesta(res.data);
+    LC.backendApi.resetUnauthorizedGuard();
+    return { ok: true };
   }
 
-  LC.auth = { isLoggedIn, login, signup, logout, getSession: readSession };
+  async function logout() {
+    // Se limpia el caché local SIEMPRE, aunque la request de red falle —
+    // quien decidió cerrar sesión en este dispositivo no debería quedar
+    // "atrapado" adentro por un problema de conexión.
+    try {
+      await LC.backendApi.logout();
+    } finally {
+      cachedSession = null;
+    }
+  }
+
+  // Lo usa el interceptor de 401 de backendApi.js (sesión vencida/revocada
+  // en medio de la navegación) — nunca se llama desde login/hydrate.
+  function clearCachedSession() {
+    cachedSession = null;
+  }
+
+  LC.auth = {
+    hydrate,
+    isLoggedIn,
+    getSession,
+    login,
+    signup,
+    logout,
+    clearCachedSession,
+    isHydrated: () => hydrated,
+  };
 })();

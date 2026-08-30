@@ -141,16 +141,22 @@ window.LC = window.LC || {};
     });
   }
 
+  // "Empresa activa" — SIEMPRE el nombre real que devolvió el backend
+  // (GET /api/auth/me -> empresa.nombre), nunca un valor local editable
+  // (LC.settings ya no tiene un "companyName" propio, a propósito: una
+  // sola fuente de verdad). En Demo Mode, `session.empresa` es un string
+  // simple (ver demoData.js) en vez de {id, nombre} — se soportan los dos.
+  function nombreEmpresaActiva(session) {
+    if (!session || !session.empresa) return "";
+    return typeof session.empresa === "string" ? session.empresa : session.empresa.nombre;
+  }
+
   function updateUserHeader() {
     const session = LC.auth.getSession() || LC.demoData.account;
     document.getElementById("user-name-label").textContent = session.nombre;
     document.getElementById("user-avatar").textContent = initials(session.nombre);
     document.getElementById("theme-toggle-icon").innerHTML = icon(LC.theme.isDark() ? "sun" : "moon");
-    // "Empresa activa" — hoy siempre la misma (sin multiempresa real en el
-    // backend todavía), pero ya sale del nombre configurable en
-    // Configuración > General, no hardcodeada: el día que exista un
-    // selector de empresas, esto es lo único que hay que reemplazar.
-    document.getElementById("sidebar-empresa-activa").textContent = LC.settings.getAll().companyName;
+    document.getElementById("sidebar-empresa-activa").textContent = nombreEmpresaActiva(session);
   }
 
   function openMobileSidebar() {
@@ -188,7 +194,7 @@ window.LC = window.LC || {};
     });
     document.addEventListener("click", () => userMenuDropdown.classList.add("hidden"));
 
-    userMenuDropdown.addEventListener("click", (e) => {
+    userMenuDropdown.addEventListener("click", async (e) => {
       const btn = e.target.closest("[data-action]");
       if (!btn) return;
       const action = btn.dataset.action;
@@ -201,7 +207,7 @@ window.LC = window.LC || {};
       } else if (action === "settings") {
         LC.router.navigate("/configuracion");
       } else if (action === "logout") {
-        LC.auth.logout();
+        await LC.auth.logout();
         toast("info", "Sesión cerrada.");
         LC.router.navigate("/login");
       }
@@ -241,7 +247,7 @@ window.LC = window.LC || {};
     document.getElementById("login-forgot").addEventListener("click", () => {
       infoModal(
         "Recuperar contraseña",
-        "La recuperación de contraseña estará disponible cuando conectemos el sistema de autenticación real. Por ahora, esta es una demostración: cualquier email y contraseña permiten entrar."
+        "Todavía no está disponible recuperar la contraseña desde acá — escribinos si necesitás ayuda para entrar a tu cuenta."
       );
     });
 
@@ -252,34 +258,51 @@ window.LC = window.LC || {};
       );
     });
 
-    document.getElementById("login-form").addEventListener("submit", (e) => {
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const email = document.getElementById("login-email").value.trim();
       const password = document.getElementById("login-password").value;
       const remember = document.getElementById("login-remember").checked;
       const errorEl = document.getElementById("login-error");
+      const submitBtn = document.getElementById("login-submit");
       if (!email || !password) {
         errorEl.textContent = "Completa tu email y contraseña para continuar.";
         errorEl.classList.remove("hidden");
         return;
       }
       errorEl.classList.add("hidden");
-      LC.auth.login(email, remember);
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Ingresando…";
+      const res = await LC.auth.login(email, password, remember);
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Iniciar sesión";
+      if (!res.ok) {
+        errorEl.textContent = res.mensaje;
+        errorEl.classList.remove("hidden");
+        return;
+      }
       toast("success", "Bienvenido de nuevo.");
       LC.router.navigate("/dashboard");
     });
 
-    document.getElementById("signup-form").addEventListener("submit", (e) => {
+    document.getElementById("signup-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const nombre = document.getElementById("signup-name").value.trim();
+      const empresa = document.getElementById("signup-company").value.trim();
       const email = document.getElementById("signup-email").value.trim();
       const password = document.getElementById("signup-password").value;
       const confirm = document.getElementById("signup-password-confirm").value;
       const terms = document.getElementById("signup-terms").checked;
       const errorEl = document.getElementById("signup-error");
+      const submitBtn = document.getElementById("signup-submit");
 
-      if (!nombre || !email || !password || !confirm) {
+      if (!nombre || !empresa || !email || !password || !confirm) {
         errorEl.textContent = "Completa todos los campos para crear tu cuenta.";
+        errorEl.classList.remove("hidden");
+        return;
+      }
+      if (password.length < 8) {
+        errorEl.textContent = "La contraseña tiene que tener al menos 8 caracteres.";
         errorEl.classList.remove("hidden");
         return;
       }
@@ -294,7 +317,16 @@ window.LC = window.LC || {};
         return;
       }
       errorEl.classList.add("hidden");
-      LC.auth.signup(nombre, email);
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Creando cuenta…";
+      const res = await LC.auth.signup(nombre, email, password, empresa, true);
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Crear cuenta";
+      if (!res.ok) {
+        errorEl.textContent = res.mensaje;
+        errorEl.classList.remove("hidden");
+        return;
+      }
       toast("success", "Cuenta creada. ¡Bienvenido a Nexo!");
       LC.router.navigate("/dashboard");
     });
@@ -1854,8 +1886,9 @@ window.LC = window.LC || {};
           <p class="panel-subtitle mb-4">Información básica de tu negocio.</p>
           <div class="space-y-3">
             <div>
-              <label class="form-label">Nombre de la empresa</label>
-              <input id="cfg-company" type="text" value="${escapeHtml(settings.companyName)}" class="form-input" />
+              <label class="form-label">Empresa</label>
+              <p class="form-input flex items-center text-slate-500 dark:text-slate-400">${escapeHtml(nombreEmpresaActiva(session))}</p>
+              <p class="text-xs text-slate-400 mt-1">Todavía no se puede editar desde acá.</p>
             </div>
             <div>
               <label class="form-label">Nombre de la tienda</label>
@@ -1936,7 +1969,6 @@ window.LC = window.LC || {};
 
     document.getElementById("cfg-general-save").addEventListener("click", () => {
       LC.settings.update({
-        companyName: document.getElementById("cfg-company").value.trim() || settings.companyName,
         storeName: document.getElementById("cfg-store").value.trim() || settings.storeName,
       });
       toast("success", "Configuración guardada correctamente.");
@@ -1968,10 +2000,10 @@ window.LC = window.LC || {};
     });
 
     document.getElementById("cfg-change-password").addEventListener("click", () => {
-      infoModal("Cambiar contraseña", "Esta función estará disponible cuando implementemos el sistema de autenticación real.");
+      infoModal("Cambiar contraseña", "Todavía no está disponible cambiar la contraseña desde acá.");
     });
-    document.getElementById("cfg-logout").addEventListener("click", () => {
-      LC.auth.logout();
+    document.getElementById("cfg-logout").addEventListener("click", async () => {
+      await LC.auth.logout();
       toast("info", "Sesión cerrada.");
       LC.router.navigate("/login");
     });

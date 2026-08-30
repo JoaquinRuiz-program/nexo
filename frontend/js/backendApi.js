@@ -16,6 +16,14 @@
  *
  * Nunca maneja API keys, secrets ni contraseñas — solo habla con este
  * backend propio, nunca directo con WooCommerce ni Mercado Libre.
+ *
+ * 29 de agosto de 2026 — sesión real: TODAS las requests van con
+ * `credentials: "include"` (la cookie HttpOnly de sesión, ver
+ * app/api/deps.py, nunca se toca desde JS ni se guarda en localStorage —
+ * el navegador la maneja solo). Un 401 en cualquier endpoint que NO sea
+ * login/registro/me se trata como "la sesión expiró" — ver
+ * setUnauthorizedHandler, que registra js/auth.js para limpiar el estado y
+ * volver a /login.
  */
 
 window.LC = window.LC || {};
@@ -26,6 +34,29 @@ window.LC = window.LC || {};
   // Analizar/confirmar un catálogo grande puede tardar más que una consulta
   // normal (lee y valida cada fila) — timeout más generoso solo para eso.
   const UPLOAD_TIMEOUT_MS = 30000;
+
+  // Un 401 acá NUNCA significa "la sesión expiró" — login/registro lo usan
+  // para "credenciales incorrectas" (error de formulario, no de sesión), y
+  // /me lo usa para "todavía nadie inició sesión" (el caso normal en la
+  // primera visita, nunca hay que mostrar un toast de "tu sesión expiró"
+  // por algo que nunca empezó).
+  const RUTAS_SIN_INTERCEPTOR_401 = new Set(["/api/auth/login", "/api/auth/registro", "/api/auth/me"]);
+
+  let unauthorizedHandler = null;
+  // Evita disparar el toast/redirect más de una vez si varias requests en
+  // paralelo devuelven 401 al mismo tiempo (ej. una pantalla que pide
+  // varias cosas con Promise.all).
+  let unauthorizedHandled = false;
+
+  function setUnauthorizedHandler(fn) {
+    unauthorizedHandler = fn;
+  }
+
+  // js/auth.js llama esto apenas confirma una sesión válida (login exitoso,
+  // o /me con 200) — así el próximo 401 real vuelve a disparar el handler.
+  function resetUnauthorizedGuard() {
+    unauthorizedHandled = false;
+  }
 
   // Mensajes de respaldo cuando el servidor no manda un "detail" propio —
   // en lenguaje simple, sin códigos HTTP ni palabras técnicas: quien lee
@@ -50,7 +81,12 @@ window.LC = window.LC || {};
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    const opts = { method, signal: controller.signal };
+    // "include": manda/recibe la cookie de sesión HttpOnly aunque el
+    // frontend (:5500) y este backend (:8000) sean orígenes distintos —
+    // sin esto, el navegador simplemente no la envía (ver CORS
+    // allow_credentials=True del lado del backend, necesario en el otro
+    // extremo de lo mismo).
+    const opts = { method, signal: controller.signal, credentials: "include" };
     if (body !== undefined) {
       if (isFormData) {
         opts.body = body; // FormData: el navegador arma el Content-Type con el boundary solo.
@@ -72,6 +108,11 @@ window.LC = window.LC || {};
         bodyParseFailed = true;
       }
 
+      if (res.status === 401 && !RUTAS_SIN_INTERCEPTOR_401.has(path) && !unauthorizedHandled) {
+        unauthorizedHandled = true;
+        if (unauthorizedHandler) unauthorizedHandler();
+      }
+
       if (!res.ok) {
         const detail = !bodyParseFailed && responseBody && responseBody.detail ? String(responseBody.detail) : null;
         return { ok: false, error: classifyHttpError(res.status, detail, bodyParseFailed) };
@@ -90,6 +131,32 @@ window.LC = window.LC || {};
         error: { tipo: "red", mensaje: "No pudimos conectar con el servidor. Verifica tu conexión e intenta de nuevo." },
       };
     }
+  }
+
+  // ------------------------------------------------------------------
+  // Autenticación real (29 de agosto de 2026) — ver js/auth.js, que es
+  // quien de verdad orquesta el estado de sesión; esto solo habla con el
+  // backend. Nunca hay un token que manejar acá: el navegador se encarga
+  // de la cookie de sesión solo (Set-Cookie / credentials: "include").
+  // ------------------------------------------------------------------
+
+  async function login(email, password, rememberMe) {
+    return request("/api/auth/login", { method: "POST", body: { email, password, remember_me: !!rememberMe } });
+  }
+
+  async function registro(email, password, fullName, companyName, rememberMe) {
+    return request("/api/auth/registro", {
+      method: "POST",
+      body: { email, password, full_name: fullName, company_name: companyName, remember_me: !!rememberMe },
+    });
+  }
+
+  async function logout() {
+    return request("/api/auth/logout", { method: "POST" });
+  }
+
+  async function me() {
+    return request("/api/auth/me");
   }
 
   async function fetchReporte() {
@@ -182,6 +249,12 @@ window.LC = window.LC || {};
 
   LC.backendApi = {
     API_BASE_URL,
+    login,
+    registro,
+    logout,
+    me,
+    setUnauthorizedHandler,
+    resetUnauthorizedGuard,
     fetchReporte,
     checkHealth,
     fetchDashboardResumen,
