@@ -315,3 +315,103 @@ async def test_get_listing_fees_sin_permiso_lanza_auth_error():
     with pytest.raises(MercadoLibreAuthError):
         await adapter.get_listing_fees("mi-token", "MLC", "MLC180937", 5000)
     await adapter.aclose()
+
+
+# ------------------------------------------------------------------
+# Publicación real (29 de agosto de 2026, commit 1/N — solo adapter,
+# nada de esto está wireado a ningún endpoint todavía).
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_category_attributes_no_manda_authorization_header():
+    # Confirmado en vivo el 29 de agosto de 2026 con
+    # GET https://api.mercadolibre.com/categories/MLC180937/attributes:
+    # es público, igual que /domain_discovery.
+    route = respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(
+        return_value=httpx.Response(200, json=[{"id": "BRAND", "name": "Marca", "tags": {"required": True}, "value_type": "string"}])
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    atributos = await adapter.get_category_attributes("MLC180937")
+    await adapter.aclose()
+
+    assert atributos[0]["id"] == "BRAND"
+    assert "authorization" not in route.calls[0].request.headers
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_create_item_manda_bearer_token_y_json_body():
+    route = respx.post("https://api.mercadolibre.com/items").mock(
+        return_value=httpx.Response(
+            201,
+            json={"id": "MLC123456789", "user_product_id": "MLCU1234567", "site_id": "MLC", "title": "Cuaderno universitario"},
+        )
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    payload = {
+        "title": "Cuaderno universitario",
+        "category_id": "MLC180937",
+        "price": 5000,
+        "currency_id": "CLP",
+        "available_quantity": 3,
+        "buying_mode": "buy_it_now",
+        "listing_type_id": "gold_special",
+        "pictures": [{"source": "https://ejemplo.cl/foto.jpg"}],
+        "attributes": [
+            {"id": "BRAND", "value_name": "Torre"},
+            {"id": "ITEM_CONDITION", "value_id": "2230284", "value_name": "Nuevo"},
+        ],
+    }
+    resultado = await adapter.create_item("mi-token", payload)
+    await adapter.aclose()
+
+    assert resultado["id"] == "MLC123456789"
+    assert resultado["user_product_id"] == "MLCU1234567"
+    enviado = route.calls[0].request
+    assert enviado.headers["authorization"] == "Bearer mi-token"
+    import json as _json
+
+    cuerpo_enviado = _json.loads(enviado.content)
+    assert cuerpo_enviado == payload
+    # Nunca un campo "condition" a nivel raíz — ver domain/listing_validation.py.
+    assert "condition" not in cuerpo_enviado
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_create_item_con_categoria_invalida_lanza_request_error_no_auth_error():
+    # Un 400 de validación de Mercado Libre (categoría cerrada, atributo
+    # inválido, etc.) es un MercadoLibreRequestError, nunca AuthError — no
+    # tiene nada que ver con el token, y nunca se debe reintentar solo
+    # (ver RETRYABLE_STATUS: 400 no está ahí a propósito).
+    route = respx.post("https://api.mercadolibre.com/items").mock(
+        return_value=httpx.Response(
+            400,
+            json={
+                "message": "attribute value_name invalid",
+                "error": "bad_request",
+                "cause": [
+                    {"code": "item.attributes.invalid_type", "message": "Invalid attribute type", "references": ["item.attributes.BRAND"]}
+                ],
+            },
+        )
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    with pytest.raises(MercadoLibreRequestError):
+        await adapter.create_item("mi-token", {"title": "x"})
+    await adapter.aclose()
+    assert route.calls.call_count == 1  # nunca reintenta un 400
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_create_item_sin_permiso_lanza_auth_error():
+    respx.post("https://api.mercadolibre.com/items").mock(
+        return_value=httpx.Response(403, json={"code": "PA_UNAUTHORIZED_RESULT_FROM_POLICIES"})
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    with pytest.raises(MercadoLibreAuthError):
+        await adapter.create_item("mi-token", {"title": "x"})
+    await adapter.aclose()

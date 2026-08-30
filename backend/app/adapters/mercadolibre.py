@@ -26,9 +26,14 @@ El dominio de autorización (paso 1) es específico por país
 intercambio de tokens y el resto de la API (pasos 2 en adelante) es el
 mismo para todos los países: api.mercadolibre.com.
 
-DELIBERADAMENTE sin ninguna operación de escritura (no crea/edita
-publicaciones, no actualiza stock/precio en Mercado Libre) — mismo alcance
-inicial que el adaptador de WooCommerce cuando se construyó: solo lectura.
+Hasta el 29 de agosto de 2026, sin ninguna operación de escritura hacia
+publicaciones — mismo alcance inicial que el adaptador de WooCommerce
+cuando se construyó: solo lectura. `create_item` (POST /items, publicación
+real) se agrega ese día, pero DELIBERADAMENTE sin wirear a ningún endpoint
+todavía (fase de publicación, commit 1/N) — nada en el resto del backend
+lo llama hasta que exista el flujo completo de validación (rentabilidad +
+atributos obligatorios + duplicados, ver domain/listing_validation.py y
+app/api/routes/publicaciones.py) delante de él.
 """
 
 from __future__ import annotations
@@ -228,6 +233,34 @@ class MercadoLibreAdapter:
         response = await self._request_with_retry("GET", url, access_token)
         return response.json()
 
+    async def get_category_attributes(self, category_id: str) -> list[dict[str, Any]]:
+        """GET /categories/{category_id}/attributes — público, NO necesita
+        access_token (verificado en vivo el 29 de agosto de 2026, mismo
+        criterio que predict_category). Devuelve la lista CRUDA de
+        atributos de la categoría (id, name, tags, value_type, values) tal
+        cual la manda Mercado Libre — este adaptador no decide qué es
+        obligatorio ni interpreta nada, eso es trabajo de
+        domain/listing_validation.py."""
+        url = f"{API_BASE_URL}/categories/{category_id}/attributes"
+        response = await self._request_with_retry("GET", url, None)
+        return response.json()
+
+    async def create_item(self, access_token: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST /items — crea una publicación REAL en Mercado Libre.
+
+        Sin wirear a ningún endpoint todavía (fase de publicación, commit
+        1/N): nada en el resto del backend llama a este método hoy. Cuando
+        se conecte, tiene que ser SIEMPRE la última llamada de un flujo que
+        ya validó rentabilidad + atributos + duplicados — este método no
+        valida nada, solo manda el payload tal cual se lo pasan y devuelve
+        la respuesta real de Mercado Libre (con el `id`/`user_product_id`
+        reales) o deja que MercadoLibreAuthError/MercadoLibreRequestError
+        suba sin haber escrito nada en la base — eso es responsabilidad de
+        quien llame a esto, nunca del adaptador."""
+        url = f"{API_BASE_URL}/items"
+        response = await self._request_with_retry("POST", url, access_token, json_body=payload)
+        return response.json()
+
     async def _get_with_retry(self, path: str, access_token: str) -> dict[str, Any]:
         url = f"{API_BASE_URL}{path}"
         response = await self._request_with_retry("GET", url, access_token)
@@ -237,7 +270,12 @@ class MercadoLibreAdapter:
         return await self._request_with_retry("POST", url, None, form_data=form_data)
 
     async def _request_with_retry(
-        self, method: str, url: str, access_token: Optional[str], form_data: Optional[dict[str, str]] = None
+        self,
+        method: str,
+        url: str,
+        access_token: Optional[str],
+        form_data: Optional[dict[str, str]] = None,
+        json_body: Optional[dict[str, Any]] = None,
     ) -> httpx.Response:
         headers = {"Accept": "application/json"}
         if access_token:
@@ -248,6 +286,12 @@ class MercadoLibreAdapter:
             try:
                 if method == "GET":
                     response = await self._client.get(url, headers=headers, timeout=self._cfg.timeout_s)
+                elif json_body is not None:
+                    # POST con cuerpo JSON real (ej. crear una publicación,
+                    # ver create_item) — distinto de form_data, que es
+                    # form-urlencoded y hoy solo lo usa el intercambio de
+                    # tokens de OAuth.
+                    response = await self._client.post(url, json=json_body, headers=headers, timeout=self._cfg.timeout_s)
                 else:
                     response = await self._client.post(url, data=form_data, headers=headers, timeout=self._cfg.timeout_s)
             except httpx.HTTPError as err:
