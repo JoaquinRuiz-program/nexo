@@ -637,8 +637,8 @@ body {
 
 /* Row action menu */
 .row-menu-btn {
-  width: 2rem;
-  height: 2rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border-radius: 0.5rem;
   color: #64748b;
   font-size: 1.1rem;

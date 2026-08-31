@@ -356,3 +356,31 @@ def test_comision_real_cacheada_a_otro_precio_no_se_usa_cae_al_fallback_manual(c
     fila = next(f for f in body["productos"] if f["sku"] == "PRECIO-CAMBIO")
     assert fila["comisionMlFuente"] == "manual"
     assert fila["margenMercadoLibreClp"] == 12000 - 6000 - 12000 * 0.15  # manual 15%, nunca el 10% cacheado a otro precio
+
+
+def test_comision_ml_real_informativa_usa_el_costo_de_cada_variante_no_el_de_la_primera(client, db_session, a_store):
+    """Hallazgo de backend-architect (31 de agosto de 2026, ronda de pulido
+    pre-cliente): _comision_ml_real (el detalle informativo Clásica/Premium,
+    "comisionMlReal" en la respuesta) usaba el costo de la PRIMERA variante
+    del producto para TODAS sus variantes. Con dos variantes de distinto
+    costo, la segunda mostraba un margenClp/margenPct calculado con el
+    costo equivocado -- inconsistente con margenMercadoLibreClp de la misma
+    fila, que sí usa el costo correcto."""
+    producto = Product(store=a_store, internal_sku="DOS-VARIANTES", name="Producto con variantes", product_type="variable",
+                        ml_category_id="MLC180937", ml_category_name="Cuadernos", created_at=NOW, updated_at=NOW)
+    db_session.add(producto)
+    db_session.flush()
+    db_session.add(ProductVariant(product=producto, store_id=a_store.id, variant_sku="DOS-VAR-A", variant_label="Azul", price=10000, cost_price=4000, created_at=NOW, updated_at=NOW))
+    db_session.add(ProductVariant(product=producto, store_id=a_store.id, variant_sku="DOS-VAR-B", variant_label="Rojo", price=10000, cost_price=7000, created_at=NOW, updated_at=NOW))
+    db_session.commit()
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_special", percentage_fee=10.0)
+
+    body = client.get("/api/rentabilidad").json()
+    fila_a = next(f for f in body["productos"] if f["sku"] == "DOS-VAR-A")
+    fila_b = next(f for f in body["productos"] if f["sku"] == "DOS-VAR-B")
+
+    # 10000 - costo_de_ESTA_variante - 1000 (10% de 10000) -- cada variante
+    # con su propio costo, nunca el de la otra.
+    assert fila_a["comisionMlReal"]["classic"]["margenClp"] == 10000 - 4000 - 1000
+    assert fila_b["comisionMlReal"]["classic"]["margenClp"] == 10000 - 7000 - 1000
+    assert fila_a["comisionMlReal"]["classic"]["margenClp"] != fila_b["comisionMlReal"]["classic"]["margenClp"]

@@ -65,11 +65,19 @@ _NOTA_VALIDACION_NO_ES_AUTORIZACION = (
 )
 
 
-def _build_one(db: Session, store: Store, variant_id: int, criteria: SelectionCriteria) -> Optional[dict]:
+def _build_one(db: Session, store: Store, variant_id: int, criteria: SelectionCriteria, filas: Optional[list[dict]] = None) -> Optional[dict]:
     # build_profitability_rows ya scopea por tienda — un variant_id de otra
     # empresa simplemente no aparece en `filas`, así que esto devuelve None
     # (mismo 404 que "no existe") en vez de filtrar antes/después.
-    filas, _ = build_profitability_rows(db, store)
+    #
+    # 31 de agosto de 2026 — hallazgo de backend-architect (ronda de pulido
+    # pre-cliente): POST /preparar (el batch de abajo) llamaba a esto una
+    # vez POR variant_id, y cada llamada recalculaba build_profitability_rows
+    # completo (TODO el catálogo) — O(N×M) en vez de O(M). Ahora quien arma
+    # un batch calcula `filas` una sola vez y la pasa; /borrador/{id}
+    # (un solo producto) sigue calculándola acá mismo, sin cambios.
+    if filas is None:
+        filas, _ = build_profitability_rows(db, store)
     fila = next((f for f in filas if f["id"] == variant_id), None)
     if fila is None:
         return None
@@ -117,9 +125,10 @@ def preparar_publicaciones(
     criteria = SelectionCriteria(channel=body.canal, require_marketplace_stock=body.requiere_stock)
     borradores: list[dict] = []
     no_encontrados: list[int] = []
+    filas, _ = build_profitability_rows(db, store)
 
     for variant_id in body.variant_ids:
-        borrador = _build_one(db, store, variant_id, criteria)
+        borrador = _build_one(db, store, variant_id, criteria, filas=filas)
         if borrador is None:
             no_encontrados.append(variant_id)
         else:
@@ -844,7 +853,26 @@ async def _resolver_publicacion(
     settings = get_settings()
     cfg = _build_ml_config(settings)
     _require_configured(cfg, settings)
-    access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
+    try:
+        access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
+    except HTTPException as err:
+        # Mismo criterio que /competencia y /precio-recomendado (FASE 6,
+        # security-engineer, 30/08/2026): _get_valid_access_token puede
+        # incluir texto crudo de Mercado Libre en su detail — nunca se lo
+        # devolvemos tal cual al frontend. Hallazgo de la ronda de pulido
+        # pre-cliente (31/08/2026): acá faltaba, único call-site de
+        # publicaciones.py sin este wrapper. El 401 se preserva (mismo
+        # criterio que /importar-ventas en mercadolibre.py) para que el
+        # dueño sepa que hay que reconectar la cuenta, no solo reintentar.
+        if err.status_code == 401:
+            raise HTTPException(
+                status_code=401,
+                detail="El token de Mercado Libre venció y no se pudo renovar. Hay que reconectar la cuenta.",
+            ) from err
+        raise HTTPException(
+            status_code=502,
+            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
+        ) from err
 
     datos_conocidos: dict[str, str] = {}
     if producto.brand:

@@ -1322,7 +1322,7 @@ window.LC = window.LC || {};
           <button id="connect-ml-btn" class="btn-primary">Conectar Mercado Libre</button>
         </div>
         <p class="text-sm text-slate-500 dark:text-slate-400 mt-3">
-          ${ml.credencialesConfiguradas ? "Conecta la cuenta de Mercado Libre de tu empresa para empezar a traer tus ventas reales." : "Conecta la cuenta de Mercado Libre de tu empresa — necesitás configurar las credenciales en el servidor primero (ver backend/README.md)."}
+          ${ml.credencialesConfiguradas ? "Conecta la cuenta de Mercado Libre de tu empresa para empezar a traer tus ventas reales." : "Todavía no está lista la conexión con Mercado Libre — contactanos para activarla."}
         </p>
       </div>`;
   }
@@ -2026,10 +2026,12 @@ window.LC = window.LC || {};
             <div>
               <label class="form-label">Nombre de la tienda</label>
               <input id="cfg-store" type="text" value="${escapeHtml(settings.storeName)}" class="form-input" />
+              <p class="text-xs text-slate-400 mt-1">Es solo una etiqueta para vos — todavía no cambia el nombre real de tu empresa en Nexo.</p>
             </div>
             <div>
               <label class="form-label">Email</label>
-              <input id="cfg-email" type="email" value="${escapeHtml(session.email)}" class="form-input" />
+              <p class="form-input flex items-center text-slate-500 dark:text-slate-400">${escapeHtml(session.email)}</p>
+              <p class="text-xs text-slate-400 mt-1">Todavía no se puede editar desde acá.</p>
             </div>
           </div>
           <button id="cfg-general-save" class="btn-primary mt-4">Guardar cambios</button>

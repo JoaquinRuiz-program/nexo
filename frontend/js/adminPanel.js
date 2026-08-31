@@ -18,6 +18,9 @@ window.LC = window.LC || {};
   const { escapeHtml, formatDate, toast, openModal, icon, formatCLPReal, formatPct } = LC.ui;
 
   const ESTADO_LABEL = { activo: "Activo", trial: "Trial", pendiente_configuracion: "Pendiente de configuración", suspendido: "Suspendido" };
+  // Valores reales de MarketplaceAccount.status (backend/app/api/routes/mercadolibre.py)
+  // -- sin esto se mostraba el valor crudo en inglés en el detalle de cliente del panel admin.
+  const ML_ESTADO_LABEL = { connected: "Conectado", not_connected: "No conectado", token_expired: "Token vencido — necesita reconectar" };
 
   async function render(main, storeId) {
     if (storeId) await renderDetalle(main, Number(storeId));
@@ -140,7 +143,7 @@ window.LC = window.LC || {};
           <h3 class="panel-title mb-3">Mercado Libre</h3>
           ${c.mercadoLibre ? `
             <div class="text-sm space-y-1.5">
-              <div class="flex justify-between"><span class="text-slate-500 dark:text-slate-400">Estado</span><span>${escapeHtml(c.mercadoLibre.estado)}</span></div>
+              <div class="flex justify-between"><span class="text-slate-500 dark:text-slate-400">Estado</span><span>${escapeHtml(ML_ESTADO_LABEL[c.mercadoLibre.estado] || c.mercadoLibre.estado)}</span></div>
               <div class="flex justify-between"><span class="text-slate-500 dark:text-slate-400">Cuenta</span><span>${escapeHtml(c.mercadoLibre.nickname || "—")}${c.mercadoLibre.siteId ? ` · ${escapeHtml(c.mercadoLibre.siteId)}` : ""}</span></div>
               <div class="flex justify-between"><span class="text-slate-500 dark:text-slate-400">Conectado el</span><span>${c.mercadoLibre.conectadoEn ? formatDate(new Date(c.mercadoLibre.conectadoEn)) : "—"}</span></div>
               <div class="flex justify-between"><span class="text-slate-500 dark:text-slate-400">Última sincronización</span><span>${c.mercadoLibre.ultimaSincronizacion ? formatDate(new Date(c.mercadoLibre.ultimaSincronizacion)) : "—"}</span></div>

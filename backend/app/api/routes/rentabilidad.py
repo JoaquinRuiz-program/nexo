@@ -69,18 +69,27 @@ def comisiones_ml_cacheadas(db: Session, store_id: int, producto: Product, preci
     return comisiones
 
 
-def _comision_ml_real(comisiones: dict[str, ListingFee], producto: Product, precio: float | None, costos_manual: ChannelCosts) -> dict | None:
-    """Comisión REAL de Mercado Libre (Clásica/Premium) para este producto a
+def _comision_ml_real(comisiones: dict[str, ListingFee], costo: float | None, precio: float | None, costos_manual: ChannelCosts) -> dict | None:
+    """Comisión REAL de Mercado Libre (Clásica/Premium) para ESTA variante a
     este precio exacto, si ya se consultó antes (ver POST
     /api/mercadolibre/comisiones/recalcular — acá nunca se llama a la API
     de Mercado Libre, solo se lee la caché). `comisiones` viene ya resuelto
     por comisiones_ml_cacheadas (no vuelve a consultar la BD). None si no
     hay ningún dato cacheado para su precio actual — nunca se inventa ni se
-    aproxima con otro precio."""
+    aproxima con otro precio.
+
+    31 de agosto de 2026 — hallazgo de backend-architect (ronda de pulido
+    pre-cliente): antes recibía `producto` y usaba
+    `producto.variants[0].cost_price` (el costo de la PRIMERA variante)
+    para TODAS las variantes del producto — en un producto con 2+
+    variantes, la fila de la variante #2 en adelante mostraba acá un
+    margenClp/margenPct calculado con el costo equivocado, distinto al
+    margenMercadoLibreClp/Pct de la misma fila (que sí usa el costo
+    correcto). Ahora recibe directamente el costo de la variante que
+    corresponde a esta fila, igual que el resto de _fila."""
     if not comisiones:
         return None
 
-    costo_producto = float(producto.variants[0].cost_price) if producto.variants and producto.variants[0].cost_price is not None else None
     resultado: dict = {}
     for clave, fee in comisiones.items():
         costos_reales = ChannelCosts(
@@ -93,8 +102,8 @@ def _comision_ml_real(comisiones: dict[str, ListingFee], producto: Product, prec
             "comisionPct": fee.percentage_fee,
             "comisionFija": fee.fixed_fee,
             "comisionTotal": fee.sale_fee_amount,
-            "margenClp": net_margin(precio, costo_producto, costos_reales),
-            "margenPct": net_margin_pct(precio, costo_producto, costos_reales),
+            "margenClp": net_margin(precio, costo, costos_reales),
+            "margenPct": net_margin_pct(precio, costo, costos_reales),
         }
     return resultado or None
 
@@ -170,7 +179,7 @@ def _fila(db: Session, store_id: int, producto: Product, variante: ProductVarian
         # paralelo, para decidir cuál conviene. None hasta que se corra
         # POST /api/mercadolibre/comisiones/recalcular; nunca se calcula acá
         # con un valor estimado.
-        "comisionMlReal": _comision_ml_real(comisiones, producto, precio, costos_ml_manual),
+        "comisionMlReal": _comision_ml_real(comisiones, costo, precio, costos_ml_manual),
         "mlCategoriaId": producto.ml_category_id,
         "mlCategoriaNombre": producto.ml_category_name,
     }

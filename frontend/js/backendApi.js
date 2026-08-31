@@ -76,6 +76,7 @@ window.LC = window.LC || {};
     }
     if (status === 404) return { tipo: "endpoint", mensaje: detail || "No encontramos lo que buscábamos." };
     if (status === 400) return { tipo: "datos", mensaje: detail || "Algo en los datos ingresados no es válido. Revísalos e intenta de nuevo." };
+    if (status === 422) return { tipo: "datos", mensaje: detail || "Algo en los datos ingresados no es válido. Revísalos e intenta de nuevo." };
     return { tipo: "http", mensaje: detail || "Ocurrió un problema inesperado. Intenta de nuevo." };
   }
 
@@ -118,7 +119,14 @@ window.LC = window.LC || {};
       }
 
       if (!res.ok) {
-        const detail = !bodyParseFailed && responseBody && responseBody.detail ? String(responseBody.detail) : null;
+        // FastAPI manda "detail" como string en los errores que el propio
+        // backend redacta (los que sí queremos mostrar tal cual) — pero en
+        // un 422 de validación "detail" es un ARRAY de objetos {loc, msg,
+        // type}. String([...]) da literalmente "[object Object],..." — acá
+        // se descarta ese caso y se cae al mensaje genérico de
+        // classifyHttpError en vez de mostrar texto crudo (hallazgo de
+        // frontend-ux-engineer, ronda de pulido pre-cliente, 31/08/2026).
+        const detail = !bodyParseFailed && responseBody && typeof responseBody.detail === "string" ? responseBody.detail : null;
         return { ok: false, error: classifyHttpError(res.status, detail, bodyParseFailed) };
       }
       if (bodyParseFailed || responseBody === null) {

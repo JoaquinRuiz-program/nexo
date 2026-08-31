@@ -56,6 +56,7 @@ precisamente para este momento.
 
 from __future__ import annotations
 
+import logging
 import secrets
 import time
 from datetime import datetime, timedelta
@@ -81,6 +82,8 @@ from app.domain.marketplace_orders import map_ml_order
 from app.domain.marketplace_stock import MarketplaceStockError, apply_sale
 from app.domain.ml_fees import LISTING_TYPE_IDS, parse_listing_fees
 from app.domain.token_crypto import TokenEncryptionNotConfigured, decrypt_token, encrypt_token
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/mercadolibre", tags=["mercadolibre"])
 
@@ -376,15 +379,40 @@ async def importar_ventas(db: Session = Depends(get_db), store: Store = Depends(
     if account is None or account.status != "connected":
         raise HTTPException(status_code=400, detail="Mercado Libre no está conectado todavía.")
 
-    access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
+    try:
+        access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
+    except HTTPException as err:
+        # Mismo criterio que /competencia y /precio-recomendado (FASE 6,
+        # security-engineer, 30/08/2026): nunca el texto crudo de Mercado
+        # Libre en la respuesta — hallazgo de la ronda de pulido pre-cliente
+        # (31/08/2026): acá faltaba. El 401 (token vencido, no se pudo
+        # renovar) se preserva porque el frontend/el dueño necesitan
+        # distinguir "hay que reconectar la cuenta" de una falla temporal
+        # (502) — _get_valid_access_token ya marcó account.status =
+        # "token_expired" antes de levantar esta excepción.
+        if err.status_code == 401:
+            raise HTTPException(
+                status_code=401,
+                detail="El token de Mercado Libre venció y no se pudo renovar. Hay que reconectar la cuenta.",
+            ) from err
+        raise HTTPException(
+            status_code=502,
+            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
+        ) from err
 
     adapter = MercadoLibreAdapter(cfg)
     try:
         resultado = await adapter.search_orders(access_token, seller_id=account.external_account_id)
     except MercadoLibreAuthError as err:
-        raise HTTPException(status_code=502, detail=f"Mercado Libre rechazó la consulta de pedidos: {err}") from err
+        # Nunca el texto crudo de Mercado Libre en la respuesta al cliente
+        # (puede traer hasta 500 caracteres de la respuesta del proveedor,
+        # ver adapters/mercadolibre.py) — el detalle completo queda en el
+        # log del servidor.
+        logger.error("Mercado Libre rechazó la consulta de pedidos para store_id=%s: %s", store.id, err)
+        raise HTTPException(status_code=502, detail="Mercado Libre rechazó la consulta de pedidos. Reconectá la cuenta e intentá de nuevo.") from err
     except MercadoLibreRequestError as err:
-        raise HTTPException(status_code=502, detail=f"No se pudo consultar pedidos de Mercado Libre: {err}") from err
+        logger.error("No se pudo consultar pedidos de Mercado Libre para store_id=%s: %s", store.id, err)
+        raise HTTPException(status_code=502, detail="No pudimos consultar los pedidos de Mercado Libre en este momento. Intentá de nuevo más tarde.") from err
     finally:
         await adapter.aclose()
 
@@ -493,7 +521,18 @@ async def recalcular_comisiones(db: Session = Depends(get_db), store: Store = De
         raise HTTPException(status_code=400, detail="Mercado Libre no está conectado todavía — conectar primero con GET /api/mercadolibre/conectar.")
 
     site_id = account.external_account_site_id or "MLC"
-    access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
+    try:
+        access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
+    except HTTPException as err:
+        if err.status_code == 401:
+            raise HTTPException(
+                status_code=401,
+                detail="El token de Mercado Libre venció y no se pudo renovar. Hay que reconectar la cuenta.",
+            ) from err
+        raise HTTPException(
+            status_code=502,
+            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
+        ) from err
 
     productos_con_precio = [
         p for p in db.query(Product).filter_by(store_id=store.id).all()
