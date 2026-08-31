@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
-from app.db.models import Product, ProductVariant, Store, StoreSettings, User
+from app.db.models import ChannelCostSettings, MercadoLibreCategoryFee, Product, ProductVariant, Store, StoreSettings, User
 from app.db.session import get_db
 from app.domain.security import hash_password
 from tests.auth_helpers import autenticar
@@ -213,3 +213,129 @@ def test_configurar_margen_objetivo_via_endpoint_habilita_precio_recomendado(cli
     canal = client.get("/api/configuracion/canales").json()[0]
     assert canal["targetMarginPct"] == 25.0
     assert canal["minMarginPct"] == 10.0
+
+
+# ------------------------------------------------------------------
+# 31 de agosto de 2026 — unificación comisión real vs. manual
+# (resolver_costos_ml, app/api/routes/rentabilidad.py). Regla: la
+# comisión REAL ya verificada contra Mercado Libre gana siempre que
+# exista y haya listing_type_pref configurado; la manual
+# (ChannelCostSettings) es el fallback explícito. Nunca se inventa un
+# número. Ver también tests/test_publicaciones_endpoint.py para la
+# misma unificación en /precio-recomendado, /decision y /decision-lote.
+# ------------------------------------------------------------------
+
+
+def _producto_con_categoria_ml(db_session, tienda, *, sku, nombre, precio, costo, category_id="MLC180937"):
+    _producto_con_precio_y_costo(db_session, tienda, sku=sku, nombre=nombre, precio=precio, costo=costo)
+    producto = db_session.query(Product).filter_by(store_id=tienda.id, internal_sku=sku).one()
+    producto.ml_category_id = category_id
+    producto.ml_category_name = "Categoría de prueba"
+    db_session.commit()
+    return producto
+
+
+def _agregar_comision_ml_real(db_session, tienda, *, category_id, price, listing_type_id, percentage_fee, fixed_fee=0.0):
+    db_session.add(MercadoLibreCategoryFee(
+        store=tienda, category_id=category_id, listing_type_id=listing_type_id, price=price,
+        percentage_fee=percentage_fee, fixed_fee=fixed_fee, sale_fee_amount=price * percentage_fee / 100 + fixed_fee,
+        fetched_at=NOW,
+    ))
+    db_session.commit()
+
+
+def _configurar_canal_manual(client, *, commission_pct, listing_type_pref=None):
+    client.put(
+        "/api/configuracion/canales/mercadolibre",
+        json={"commission_pct": commission_pct, "shipping_cost": 0, "other_fixed_cost": 0, "listing_type_pref": listing_type_pref},
+    )
+
+
+def test_comision_real_disponible_se_usa_en_vez_de_la_manual(client, db_session, a_store):
+    """Caso 1 + 2 del pedido del dueño: comisión real cacheada Y manual
+    configurada con un % distinto — tiene que ganar la real."""
+    _producto_con_categoria_ml(db_session, a_store, sku="REAL-GANA", nombre="Producto con comisión real", precio=10000, costo=6000)
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_special", percentage_fee=12.0)
+    _configurar_canal_manual(client, commission_pct=30.0, listing_type_pref="classic")  # bien distinto a la real (12%)
+
+    body = client.get("/api/rentabilidad").json()
+    fila = next(f for f in body["productos"] if f["sku"] == "REAL-GANA")
+    assert fila["comisionMlFuente"] == "real"
+    # margen neto con comisión REAL (12%): 10000 - 6000 - 10000*0.12 = 2800
+    assert fila["margenMercadoLibreClp"] == 2800.0
+    assert fila["mercadoLibreConfigurado"] is True
+
+
+def test_sin_comision_real_usa_el_fallback_manual(client, db_session, a_store):
+    """Caso 3: sin comisión real cacheada, con manual configurada — el
+    fallback tiene que seguir funcionando exactamente como antes."""
+    _producto_con_categoria_ml(db_session, a_store, sku="SOLO-MANUAL", nombre="Producto sin comisión real", precio=10000, costo=6000)
+    _configurar_canal_manual(client, commission_pct=15.0, listing_type_pref="classic")
+
+    body = client.get("/api/rentabilidad").json()
+    fila = next(f for f in body["productos"] if f["sku"] == "SOLO-MANUAL")
+    assert fila["comisionMlFuente"] == "manual"
+    # margen neto con comisión manual (15%): 10000 - 6000 - 1500 = 2500
+    assert fila["margenMercadoLibreClp"] == 2500.0
+
+
+def test_sin_ninguna_comision_nunca_inventa_un_numero(client, db_session, a_store):
+    """Caso 4: ni real ni manual — nunca se inventa un %, el margen ML
+    queda explícitamente sin calcular."""
+    _producto_con_categoria_ml(db_session, a_store, sku="SIN-NADA", nombre="Producto sin ninguna comisión", precio=10000, costo=6000)
+    # Sin PUT a /configuracion/canales — canal nunca configurado.
+
+    body = client.get("/api/rentabilidad").json()
+    fila = next(f for f in body["productos"] if f["sku"] == "SIN-NADA")
+    assert fila["comisionMlFuente"] is None
+    assert fila["margenMercadoLibreClp"] is None
+    assert fila["margenMercadoLibrePct"] is None
+    assert fila["mercadoLibreConfigurado"] is False
+
+
+def test_comision_real_sin_listing_type_pref_configurado_no_elige_por_el_dueno(client, db_session, a_store):
+    """Con comisión real cacheada para Clásica Y Premium, pero SIN
+    listing_type_pref configurado (el default, "comparar ambas") —
+    elegir_comision_principal ya está diseñado para no elegir por el
+    dueño en ese caso; confirmamos que el fallback a manual se respeta,
+    en vez de elegir una de las dos comisiones reales arbitrariamente."""
+    _producto_con_categoria_ml(db_session, a_store, sku="SIN-PREF", nombre="Producto sin preferencia", precio=10000, costo=6000)
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_special", percentage_fee=12.0)
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_pro", percentage_fee=18.0)
+    _configurar_canal_manual(client, commission_pct=20.0)  # listing_type_pref=None a propósito
+
+    body = client.get("/api/rentabilidad").json()
+    fila = next(f for f in body["productos"] if f["sku"] == "SIN-PREF")
+    assert fila["comisionMlFuente"] == "manual"
+    assert fila["margenMercadoLibreClp"] == 2000.0  # 10000 - 6000 - 2000 (20% manual)
+
+
+def test_comision_real_de_una_empresa_nunca_se_mezcla_con_otra(client, db_session, a_store):
+    """Caso 5: dos empresas, misma categoría de Mercado Libre, comisiones
+    reales y manuales distintas — nunca se mezclan (MercadoLibreCategoryFee
+    está scopeada por store_id, ver el modelo)."""
+    _producto_con_categoria_ml(db_session, a_store, sku="A-REAL", nombre="Producto de A", precio=10000, costo=6000)
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_special", percentage_fee=10.0)
+    _configurar_canal_manual(client, commission_pct=99.0, listing_type_pref="classic")  # manual absurda, nunca debería usarse acá
+
+    otro_usuario = User(email="empresa-b@ejemplo.cl", password_hash=hash_password("x"), full_name="Dueño B", created_at=NOW, updated_at=NOW)
+    db_session.add(otro_usuario)
+    tienda_b = Store(owner=otro_usuario, name="Empresa B", created_at=NOW)
+    db_session.add(tienda_b)
+    db_session.add(StoreSettings(store=tienda_b, company_name="Empresa B", store_name="Empresa B"))
+    db_session.commit()
+    # Empresa B: MISMA categoría, MISMO precio, pero su propia comisión real distinta.
+    _producto_con_categoria_ml(db_session, tienda_b, sku="B-REAL", nombre="Producto de B", precio=10000, costo=6000)
+    _agregar_comision_ml_real(db_session, tienda_b, category_id="MLC180937", price=10000, listing_type_id="gold_special", percentage_fee=25.0)
+    db_session.add(ChannelCostSettings(store=tienda_b, channel="mercadolibre", commission_pct=5.0, listing_type_pref="classic", updated_at=NOW))
+    db_session.commit()
+
+    fila_a = next(f for f in client.get("/api/rentabilidad").json()["productos"] if f["sku"] == "A-REAL")
+    assert fila_a["comisionMlFuente"] == "real"
+    assert fila_a["margenMercadoLibreClp"] == 3000.0  # 10000-6000-1000 (10% real de A, nunca el 25% de B)
+
+    # Empresa B ve su propia comisión real (25%), nunca la de A (10%) ni su manual (5% propia, ni siquiera hace falta: hay real).
+    autenticar(client, db_session, otro_usuario, tienda_b, ahora=NOW)
+    fila_b = next(f for f in client.get("/api/rentabilidad").json()["productos"] if f["sku"] == "B-REAL")
+    assert fila_b["comisionMlFuente"] == "real"
+    assert fila_b["margenMercadoLibreClp"] == 1500.0  # 10000-6000-2500 (25% real de B)

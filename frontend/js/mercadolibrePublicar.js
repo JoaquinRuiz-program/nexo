@@ -190,6 +190,7 @@ window.LC = window.LC || {};
           <div><p class="stat-label">Margen</p><p class="stat-value stat-value--sm mt-1">${formatPct(d.margenEstimadoPct)}</p></div>
           <div><p class="stat-label">Competencia</p><p class="stat-value stat-value--sm mt-1">${d.competencia ? `${formatCLPReal(d.competencia.rangoPrecioMinimo)} – ${formatCLPReal(d.competencia.rangoPrecioMaximo)}` : "Sin datos"}</p></div>
         </div>
+        ${etiquetaComisionMl(d.comisionMlFuente)}
         <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">${escapeHtml(d.razon)}</p>
         ${d.faltantes && d.faltantes.length ? `
           <div class="space-y-1.5 mb-4">
@@ -261,6 +262,22 @@ window.LC = window.LC || {};
       return state.preparado.categoriaSugerida.nombre;
     }
     return pv.categoryId;
+  }
+
+  // 31 de agosto de 2026 — el dueño pidió explícitamente no confundir una
+  // estimación con un dato real: cuando hay comisión REAL de Mercado
+  // Libre ya verificada (cacheada por categoría+precio, ver
+  // resolver_costos_ml en el backend), el precio/margen mostrados arriba
+  // se calcularon con esa; si no, con la comisión manual configurada a
+  // mano. Nunca se oculta cuál de las dos se usó.
+  function etiquetaComisionMl(fuente) {
+    if (fuente === "real") {
+      return `<p class="text-xs text-emerald-600 dark:text-emerald-400 mb-3 flex items-center gap-1">${icon("checkCircle")} Comisión Mercado Libre: Real</p>`;
+    }
+    if (fuente === "manual") {
+      return `<p class="text-xs text-amber-600 dark:text-amber-400 mb-3">Comisión estimada — configuración manual</p>`;
+    }
+    return "";
   }
 
   function textoPosicion(pos) {

@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from app.adapters.mercadolibre import MercadoLibreAdapter, MercadoLibreAuthError, MercadoLibreRequestError
 from app.api.deps import get_current_store
 from app.api.routes.mercadolibre import _build_ml_config, _get_account, _get_valid_access_token, _require_configured
-from app.api.routes.rentabilidad import build_profitability_rows
+from app.api.routes.rentabilidad import build_profitability_rows, resolver_costos_ml
 from app.config import get_settings
 from app.db.models import ChannelCostSettings, MarketplaceAccount, MarketplaceListing, MarketplaceListingVariant, Product, ProductVariant, Store
 from app.db.session import get_db
@@ -43,7 +43,7 @@ from app.domain.ai_content import generate_full_description, generate_title
 from app.domain.catalog_selection import SelectionCriteria, classify_product
 from app.domain.competencia import AnalisisCompetencia, analizar_competencia
 from app.domain.decision import evaluar_decision
-from app.domain.pricing import RecomendacionPrecio, recomendar_precio
+from app.domain.pricing import ESTADO_RECOMENDACION, RecomendacionPrecio, recomendar_precio
 from app.domain.profitability import ChannelCosts
 from app.domain.listing_draft import build_draft
 from app.domain.listing_validation import (
@@ -474,20 +474,31 @@ async def analizar_competencia_mercadolibre(
 
 async def _resolver_recomendacion_precio(
     db: Session, store: Store, variante: ProductVariant, producto: Product
-) -> tuple[RecomendacionPrecio, Optional[AnalisisCompetencia]]:
+) -> tuple[RecomendacionPrecio, Optional[AnalisisCompetencia], str]:
     """Calcula la recomendación de precio + el análisis de competencia
     crudo, en un solo lugar — usado tanto por /precio-recomendado como por
     /decision (FASE 6), para no consultar Mercado Libre dos veces ni tener
     dos formas distintas de llegar al mismo resultado. Devuelve el
     AnalisisCompetencia crudo (no solo lo que RecomendacionPrecio guardó de
     él) porque decision.py necesita distinguir "nunca se consultó
-    competencia" de "se consultó y no hay ganador"."""
+    competencia" de "se consultó y no hay ganador".
+
+    31 de agosto de 2026 — la comisión de Mercado Libre que arma
+    `channel_costs` ya no es siempre la manual: `resolver_costos_ml`
+    (app/api/routes/rentabilidad.py) es la ÚNICA función de todo el
+    backend que decide "real vs. manual", reusada acá igual que en
+    Rentabilidad/Oportunidades — nunca dos formas distintas de resolver la
+    misma comisión para el mismo producto. Se devuelve también la fuente
+    ("real"|"manual") para que el frontend nunca la confunda."""
     config_canal = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
-    channel_costs = ChannelCosts(
+    channel_costs_manual = ChannelCosts(
         commission_pct=float(config_canal.commission_pct) if config_canal and config_canal.commission_pct is not None else None,
         shipping_cost=float(config_canal.shipping_cost) if config_canal and config_canal.shipping_cost is not None else None,
         other_fixed_cost=float(config_canal.other_fixed_cost) if config_canal and config_canal.other_fixed_cost is not None else None,
     )
+    listing_type_pref = config_canal.listing_type_pref if config_canal else None
+    precio_actual = float(variante.price) if variante.price is not None else None
+    channel_costs, fuente_comision_ml = resolver_costos_ml(db, store.id, producto, precio_actual, channel_costs_manual, listing_type_pref)
     margen_objetivo_pct = float(config_canal.target_margin_pct) if config_canal and config_canal.target_margin_pct is not None else None
     margen_minimo_pct = float(config_canal.min_margin_pct) if config_canal and config_canal.min_margin_pct is not None else None
 
@@ -524,7 +535,7 @@ async def _resolver_recomendacion_precio(
         margen_minimo_pct=margen_minimo_pct,
         analisis_competencia=analisis_competencia,
     )
-    return recomendacion, analisis_competencia
+    return recomendacion, analisis_competencia, fuente_comision_ml
 
 
 @router.get("/{variant_id}/mercadolibre/precio-recomendado")
@@ -534,7 +545,7 @@ async def precio_recomendado_mercadolibre(
     variante, _fila = _variante_de_la_empresa(db, store, variant_id)
     producto = variante.product
 
-    recomendacion, _analisis_competencia = await _resolver_recomendacion_precio(db, store, variante, producto)
+    recomendacion, _analisis_competencia, fuente_comision_ml = await _resolver_recomendacion_precio(db, store, variante, producto)
 
     return {
         # Siempre "RECOMENDACION" — Nexo v1 nunca aplica un cambio de
@@ -553,6 +564,11 @@ async def precio_recomendado_mercadolibre(
         "alcanzaMargenMinimo": recomendacion.alcanza_margen_minimo,
         # Hook para FASE 6 ("conviene publicar") — siempre None en V1.
         "clasificacion": recomendacion.clasificacion,
+        # 31 de agosto de 2026 — "real" (ya verificada contra Mercado
+        # Libre) o "manual" (configuración a mano) — nunca se le muestra al
+        # dueño una estimación como si fuera un dato real. None si no se
+        # pudo calcular nada (estado == datos_insuficientes).
+        "comisionMlFuente": fuente_comision_ml if recomendacion.estado == ESTADO_RECOMENDACION else None,
     }
 
 
@@ -572,7 +588,7 @@ async def decision_mercadolibre(
     variante, _fila = _variante_de_la_empresa(db, store, variant_id)
     producto = variante.product
 
-    recomendacion, analisis_competencia = await _resolver_recomendacion_precio(db, store, variante, producto)
+    recomendacion, analisis_competencia, fuente_comision_ml = await _resolver_recomendacion_precio(db, store, variante, producto)
     decision = evaluar_decision(recomendacion, analisis_competencia)
 
     competencia_resumen = None
@@ -596,6 +612,10 @@ async def decision_mercadolibre(
         "margenEstimadoPct": decision.margen_estimado_pct,
         "competencia": competencia_resumen,
         "faltantes": decision.faltantes,
+        # 31 de agosto de 2026 — "real"|"manual"|None, mismo criterio que
+        # /precio-recomendado (comparten _resolver_recomendacion_precio,
+        # nunca calculan la comisión de dos formas distintas).
+        "comisionMlFuente": fuente_comision_ml if recomendacion.estado == ESTADO_RECOMENDACION else None,
     }
 
 
@@ -615,17 +635,25 @@ async def decision_mercadolibre(
 @router.get("/mercadolibre/decision-lote")
 def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> list[dict]:
     config_canal = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
-    channel_costs = ChannelCosts(
+    channel_costs_manual = ChannelCosts(
         commission_pct=float(config_canal.commission_pct) if config_canal and config_canal.commission_pct is not None else None,
         shipping_cost=float(config_canal.shipping_cost) if config_canal and config_canal.shipping_cost is not None else None,
         other_fixed_cost=float(config_canal.other_fixed_cost) if config_canal and config_canal.other_fixed_cost is not None else None,
     )
+    listing_type_pref = config_canal.listing_type_pref if config_canal else None
     margen_objetivo_pct = float(config_canal.target_margin_pct) if config_canal and config_canal.target_margin_pct is not None else None
     margen_minimo_pct = float(config_canal.min_margin_pct) if config_canal and config_canal.min_margin_pct is not None else None
 
+    # 31 de agosto de 2026 — antes armaba su propio ChannelCosts manual acá
+    # mismo, en vez de reusar resolver_costos_ml (mismo hallazgo de
+    # product-reviewer que _resolver_recomendacion_precio): esta era la
+    # razón real por la que la columna "Decisión" de Oportunidades podía
+    # contradecir el margen de la misma fila.
     variantes = db.query(ProductVariant).filter_by(store_id=store.id).all()
     resultado = []
     for variante in variantes:
+        precio_actual = float(variante.price) if variante.price is not None else None
+        channel_costs, _fuente = resolver_costos_ml(db, store.id, variante.product, precio_actual, channel_costs_manual, listing_type_pref)
         recomendacion = recomendar_precio(
             costo=float(variante.cost_price) if variante.cost_price is not None else None,
             channel_costs=channel_costs,

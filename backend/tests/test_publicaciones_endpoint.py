@@ -24,6 +24,7 @@ from app.db.models import (
     MarketplaceAccount,
     MarketplaceListing,
     MarketplaceListingVariant,
+    MercadoLibreCategoryFee,
     Product,
     ProductImage,
     ProductVariant,
@@ -1328,6 +1329,139 @@ def test_decision_lote_sin_margen_configurado_es_revisar_para_todos(client, db_s
     assert len(body) >= 1
     assert all(fila["decision"] == "revisar" for fila in body)
     assert all("margen objetivo del canal" in fila["faltantes"] for fila in body)
+
+
+# ------------------------------------------------------------------
+# 31 de agosto de 2026 — unificación comisión real vs. manual en
+# /precio-recomendado, /decision y /decision-lote (mismo criterio que
+# tests/test_rentabilidad.py, acá a nivel de integración HTTP completa).
+# ------------------------------------------------------------------
+
+
+def _agregar_comision_ml_real(db_session, tienda, *, category_id, price, listing_type_id, percentage_fee, fixed_fee=0.0):
+    db_session.add(MercadoLibreCategoryFee(
+        store=tienda, category_id=category_id, listing_type_id=listing_type_id, price=price,
+        percentage_fee=percentage_fee, fixed_fee=fixed_fee, sale_fee_amount=price * percentage_fee / 100 + fixed_fee,
+        fetched_at=NOW,
+    ))
+    db_session.commit()
+
+
+def _configurar_canal_con_pref(db_session, tienda, *, commission_pct, listing_type_pref):
+    canal = db_session.query(ChannelCostSettings).filter_by(store_id=tienda.id, channel="mercadolibre").first()
+    canal.commission_pct = commission_pct
+    canal.listing_type_pref = listing_type_pref
+    db_session.commit()
+
+
+def test_precio_recomendado_usa_comision_real_en_vez_de_manual(client, db_session, a_store):
+    variant_id = _producto_publicable(db_session, a_store, sku="PR-REAL", costo=8000, precio=20000)
+    producto = db_session.query(ProductVariant).filter_by(id=variant_id).one().product
+    producto.ml_category_id = "MLC180937"
+    db_session.commit()
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=20000, listing_type_id="gold_special", percentage_fee=10.0)
+    _configurar_canal_con_pref(db_session, a_store, commission_pct=50.0, listing_type_pref="classic")  # manual absurda, no debe usarse
+    _configurar_margen(db_session, a_store, objetivo=25.0, minimo=10.0)
+
+    res = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/precio-recomendado")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["estado"] == "recomendacion"
+    assert body["comisionMlFuente"] == "real"
+    # costos_fijos=8000; precio = 8000 / (1 - 0.25 - 0.10) = 8000/0.65 (comisión REAL 10%, nunca la manual 50%)
+    assert body["precioRecomendado"] == round(8000 / 0.65, 2)
+
+
+def test_precio_recomendado_sin_comision_real_cae_al_fallback_manual(client, db_session, a_store):
+    variant_id = _producto_publicable(db_session, a_store, sku="PR-MANUAL", costo=8000, precio=20000)
+    _configurar_margen(db_session, a_store, objetivo=25.0, minimo=10.0)  # comisión manual 15% (default del helper), sin comisión real cacheada
+
+    res = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/precio-recomendado")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["comisionMlFuente"] == "manual"
+    assert body["precioRecomendado"] == round(8000 / (1 - 0.25 - 0.15), 2)
+
+
+def test_precio_recomendado_y_decision_usan_exactamente_la_misma_comision(client, db_session, a_store):
+    """Caso 6 del pedido del dueño: mismos números para el mismo
+    producto — ambos endpoints comparten _resolver_recomendacion_precio,
+    que ahora resuelve la comisión una sola vez."""
+    variant_id = _producto_publicable(db_session, a_store, sku="MISMA-COMISION", costo=8000, precio=20000)
+    producto = db_session.query(ProductVariant).filter_by(id=variant_id).one().product
+    producto.ml_category_id = "MLC180937"
+    db_session.commit()
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=20000, listing_type_id="gold_special", percentage_fee=11.0)
+    _configurar_canal_con_pref(db_session, a_store, commission_pct=40.0, listing_type_pref="classic")
+    _configurar_margen(db_session, a_store, objetivo=25.0, minimo=10.0)
+
+    precio = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/precio-recomendado").json()
+    decision = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/decision").json()
+
+    assert precio["comisionMlFuente"] == "real"
+    assert decision["comisionMlFuente"] == "real"
+    assert precio["precioRecomendado"] == decision["precioRecomendado"]
+    assert precio["gananciaEstimada"] == decision["gananciaEstimada"]
+
+
+def test_decision_lote_tambien_usa_comision_real(client, db_session, a_store):
+    """El hallazgo real de product-reviewer: decision-lote armaba su
+    propio ChannelCosts manual por separado, sin pasar por
+    _resolver_recomendacion_precio — la columna Decisión de Oportunidades
+    podía contradecir el precio recomendado calculado con la comisión
+    real. Confirma que ahora coincide."""
+    variant_id = _producto_publicable(db_session, a_store, sku="LOTE-REAL", costo=8000, precio=20000)
+    producto = db_session.query(ProductVariant).filter_by(id=variant_id).one().product
+    producto.ml_category_id = "MLC180937"
+    db_session.commit()
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=20000, listing_type_id="gold_special", percentage_fee=11.0)
+    _configurar_canal_con_pref(db_session, a_store, commission_pct=40.0, listing_type_pref="classic")
+    _configurar_margen(db_session, a_store, objetivo=25.0, minimo=10.0)
+
+    precio = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/precio-recomendado").json()
+    with respx.mock:  # decision-lote nunca debe llamar a Mercado Libre
+        lote = client.get("/api/publicaciones/mercadolibre/decision-lote").json()
+    fila = next(f for f in lote if f["variantId"] == variant_id)
+
+    assert fila["precioRecomendado"] == precio["precioRecomendado"]
+
+
+def test_precio_recomendado_de_comision_real_nunca_usa_la_de_otra_empresa(client, db_session, a_store):
+    """Caso 5 a nivel de endpoint (no solo de modelo/rentabilidad): dos
+    empresas, misma categoría/precio, comisión real distinta cacheada —
+    nunca se mezclan."""
+    variant_id = _producto_publicable(db_session, a_store, sku="AISLADO-A", costo=8000, precio=20000)
+    producto = db_session.query(ProductVariant).filter_by(id=variant_id).one().product
+    producto.ml_category_id = "MLC180937"
+    db_session.commit()
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=20000, listing_type_id="gold_special", percentage_fee=10.0)
+    _configurar_canal_con_pref(db_session, a_store, commission_pct=15.0, listing_type_pref="classic")
+    _configurar_margen(db_session, a_store, objetivo=25.0, minimo=10.0)
+
+    otro_usuario = User(email="otra-empresa@ejemplo.cl", password_hash=hash_password("x"), full_name="Dueño B", created_at=NOW, updated_at=NOW)
+    db_session.add(otro_usuario)
+    tienda_b = Store(owner=otro_usuario, name="Empresa B", created_at=NOW)
+    db_session.add(tienda_b)
+    db_session.commit()
+    # Empresa B: misma categoría, mismo precio, comisión real MUY distinta (40%).
+    variant_id_b = _producto_publicable(db_session, tienda_b, sku="AISLADO-B", costo=8000, precio=20000)
+    producto_b = db_session.query(ProductVariant).filter_by(id=variant_id_b).one().product
+    producto_b.ml_category_id = "MLC180937"
+    db_session.commit()
+    _agregar_comision_ml_real(db_session, tienda_b, category_id="MLC180937", price=20000, listing_type_id="gold_special", percentage_fee=40.0)
+    _configurar_canal_con_pref(db_session, tienda_b, commission_pct=15.0, listing_type_pref="classic")
+    _configurar_margen(db_session, tienda_b, objetivo=25.0, minimo=10.0)
+
+    body_a = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/precio-recomendado").json()
+    assert body_a["comisionMlFuente"] == "real"
+    assert body_a["precioRecomendado"] == round(8000 / (1 - 0.25 - 0.10), 2)  # 10% de A, nunca el 40% de B
+
+    autenticar(client, db_session, otro_usuario, tienda_b, ahora=NOW)
+    body_b = client.get(f"/api/publicaciones/{variant_id_b}/mercadolibre/precio-recomendado").json()
+    assert body_b["comisionMlFuente"] == "real"
+    assert body_b["precioRecomendado"] == round(8000 / (1 - 0.25 - 0.40), 2)  # 40% de B, nunca el 10% de A
 
 
 def test_confirmar_sin_imagen_bloquea_con_400(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
