@@ -33,6 +33,14 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     # active | suspended | pending_verification
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="active")
+    # 30 de agosto de 2026 — panel de administrador de Nexo (dueño de la
+    # plataforma, ve/administra TODOS los clientes). Booleano simple, no
+    # una tabla de roles aparte: no hace falta granularidad (admin de
+    # soporte vs. facturación) todavía — decisión confirmada con el dueño.
+    # SOLO otorgable manualmente (script/DB directa) — nunca desde un
+    # endpoint de la API, ni siquiera uno de "actualizar mi perfil": ver
+    # app/api/deps.py::require_nexo_admin, el único lugar que lo lee.
+    is_nexo_admin: Mapped[bool] = mapped_column(default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 

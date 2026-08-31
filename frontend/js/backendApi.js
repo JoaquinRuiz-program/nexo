@@ -300,6 +300,25 @@ window.LC = window.LC || {};
     });
   }
 
+  // ------------------------------------------------------------------
+  // 30 de agosto de 2026 — panel de administrador de Nexo (dueño de la
+  // plataforma). Solo responde si la sesión tiene is_nexo_admin — para
+  // cualquier otro usuario, el backend devuelve 404 (nunca 403, ver
+  // app/api/deps.py::require_nexo_admin).
+  // ------------------------------------------------------------------
+
+  async function listarClientesAdmin() {
+    return request("/api/admin/clientes");
+  }
+
+  async function detalleClienteAdmin(storeId) {
+    return request(`/api/admin/clientes/${storeId}`);
+  }
+
+  async function actualizarEstadoClienteAdmin(storeId, suspendido) {
+    return request(`/api/admin/clientes/${storeId}/estado`, { method: "PUT", body: { suspendido } });
+  }
+
   async function obtenerConfiguracionCanales() {
     return request("/api/configuracion/canales");
   }
@@ -342,5 +361,8 @@ window.LC = window.LC || {};
     actualizarCodigoBarras,
     obtenerConfiguracionCanales,
     configurarCanal,
+    listarClientesAdmin,
+    detalleClienteAdmin,
+    actualizarEstadoClienteAdmin,
   };
 })();

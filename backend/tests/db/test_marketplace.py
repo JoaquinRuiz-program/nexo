@@ -67,12 +67,19 @@ def test_user_product_id_se_persiste_y_es_opcional(db_session, a_store, now):
     """29 de agosto de 2026 — fase de publicación, commit 2/N: el campo
     todavía no lo llena ningún endpoint (se agrega recién ahora, ver
     migración 2ac0d9aaa3de), pero el modelo tiene que aceptar guardarlo Y
-    aceptar que quede vacío (publicaciones existentes/futuras sin ese dato)."""
+    aceptar que quede vacío (publicaciones existentes/futuras sin ese dato).
+
+    Cada listing usa una cuenta distinta a propósito (30 de agosto de
+    2026: uq_listing_account_product prohíbe dos listings activos para el
+    mismo producto+cuenta — la regla real de negocio, no algo que este
+    test deba sortear con el mismo par cuenta/producto)."""
     product = Product(store=a_store, name="Cuaderno con User Product", product_type="simple", created_at=now, updated_at=now)
     db_session.add(product)
     db_session.flush()
     account = MarketplaceAccount(store=a_store, marketplace="mercadolibre")
     db_session.add(account)
+    account_2 = MarketplaceAccount(store=a_store, marketplace="mercadolibre_test_2")
+    db_session.add(account_2)
     db_session.flush()
 
     con_user_product = MarketplaceListing(
@@ -86,7 +93,7 @@ def test_user_product_id_se_persiste_y_es_opcional(db_session, a_store, now):
 
     # Nullable de verdad: una publicación sin este dato no debe fallar.
     sin_user_product = MarketplaceListing(
-        account=account, product=product, external_listing_id="MLC222222222",
+        account=account_2, product=product, external_listing_id="MLC222222222",
         status="active", created_at=now,
     )
     db_session.add(sin_user_product)

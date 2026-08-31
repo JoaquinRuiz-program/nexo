@@ -14,6 +14,7 @@ window.LC = window.LC || {};
   const { escapeHtml, formatCLP, formatDate, initials, toast, infoModal, openModal, icon } = LC.ui;
 
   const SECTION_TITLES = {
+    admin: "Panel Nexo",
     dashboard: "Dashboard",
     productos: "Productos",
     publicaciones: "Publicar en Mercado Libre",
@@ -77,6 +78,9 @@ window.LC = window.LC || {};
 
     try {
       switch (routeName) {
+        case "admin":
+          await LC.adminPanel.render(main, param);
+          break;
         case "dashboard":
           await renderDashboard(main);
           break;
@@ -160,7 +164,32 @@ window.LC = window.LC || {};
     document.getElementById("user-name-label").textContent = session.nombre;
     document.getElementById("user-avatar").textContent = initials(session.nombre);
     document.getElementById("theme-toggle-icon").innerHTML = icon(LC.theme.isDark() ? "sun" : "moon");
-    document.getElementById("sidebar-empresa-activa").textContent = nombreEmpresaActiva(session);
+    document.getElementById("sidebar-empresa-activa").textContent = session.esNexoAdmin ? "Panel Nexo" : nombreEmpresaActiva(session);
+    document.getElementById("nav-link-admin").classList.toggle("hidden", !session.esNexoAdmin);
+    // Un admin de Nexo no tiene tienda propia — las pantallas de cliente
+    // ni siquiera cargarían (get_current_store le daría error), así que
+    // esos links ni se muestran (además del guard de router.js que ya
+    // redirige si igual se navega ahí a mano).
+    ["dashboard", "productos", "oportunidades", "importar", "integraciones", "automatizaciones", "suscripcion", "configuracion"].forEach((r) => {
+      const link = document.querySelector(`.nav-link[data-route="${r}"]`);
+      if (link) link.classList.toggle("hidden", !!session.esNexoAdmin);
+    });
+    actualizarPillModoDemo();
+  }
+
+  // 30 de agosto de 2026 — hallazgo de frontend-ux-engineer: este pill
+  // quedaba SIEMPRE visible en el header, aunque el catálogo ya fuera
+  // real (contradecía el resto de la interfaz, que sí distingue bien
+  // real/demo panel por panel). display inline (no la clase "hidden") a
+  // propósito: "hidden"/"sm:inline-flex" ya gobiernan la visibilidad
+  // responsive (oculto en mobile, visible en desktop) — un estilo inline
+  // es la única forma de forzar "oculto" en cualquier tamaño sin pisar esa
+  // regla.
+  async function actualizarPillModoDemo() {
+    const pill = document.getElementById("header-demo-pill");
+    if (!pill) return;
+    const modo = await LC.dataSource.getModo();
+    pill.style.display = modo === "demo" ? "" : "none";
   }
 
   function openMobileSidebar() {
@@ -350,6 +379,15 @@ window.LC = window.LC || {};
     ]);
     const esReal = modo === "real";
 
+    // Margen/comisión de Mercado Libre — solo para el paso de onboarding
+    // "Configura costos y margen" (30 de agosto de 2026); no bloquea el
+    // resto del dashboard si falla.
+    let canalMl = null;
+    if (esReal) {
+      const cfgRes = await LC.backendApi.obtenerConfiguracionCanales();
+      if (cfgRes.ok) canalMl = cfgRes.data.find((c) => c.channel === "mercadolibre") || null;
+    }
+
     const alertas = [...resumen.alertasSinStock, ...resumen.alertasStockBajo].slice(0, 5);
 
     main.innerHTML = `
@@ -390,7 +428,7 @@ window.LC = window.LC || {};
           </div>
         </div>
 
-        ${esReal ? renderOnboarding(resumen) : ""}
+        ${esReal ? renderOnboarding(resumen, canalMl) : ""}
         ${esReal ? renderQueHacerAhora(resumen) : ""}
         ${esReal ? renderRentabilidadVentasPanel(resumen) : ""}
 
@@ -475,24 +513,30 @@ window.LC = window.LC || {};
     });
   }
 
-  // Onboarding — 5 pasos genéricos para cualquier rubro (nunca se asume
-  // Mercado Libre como única fuente). Cada "hecho" sale de datos reales que
-  // ya trae /api/dashboard/resumen; el paso de automatizaciones queda
-  // siempre pendiente a propósito — no hay motor de automatización real
-  // todavía (ver pantalla Automatizaciones). Se oculta solo cuando los 5
-  // pasos ya están completos, para no mostrar tareas innecesarias.
-  function buildPasosOnboarding(resumen) {
+  // Onboarding — 30 de agosto de 2026, reordenado según hallazgo de
+  // frontend-ux-engineer: el orden real en que un dueño nuevo usa Nexo es
+  // importar su catálogo PRIMERO, después configurar costos/margen, recién
+  // ahí conectar Mercado Libre (opcional en este punto) y ver oportunidades
+  // — antes el paso de "conectar fuentes" aparecía segundo, aunque nadie lo
+  // hace antes de tener productos cargados. "Configura costos y margen" es
+  // un paso propio ahora (antes estaba escondido dentro del criterio de
+  // "Revisa tus oportunidades", sin ningún ítem que lo señalara). Cada paso
+  // trae su `ruta` para ser clickeable — "Activa tus automatizaciones"
+  // quedó aparte (ver pasosPendientesAutomatizacion): nunca se completa
+  // hoy (no hay motor real), mezclarla en la misma barra de progreso hacía
+  // que nunca llegara a 100%.
+  function buildPasosOnboarding(resumen, canalMl) {
     return [
-      { titulo: "Configura tu empresa", hecho: true },
-      { titulo: "Conecta tus fuentes de información", hecho: !!(resumen.mercadoLibre && resumen.mercadoLibre.conectado) },
-      { titulo: "Importa tus productos", hecho: resumen.total > 0 },
-      { titulo: "Revisa tus oportunidades", hecho: !!(resumen.rentabilidad && resumen.rentabilidad.productosConCosto > 0) },
-      { titulo: "Activa tus automatizaciones", hecho: false },
+      { titulo: "Configura tu empresa", hecho: true, ruta: null },
+      { titulo: "Importa tus productos", hecho: resumen.total > 0, ruta: "/importar" },
+      { titulo: "Configura costos y margen de Mercado Libre", hecho: !!(canalMl && canalMl.targetMarginPct != null), ruta: "/configuracion" },
+      { titulo: "Conecta Mercado Libre", hecho: !!(resumen.mercadoLibre && resumen.mercadoLibre.conectado), ruta: "/integraciones" },
+      { titulo: "Revisa tus oportunidades", hecho: !!(resumen.rentabilidad && resumen.rentabilidad.productosConCosto > 0), ruta: "/oportunidades" },
     ];
   }
 
-  function renderOnboarding(resumen) {
-    const pasos = buildPasosOnboarding(resumen);
+  function renderOnboarding(resumen, canalMl) {
+    const pasos = buildPasosOnboarding(resumen, canalMl);
     const completados = pasos.filter((p) => p.hecho).length;
     if (completados === pasos.length) return "";
     return `
@@ -506,9 +550,9 @@ window.LC = window.LC || {};
           ${pasos
             .map(
               (p) => `
-            <div class="flex items-center gap-2.5 text-sm">
+            <div class="flex items-center gap-2.5 text-sm ${!p.hecho && p.ruta ? "onboarding-paso-pendiente cursor-pointer" : ""}" ${!p.hecho && p.ruta ? `data-nav="${p.ruta}"` : ""}>
               <span class="dot ${p.hecho ? "dot--green" : "dot--gray"}"></span>
-              <span class="${p.hecho ? "text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-200"}">${escapeHtml(p.titulo)}</span>
+              <span class="${p.hecho ? "text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-200"} ${!p.hecho && p.ruta ? "hover:underline" : ""}">${escapeHtml(p.titulo)}</span>
             </div>`
             )
             .join("")}
@@ -1628,16 +1672,34 @@ window.LC = window.LC || {};
     return `<td class="px-3 py-2.5"><span class="reco-badge reco-${visual} !text-xs !py-1">${DECISION_COLUMNA_LABEL[visual] || visual}</span></td>`;
   }
 
+  // 30 de agosto de 2026 — hallazgo de frontend-ux-engineer: "sin_datos"
+  // tiene 3 causas reales distintas (ver domain/catalog_selection.py), pero
+  // el botón mostraba siempre "Agregar costo" — inútil si la causa real
+  // era "falta configurar el canal Mercado Libre". Ahora se lee `p.razon`
+  // (texto real que ya manda el backend, nunca inventado acá) para elegir
+  // la acción correcta.
+  function accionSinDatos(p) {
+    const razon = p.razon || "";
+    if (/mercado libre/i.test(razon)) {
+      return `<button data-ir-configuracion class="btn-secondary !py-1.5 !text-xs">Configurar Mercado Libre</button>`;
+    }
+    if (/costo de compra/i.test(razon)) {
+      return `<button data-agregar-costo="${p.id}" class="btn-secondary !py-1.5 !text-xs">Agregar costo</button>`;
+    }
+    // Falta precio de venta u otra causa sin acción directa desde acá —
+    // se manda al detalle del producto en vez de un botón que no resuelve
+    // nada.
+    return `<button data-open="${p.id}" class="btn-secondary !py-1.5 !text-xs">Ver producto</button>`;
+  }
+
   function filaOportunidad(p, decisionMap) {
-    const accion =
-      p.clasificacion === "sin_datos"
-        ? `<button data-agregar-costo="${p.id}" class="btn-secondary !py-1.5 !text-xs">Agregar costo</button>`
-        : `<button data-open="${p.id}" class="btn-secondary !py-1.5 !text-xs">Ver producto</button>`;
+    const accion = p.clasificacion === "sin_datos" ? accionSinDatos(p) : `<button data-open="${p.id}" class="btn-secondary !py-1.5 !text-xs">Ver producto</button>`;
     return `
       <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0">
         <td class="px-3 py-2.5">
           <p class="font-medium text-slate-800 dark:text-slate-100">${escapeHtml(p.nombre)}</p>
           <p class="text-xs text-slate-400 font-mono">${escapeHtml(p.sku || "—")}</p>
+          ${p.clasificacion === "sin_datos" && p.razon ? `<p class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">${escapeHtml(p.razon)}</p>` : ""}
         </td>
         <td class="px-3 py-2.5 text-right">${p.precio != null ? formatCLP(p.precio) : "—"}</td>
         <td class="px-3 py-2.5 text-right">${p.costo != null ? formatCLP(p.costo) : "—"}</td>
@@ -1744,6 +1806,9 @@ window.LC = window.LC || {};
         const p = productos.find((x) => String(x.id) === btn.dataset.agregarCosto);
         abrirEditorCosto(p, () => renderOportunidades(main));
       });
+    });
+    main.querySelectorAll("[data-ir-configuracion]").forEach((btn) => {
+      btn.addEventListener("click", () => LC.router.navigate("/configuracion"));
     });
 
     const recalcularBtn = document.getElementById("recalcular-comisiones-btn");

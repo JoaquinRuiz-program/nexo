@@ -30,7 +30,11 @@ window.LC = window.LC || {};
     return {
       nombre: data.usuario.nombre,
       email: data.usuario.email,
-      empresa: data.empresa, // {id, nombre} — el nombre REAL, nunca de LC.settings
+      empresa: data.empresa, // {id, nombre} — el nombre REAL, nunca de LC.settings; null para un admin de Nexo sin tienda propia
+      // 30 de agosto de 2026 — panel de administrador de Nexo (dueño de la
+      // plataforma). Nunca se deduce de ningún otro dato en el frontend
+      // (ej. el email) — viene siempre tal cual del backend.
+      esNexoAdmin: !!data.esNexoAdmin,
     };
   }
 

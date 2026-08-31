@@ -29,6 +29,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.adapters.mercadolibre import MercadoLibreAdapter, MercadoLibreAuthError, MercadoLibreRequestError
@@ -1083,6 +1084,32 @@ async def confirmar_publicacion_mercadolibre(
             )
         )
         db.commit()
+    except IntegrityError as err:
+        # 30 de agosto de 2026 — red de seguridad real (hallazgo de
+        # qa-engineer) contra la carrera de dos requests casi simultáneas
+        # para el mismo producto: el chequeo de "¿ya publicado?" de más
+        # arriba es un SELECT sin lock, así que las dos pueden pasarlo y
+        # las dos pueden llegar a ejecutar el POST /items real contra
+        # Mercado Libre. Esta constraint (uq_listing_account_product) no
+        # puede evitar ESE POST real duplicado del lado de Mercado Libre
+        # — ya se ejecutó, arriba, antes de este bloque — pero sí evita
+        # que Nexo termine con dos registros locales silenciosos, y le
+        # avisa al dueño con un mensaje honesto para que revise su cuenta.
+        db.rollback()
+        logger.error(
+            "Mercado Libre publicó item_id=%s (user_product_id=%s) para variant_id=%s (store_id=%s) pero ya "
+            "existía un registro local para esta cuenta/producto (carrera de doble publicación): %s",
+            item_id, user_product_id, variante.id, store.id, err,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Mercado Libre creó una publicación (item_id={item_id}) pero Nexo ya tenía otra publicación "
+                "registrada para este producto — probablemente se enviaron dos solicitudes de publicación al "
+                "mismo tiempo. Revisá tu cuenta de Mercado Libre: es posible que haya quedado una publicación "
+                "duplicada que tengas que pausar o cerrar a mano."
+            ),
+        ) from err
     except Exception as err:
         db.rollback()
         logger.error(

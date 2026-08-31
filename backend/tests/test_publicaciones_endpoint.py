@@ -1431,6 +1431,56 @@ def test_confirmar_bloquea_publicacion_duplicada_para_la_misma_cuenta(client, db
 
 
 @respx.mock
+def test_confirmar_otra_variante_del_mismo_producto_ya_publicado_no_duplica_localmente(
+    client, db_session, a_store, cuenta_ml_conectada, monkeypatch
+):
+    """30 de agosto de 2026 — hallazgo de qa-engineer: el chequeo previo de
+    "¿ya publicado?" está scopeado por variant_id, así que NUNCA detectaba
+    este caso (una segunda variante del MISMO producto, publicada para la
+    MISMA cuenta) — pasaba de largo el SELECT y llegaba hasta acá. La
+    constraint uq_listing_account_product (nueva) es la que realmente lo
+    bloquea, con un mensaje honesto en vez de un 500 crudo."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id_a = _producto_publicable(db_session, a_store, sku="DUP-PROD-A", barcode="7891234567895")
+    variante_a = db_session.get(ProductVariant, variant_id_a)
+    producto = variante_a.product
+
+    # Segunda variante del MISMO producto — nunca pasó por _producto_publicable
+    # (que crea un producto nuevo cada vez), se agrega a mano.
+    variante_b = ProductVariant(
+        product=producto, store_id=a_store.id, variant_sku="DUP-PROD-B", price=5000, cost_price=3000,
+        marketplace_stock=5, barcode="7891234567895", created_at=NOW, updated_at=NOW,
+    )
+    db_session.add(variante_b)
+    db_session.commit()
+
+    listing_previo = MarketplaceListing(
+        account=cuenta_ml_conectada, product=producto, external_listing_id="MLC000000000", status="active", created_at=NOW
+    )
+    db_session.add(listing_previo)
+    db_session.flush()
+    db_session.add(MarketplaceListingVariant(listing=listing_previo, variant=variante_a, price=5000, stock_quantity=5))
+    db_session.commit()
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(201, json={"id": "MLC000000B"}))
+
+    res = client.post(
+        f"/api/publicaciones/{variante_b.id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+
+    assert res.status_code == 409, res.text
+    assert "MLC000000B" in res.json()["detail"]  # nunca se oculta el item_id real
+    # Sigue existiendo solo el listing previo — la carrera no dejó un
+    # segundo registro local silencioso.
+    assert db_session.query(MarketplaceListing).count() == 1
+    assert db_session.query(MarketplaceListingVariant).count() == 1
+
+
+@respx.mock
 def test_confirmar_con_atributos_obligatorios_faltantes_devuelve_400(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
     monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
     variant_id = _producto_publicable(db_session, a_store, sku="FALTAN-ATRIB")  # sin barcode, sin COLOR

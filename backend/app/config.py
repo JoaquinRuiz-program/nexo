@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     # falta (mismo caso conocido de Nginx/PHP-FPM descartando la cabecera
     # Authorization en http/https locales).
     woocommerce_auth_method: Optional[str] = None
+    # 30 de agosto de 2026 — hallazgo de security-engineer: estas
+    # credenciales son GLOBALES (una sola tienda WooCommerce para todo el
+    # backend), pero GET /api/productos/reporte no estaba scopeado por
+    # tienda — cualquier empresa autenticada veía el mismo catálogo. Hasta
+    # que WooCommerce se integre de verdad por tienda (fuera de esta
+    # ronda), el endpoint queda restringido a ESTA tienda puntual — nunca
+    # hardcodeado por nombre en el código, siempre configurable/removible
+    # acá. None = deshabilitado para todas las tiendas.
+    woocommerce_legacy_store_id: Optional[int] = None
 
     # Base de datos propia del sistema (NO es WooCommerce ni Mercado Libre —
     # ver app/db/). Por defecto un archivo SQLite local, para no depender de

@@ -353,11 +353,42 @@ def test_ruta_reporte_no_es_capturada_por_la_ruta_dinamica(client, a_store, monk
     /api/productos/reporte, FastAPI intentaría convertir "reporte" a int y
     esta request devolvería 422 — en vez de eso debe llegar al handler de
     WooCommerce y fallar con su 500 normal por falta de credenciales (sin
-    llamar a la red real: se fuerzan credenciales vacías)."""
+    llamar a la red real: se fuerzan credenciales vacías). Necesita
+    woocommerce_legacy_store_id apuntando a ESTA tienda — si no, el nuevo
+    gate de tienda (30 de agosto de 2026) devuelve 404 antes de llegar acá."""
+    monkeypatch.setattr(
+        "app.api.routes.productos.get_settings",
+        lambda: Settings(
+            woocommerce_url="", woocommerce_consumer_key="", woocommerce_consumer_secret="",
+            woocommerce_legacy_store_id=a_store.id,
+        ),
+    )
+    res = client.get("/api/productos/reporte")
+    assert res.status_code == 500
+    assert "WooCommerce" in res.json()["detail"]
+
+
+def test_reporte_sin_legacy_store_id_configurado_da_404_para_cualquier_tienda(client, a_store, monkeypatch):
+    """30 de agosto de 2026 — hallazgo de security-engineer: sin este
+    setting, el endpoint queda deshabilitado para TODAS las tiendas (nunca
+    un fallback abierto por accidente)."""
     monkeypatch.setattr(
         "app.api.routes.productos.get_settings",
         lambda: Settings(woocommerce_url="", woocommerce_consumer_key="", woocommerce_consumer_secret=""),
     )
     res = client.get("/api/productos/reporte")
-    assert res.status_code == 500
-    assert "WooCommerce" in res.json()["detail"]
+    assert res.status_code == 404
+
+
+def test_reporte_de_una_tienda_distinta_a_la_legacy_da_404(client, a_store, monkeypatch):
+    """Empresa real, pero no es la única autorizada al catálogo WooCommerce
+    global — nunca ve el catálogo de otra empresa."""
+    monkeypatch.setattr(
+        "app.api.routes.productos.get_settings",
+        lambda: Settings(
+            woocommerce_url="", woocommerce_consumer_key="", woocommerce_consumer_secret="",
+            woocommerce_legacy_store_id=a_store.id + 999,
+        ),
+    )
+    res = client.get("/api/productos/reporte")
+    assert res.status_code == 404

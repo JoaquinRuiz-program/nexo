@@ -74,6 +74,16 @@ class MarketplaceListing(Base):
     __tablename__ = "marketplace_listings"
     __table_args__ = (
         UniqueConstraint("account_id", "external_listing_id", name="uq_listing_per_account"),
+        # 30 de agosto de 2026 — red de seguridad real contra publicar el
+        # mismo producto dos veces para la misma cuenta (hallazgo de
+        # qa-engineer: el chequeo previo en _resolver_publicacion es un
+        # SELECT sin lock, así que dos requests casi simultáneas podían
+        # pasar el chequeo las dos y crear dos publicaciones reales
+        # duplicadas en Mercado Libre). `status` nunca vale "not_published"
+        # en la práctica (ninguna fila se crea con ese estado — es solo el
+        # default del modelo, jamás asignado por código), así que esta
+        # constraint no bloquea ningún caso legítimo hoy.
+        UniqueConstraint("account_id", "product_id", name="uq_listing_account_product"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

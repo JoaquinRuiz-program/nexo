@@ -91,6 +91,12 @@ frontend/
                        publicar. Ruta `#/publicaciones/:id`. Solo lectura
                        hasta el último paso — el preview nunca publica;
                        publicar de verdad exige checkbox + modal explícitos.
+    adminPanel.js         Panel del administrador de Nexo (dueño de la
+                       plataforma, no un cliente) — 30 de agosto de 2026.
+                       Rutas `#/admin` (lista de clientes) y
+                       `#/admin/:storeId` (detalle + suspender/reactivar).
+                       Solo visible con `session.esNexoAdmin` — ver
+                       backend/ADMIN_NEXO.md.
     auth.js             Sesión real (login/registro/logout, cookie HttpOnly
                        — ver app/api/deps.py del backend).
     app.js               Todas las pantallas: dashboard, productos, detalle

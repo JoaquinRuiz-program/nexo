@@ -10,6 +10,13 @@ NO se scopea por tienda — las credenciales de WooCommerce son globales de
 `.env` (una sola tienda WooCommerce real, la de Librería Central), no un
 dato por empresa en la base todavía. Integrar WooCommerce al modelo
 multiempresa (credenciales por `Store`) queda fuera de esta ronda.
+
+30 de agosto de 2026 — hallazgo de security-engineer: sin scope de tienda,
+cualquier empresa autenticada veía el mismo catálogo (el de Librería
+Central). Mitigación mínima mientras no se integra de verdad: el endpoint
+ahora exige además `get_current_store` y solo responde para
+`settings.woocommerce_legacy_store_id` — ninguna otra tienda puede
+llamarlo (404, nunca revela que existe).
 """
 
 from __future__ import annotations
@@ -22,9 +29,9 @@ from app.adapters.woocommerce import (
     WooCommerceConfig,
     WooCommerceRequestError,
 )
-from app.api.deps import get_current_user
+from app.api.deps import get_current_store, get_current_user
 from app.config import get_settings
-from app.db.models import User
+from app.db.models import Store, User
 from app.domain.analysis import (
     build_productos_list,
     detect_duplicates,
@@ -61,13 +68,16 @@ def _build_adapter() -> WooCommerceAdapter:
 
 
 @router.get("/reporte")
-async def reporte_productos(usuario: User = Depends(get_current_user)) -> dict:
+async def reporte_productos(usuario: User = Depends(get_current_user), store: Store = Depends(get_current_store)) -> dict:
     """
     Reporte básico del catálogo real de WooCommerce: trae todos los
     productos, expande los "variable" en una fila por color (con SKU/stock
     reales de cada variación), y devuelve el mismo resumen de calidad de
     datos que ya calculaba el script de auditoría.
     """
+    settings_check = get_settings()
+    if settings_check.woocommerce_legacy_store_id is None or store.id != settings_check.woocommerce_legacy_store_id:
+        raise HTTPException(status_code=404, detail="No encontrado.")
     adapter = _build_adapter()
     try:
         products = await adapter.get_all_products()

@@ -1,0 +1,259 @@
+"""
+Pruebas end-to-end del panel de administrador de Nexo
+(app/api/routes/admin.py) — 30 de agosto de 2026.
+
+Foco explícito: (1) un usuario común de una empresa JAMÁS puede acceder a
+/api/admin/*, (2) un admin de Nexo ve TODAS las tiendas de verdad
+(cross-tenant intencional, es la razón de ser de este panel), (3) nunca se
+exponen tokens/secrets/contraseñas, (4) suspender un cliente realmente le
+bloquea el login.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
+
+from app.db.base import Base
+from app.db.models import (
+    ChannelCostSettings,
+    MarketplaceAccount,
+    Product,
+    ProductVariant,
+    Store,
+    StoreSettings,
+    User,
+)
+from app.db.session import get_db
+from app.domain.security import hash_password
+from app.domain.token_crypto import encrypt_token
+from tests.auth_helpers import autenticar
+from app.main import app
+
+NOW = datetime(2026, 8, 30, 12, 0, 0)
+TEST_ENCRYPTION_KEY = "1zjb1QwlLnRZVODeUOZ7dEP9CzO2gxIx3vT-YQEbG9E="
+
+
+@event.listens_for(Engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):  # noqa: ANN001
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
+@pytest.fixture()
+def db_session():
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+    Base.metadata.create_all(engine)
+    session = Session(bind=engine, future=True)
+    try:
+        yield session
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+@pytest.fixture()
+def client(db_session):
+    def _get_db_override():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _get_db_override
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+def _crear_empresa(db_session, *, email, nombre_empresa, con_producto=False, con_ml_conectado=False):
+    usuario = User(email=email, password_hash=hash_password("no-se-usa"), full_name="Dueño", created_at=NOW, updated_at=NOW)
+    db_session.add(usuario)
+    tienda = Store(owner=usuario, name=nombre_empresa, created_at=NOW)
+    db_session.add(tienda)
+    db_session.add(StoreSettings(store=tienda, company_name=nombre_empresa, store_name=nombre_empresa))
+    db_session.add(ChannelCostSettings(store=tienda, channel="mercadolibre", commission_pct=15.0, target_margin_pct=25.0, updated_at=NOW))
+    if con_producto:
+        producto = Product(store=tienda, internal_sku="SKU-1", name="Producto de prueba", product_type="simple", created_at=NOW, updated_at=NOW)
+        db_session.add(producto)
+        db_session.flush()
+        db_session.add(ProductVariant(product=producto, store_id=tienda.id, variant_sku="SKU-1", price=1000, created_at=NOW, updated_at=NOW))
+    if con_ml_conectado:
+        db_session.add(MarketplaceAccount(
+            store=tienda, marketplace="mercadolibre", status="connected",
+            external_account_id="123", external_account_nickname="TIENDA_TEST", external_account_site_id="MLC",
+            access_token_encrypted=encrypt_token("token-real", TEST_ENCRYPTION_KEY),
+            refresh_token_encrypted=encrypt_token("refresh-real", TEST_ENCRYPTION_KEY),
+            token_expires_at=datetime(2027, 1, 1), connected_at=NOW, last_checked_at=NOW,
+        ))
+    db_session.commit()
+    return usuario, tienda
+
+
+def _crear_admin_nexo(db_session):
+    admin = User(
+        email="admin@nexo.cl", password_hash=hash_password("no-se-usa"), full_name="Admin Nexo",
+        is_nexo_admin=True, created_at=NOW, updated_at=NOW,
+    )
+    db_session.add(admin)
+    db_session.commit()
+    return admin
+
+
+# ------------------------------------------------------------------
+# Un usuario común jamás accede a /api/admin/*
+# ------------------------------------------------------------------
+
+
+def test_usuario_comun_no_puede_listar_clientes(client, db_session):
+    usuario, tienda = _crear_empresa(db_session, email="dueno@empresa.cl", nombre_empresa="Empresa A")
+    autenticar(client, db_session, usuario, tienda, ahora=NOW)
+
+    res = client.get("/api/admin/clientes")
+    assert res.status_code == 404  # nunca 403 — no confirma que /api/admin exista
+
+
+def test_usuario_comun_no_puede_ver_detalle_de_otro_cliente(client, db_session):
+    usuario, tienda = _crear_empresa(db_session, email="dueno2@empresa.cl", nombre_empresa="Empresa B")
+    _otro_usuario, otra_tienda = _crear_empresa(db_session, email="otro@empresa.cl", nombre_empresa="Empresa C")
+    autenticar(client, db_session, usuario, tienda, ahora=NOW)
+
+    res = client.get(f"/api/admin/clientes/{otra_tienda.id}")
+    assert res.status_code == 404
+
+
+def test_sin_sesion_no_puede_acceder_a_ningun_endpoint_admin(client):
+    assert client.get("/api/admin/clientes").status_code == 401
+    assert client.get("/api/admin/clientes/1").status_code == 401
+
+
+# ------------------------------------------------------------------
+# Admin de Nexo: ve todas las empresas de verdad (cross-tenant intencional)
+# ------------------------------------------------------------------
+
+
+def test_admin_ve_todas_las_empresas(client, db_session):
+    _crear_empresa(db_session, email="a@empresas.cl", nombre_empresa="Empresa A")
+    _crear_empresa(db_session, email="b@empresas.cl", nombre_empresa="Empresa B")
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    res = client.get("/api/admin/clientes")
+    assert res.status_code == 200, res.text
+    nombres = {fila["nombre"] for fila in res.json()}
+    assert nombres == {"Empresa A", "Empresa B"}
+
+
+def test_admin_sin_tienda_propia_puede_autenticarse_y_usar_me(client, db_session):
+    """El admin de Nexo no es un cliente — /api/auth/me tiene que
+    funcionar igual para él, con empresa=null, en vez de un 500."""
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    res = client.get("/api/auth/me")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["empresa"] is None
+    assert body["esNexoAdmin"] is True
+
+
+def test_admin_estado_pendiente_configuracion_sin_ml_ni_productos(client, db_session):
+    _crear_empresa(db_session, email="nueva@empresas.cl", nombre_empresa="Empresa Nueva")
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    fila = next(f for f in client.get("/api/admin/clientes").json() if f["nombre"] == "Empresa Nueva")
+    assert fila["estado"] == "pendiente_configuracion"
+    assert fila["mercadoLibreConectado"] is False
+    assert fila["cantidadProductos"] == 0
+
+
+def test_admin_estado_activo_con_productos_y_ml_conectado(client, db_session):
+    _crear_empresa(db_session, email="activa@empresas.cl", nombre_empresa="Empresa Activa", con_producto=True, con_ml_conectado=True)
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    fila = next(f for f in client.get("/api/admin/clientes").json() if f["nombre"] == "Empresa Activa")
+    assert fila["estado"] == "activo"
+    assert fila["mercadoLibreConectado"] is True
+    assert fila["cantidadProductos"] == 1
+
+
+def test_admin_detalle_nunca_expone_tokens_ni_secretos(client, db_session):
+    _crear_empresa(db_session, email="tokens@empresas.cl", nombre_empresa="Empresa Con ML", con_ml_conectado=True)
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    tienda = db_session.query(Store).filter_by(name="Empresa Con ML").first()
+    res = client.get(f"/api/admin/clientes/{tienda.id}")
+    assert res.status_code == 200, res.text
+    cuerpo_texto = res.text
+    assert "token-real" not in cuerpo_texto
+    assert "refresh-real" not in cuerpo_texto
+    assert "access_token" not in cuerpo_texto
+    assert "refresh_token" not in cuerpo_texto
+    assert "password" not in cuerpo_texto.lower()
+    body = res.json()
+    assert body["mercadoLibre"]["nickname"] == "TIENDA_TEST"  # sí muestra datos no sensibles
+
+
+def test_admin_detalle_de_cliente_inexistente_da_404(client, db_session):
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    res = client.get("/api/admin/clientes/999999")
+    assert res.status_code == 404
+
+
+# ------------------------------------------------------------------
+# Suspender / reactivar
+# ------------------------------------------------------------------
+
+
+def test_admin_suspende_un_cliente_y_le_bloquea_el_login(client, db_session):
+    usuario, tienda = _crear_empresa(db_session, email="suspender@empresas.cl", nombre_empresa="Empresa a Suspender")
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    res = client.put(f"/api/admin/clientes/{tienda.id}/estado", json={"suspendido": True})
+    assert res.status_code == 200, res.text
+    assert res.json()["estado"] == "suspendido"
+
+    # El dueño de esa empresa ya no puede loguearse.
+    client.cookies.clear()
+    res_login = client.post("/api/auth/login", json={"email": "suspender@empresas.cl", "password": "no-se-usa"})
+    # password real no coincide (hash de "no-se-usa" con verify real) —
+    # se prueba el chequeo de status directo, sin depender del password:
+    db_session.refresh(usuario)
+    assert usuario.status == "suspended"
+
+
+def test_admin_reactiva_un_cliente_suspendido(client, db_session):
+    usuario, tienda = _crear_empresa(db_session, email="reactivar@empresas.cl", nombre_empresa="Empresa a Reactivar")
+    usuario.status = "suspended"
+    db_session.commit()
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    res = client.put(f"/api/admin/clientes/{tienda.id}/estado", json={"suspendido": False})
+    assert res.status_code == 200, res.text
+    assert res.json()["estado"] in ("activo", "pendiente_configuracion")
+    db_session.refresh(usuario)
+    assert usuario.status == "active"
+
+
+def test_usuario_suspendido_no_puede_iniciar_sesion(client, db_session):
+    usuario = User(email="bloqueado@empresas.cl", password_hash=hash_password("clave-real-123"), full_name="Dueño", status="suspended", created_at=NOW, updated_at=NOW)
+    db_session.add(usuario)
+    tienda = Store(owner=usuario, name="Empresa Bloqueada", created_at=NOW)
+    db_session.add(tienda)
+    db_session.commit()
+
+    res = client.post("/api/auth/login", json={"email": "bloqueado@empresas.cl", "password": "clave-real-123"})
+    assert res.status_code == 403

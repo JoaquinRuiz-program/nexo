@@ -92,6 +92,23 @@ def get_current_store(session: AuthSession = Depends(get_current_session), db: S
     return store
 
 
+def require_nexo_admin(user: User = Depends(get_current_user)) -> User:
+    """Guard exclusivo del panel de administrador de Nexo (dueño de la
+    plataforma) — 30 de agosto de 2026. Único lugar de todo el backend que
+    lee `User.is_nexo_admin`; ningún router de negocio de cliente lo toca.
+    Nunca reemplaza a `get_current_store` ni lo reutiliza — un admin de
+    Nexo NO tiene una "empresa activa" en el sentido de un cliente, así
+    que todo router bajo /api/admin/* depende de ESTO, nunca de
+    get_current_store. Mismo criterio de "único punto de verdad" que ya
+    usa get_current_store para el aislamiento por tienda."""
+    if not user.is_nexo_admin:
+        # 404, no 403: no confirmarle a un usuario común que /api/admin/*
+        # existe en absoluto (mismo criterio que el resto del proyecto usa
+        # para no revelar la existencia de recursos ajenos).
+        raise HTTPException(status_code=404, detail="No encontrado.")
+    return user
+
+
 __all__ = [
     "SESSION_COOKIE_NAME",
     "set_session_cookie",
@@ -99,4 +116,5 @@ __all__ = [
     "get_current_session",
     "get_current_user",
     "get_current_store",
+    "require_nexo_admin",
 ]

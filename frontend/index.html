@@ -149,7 +149,10 @@
         </div>
 
         <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto" id="sidebar-nav">
-          <a href="#/dashboard" data-route="dashboard" class="nav-link">
+          <a href="#/admin" data-route="admin" id="nav-link-admin" class="nav-link hidden">
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5 4 3.5h12l1 5"/><path d="M3 8.5v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/><path d="M7.5 16.5v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4"/></svg></span> Panel Nexo
+          </a>
+          <a href="#/dashboard" data-route="dashboard" id="nav-link-dashboard" class="nav-link">
             <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="10" width="3" height="7" rx="0.5"/><rect x="8.5" y="6" width="3" height="11" rx="0.5"/><rect x="14" y="3" width="3" height="14" rx="0.5"/></svg></span> Dashboard
           </a>
           <a href="#/productos" data-route="productos" class="nav-link">
@@ -189,7 +192,7 @@
           </div>
 
           <div class="flex items-center gap-2 md:gap-3 shrink-0">
-            <span class="demo-pill hidden sm:inline-flex items-center gap-1.5">● Modo demostración</span>
+            <span id="header-demo-pill" class="demo-pill hidden sm:inline-flex items-center gap-1.5">● Modo demostración</span>
 
             <button id="theme-toggle-btn" class="icon-btn" aria-label="Cambiar tema" title="Cambiar tema">
               <span id="theme-toggle-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.5 12.9A6.5 6.5 0 0 1 7.1 4.5a6.5 6.5 0 1 0 8.4 8.4z" fill="currentColor" stroke="none"/></svg></span>
@@ -227,8 +230,9 @@
   <script src="js/demoImportResult.js?v=2"></script>
   <script src="js/importFlow.js?v=4"></script>
   <script src="js/mercadolibrePublicar.js?v=5"></script>
-  <script src="js/auth.js?v=3"></script>
-  <script src="js/app.js?v=16"></script>
-  <script src="js/router.js?v=4"></script>
+  <script src="js/adminPanel.js?v=2"></script>
+  <script src="js/auth.js?v=4"></script>
+  <script src="js/app.js?v=18"></script>
+  <script src="js/router.js?v=5"></script>
 </body>
 </html>

@@ -35,6 +35,12 @@ window.LC = window.LC || {};
     }
   }
 
+  // 30 de agosto de 2026 — panel de administrador de Nexo: un admin de la
+  // plataforma no tiene tienda propia (session.empresa es null) — nunca
+  // debería caer en una pantalla de cliente (Dashboard, Productos, etc.),
+  // que asume una empresa activa y le devolvería errores del backend.
+  const RUTAS_ADMIN = ["admin"];
+
   function handleRoute() {
     const { name, param } = parseHash();
     const loggedIn = LC.auth.isLoggedIn();
@@ -46,6 +52,13 @@ window.LC = window.LC || {};
     if (loggedIn && PUBLIC_ROUTES.includes(name)) {
       window.location.hash = "/dashboard";
       return;
+    }
+    if (loggedIn) {
+      const session = LC.auth.getSession();
+      if (session && session.esNexoAdmin && !RUTAS_ADMIN.includes(name)) {
+        window.location.hash = "/admin";
+        return;
+      }
     }
     LC.app.render(name, param);
   }

@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
-from app.api.deps import clear_session_cookie, get_current_session, get_current_store, get_current_user, set_session_cookie
+from app.api.deps import clear_session_cookie, get_current_session, get_current_user, set_session_cookie
 from app.config import get_settings
 from app.db.models import AuthSession, Store, StoreSettings, User
 from app.db.session import get_db
@@ -76,10 +76,13 @@ class LoginRequest(BaseModel):
     remember_me: bool = False
 
 
-def _sesion_publica(user: User, store: Store) -> dict:
+def _sesion_publica(user: User, store: Store | None) -> dict:
     return {
         "usuario": {"id": user.id, "email": user.email, "nombre": user.full_name},
-        "empresa": {"id": store.id, "nombre": store.name},
+        # None solo para un administrador de Nexo sin tienda propia (ver
+        # is_nexo_admin) — todo usuario cliente siempre tiene una empresa.
+        "empresa": {"id": store.id, "nombre": store.name} if store is not None else None,
+        "esNexoAdmin": user.is_nexo_admin,
     }
 
 
@@ -147,11 +150,18 @@ def login(body: LoginRequest, response: Response, db: Session = Depends(get_db))
     # como si la contraseña está mal — ver docstring del módulo.
     if usuario is None or not verify_password(body.password, usuario.password_hash):
         raise HTTPException(status_code=401, detail=_CREDENCIALES_INVALIDAS)
+    # 30 de agosto de 2026 — panel admin de Nexo: `User.status` ya existe
+    # con el valor "suspended" desde antes, pero nada lo aplicaba. Ahora sí
+    # bloquea el login — es lo que le da sentido real al estado
+    # "Suspendido" que puede fijar un administrador de Nexo.
+    if usuario.status == "suspended":
+        raise HTTPException(status_code=403, detail="Esta cuenta está suspendida. Contactá a soporte.")
 
     tienda = db.query(Store).filter_by(owner_user_id=usuario.id).order_by(Store.id).first()
-    if tienda is None:
+    if tienda is None and not usuario.is_nexo_admin:
         # Dato corrupto (no debería poder pasar: registro siempre crea una
-        # tienda) — nunca se inventa una acá.
+        # tienda) — nunca se inventa una acá. Un administrador de Nexo SÍ
+        # puede no tener tienda propia (no es un cliente).
         raise HTTPException(status_code=500, detail="Tu cuenta no tiene ninguna empresa asociada todavía.")
 
     _crear_sesion(db, response, usuario, body.remember_me)
@@ -167,5 +177,10 @@ def logout(response: Response, sesion: AuthSession = Depends(get_current_session
 
 
 @router.get("/me")
-def me(usuario: User = Depends(get_current_user), tienda: Store = Depends(get_current_store)) -> dict:
+def me(usuario: User = Depends(get_current_user), sesion: AuthSession = Depends(get_current_session), db: Session = Depends(get_db)) -> dict:
+    # No usa get_current_store: un administrador de Nexo (is_nexo_admin)
+    # puede no tener ninguna tienda propia, y /me es lo primero que llama
+    # el frontend al hidratar sesión (tiene que funcionar para los dos
+    # tipos de usuario, nunca 500 para un admin válido sin empresa).
+    tienda = db.get(Store, sesion.active_store_id) if sesion.active_store_id is not None else None
     return _sesion_publica(usuario, tienda)

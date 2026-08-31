@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
+    admin,
     auth,
     catalogo,
     configuracion,
@@ -84,6 +85,7 @@ app.include_router(catalogo.router)
 app.include_router(seleccion.router)
 app.include_router(publicaciones.router)
 app.include_router(dashboard.router)
+app.include_router(admin.router)
 
 
 @app.on_event("startup")

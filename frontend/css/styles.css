@@ -1110,6 +1110,18 @@ main::-webkit-scrollbar-track {
 .reco-badge.reco-datos_insuficientes { background: #f1f5f9; color: #475569; }
 .dark .reco-badge.reco-datos_insuficientes { background: #1e293b; color: #94a3b8; }
 
+/* Estado de cliente en el panel de administrador de Nexo (30 de agosto de
+   2026) — vocabulario propio, aunque algunos colores coincidan con los de
+   arriba (mismo criterio que la decisión de Mercado Libre). */
+.reco-badge.reco-activo { background: #ecfdf5; color: #047857; }
+.dark .reco-badge.reco-activo { background: #064e3b; color: #34d399; }
+.reco-badge.reco-trial { background: #eff6ff; color: #1d4ed8; }
+.dark .reco-badge.reco-trial { background: #1e3a8a; color: #93c5fd; }
+.reco-badge.reco-pendiente_configuracion { background: #fffbeb; color: #92400e; }
+.dark .reco-badge.reco-pendiente_configuracion { background: #451a03; color: #fbbf24; }
+.reco-badge.reco-suspendido { background: #fef2f2; color: #b91c1c; }
+.dark .reco-badge.reco-suspendido { background: #450a0a; color: #f87171; }
+
 .draft-card {
   border: 1px solid #e2e8f0;
   border-radius: 1rem;
