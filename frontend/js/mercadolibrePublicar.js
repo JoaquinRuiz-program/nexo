@@ -300,8 +300,8 @@ window.LC = window.LC || {};
         <h3 class="panel-title mb-3">Precio y rentabilidad</h3>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-2">
           <div><p class="stat-label">Precio de venta</p><p class="font-medium mt-1">${formatCLPReal(p.precio)}</p></div>
-          <div><p class="stat-label">Ganancia en tu tienda</p><p class="font-medium mt-1">${formatCLPReal(p.rentabilidad.margenTiendaClp)}</p></div>
-          <div><p class="stat-label">Ganancia en Mercado Libre</p><p class="font-medium mt-1">${formatCLPReal(p.rentabilidad.margenMercadoLibreClp)}</p></div>
+          <div><p class="stat-label">Ganancia en tu tienda</p><p class="font-medium mt-1 ${p.rentabilidad.margenTiendaClp != null && p.rentabilidad.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${formatCLPReal(p.rentabilidad.margenTiendaClp)}</p></div>
+          <div><p class="stat-label">Ganancia en Mercado Libre</p><p class="font-medium mt-1 ${p.rentabilidad.margenMercadoLibreClp != null && p.rentabilidad.margenMercadoLibreClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${formatCLPReal(p.rentabilidad.margenMercadoLibreClp)}</p></div>
           <div><p class="stat-label">Margen en Mercado Libre</p><p class="font-medium mt-1">${formatPct(p.rentabilidad.margenMercadoLibrePct)}</p></div>
         </div>
         <p class="text-xs text-slate-400 dark:text-slate-500">El precio se lee de tu producto en Nexo — para cambiarlo, editá el producto.</p>
