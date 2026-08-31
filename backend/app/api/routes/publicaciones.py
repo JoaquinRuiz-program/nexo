@@ -23,11 +23,12 @@ desde cero (rentabilidad incluida) en vez de confiar en lo que devolvió
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.adapters.mercadolibre import MercadoLibreAdapter, MercadoLibreAuthError, MercadoLibreRequestError
@@ -35,13 +36,24 @@ from app.api.deps import get_current_store
 from app.api.routes.mercadolibre import _build_ml_config, _get_account, _get_valid_access_token, _require_configured
 from app.api.routes.rentabilidad import build_profitability_rows
 from app.config import get_settings
-from app.db.models import MarketplaceListing, MarketplaceListingVariant, ProductVariant, Store
+from app.db.models import ChannelCostSettings, MarketplaceAccount, MarketplaceListing, MarketplaceListingVariant, Product, ProductVariant, Store
 from app.db.session import get_db
-from app.domain.ai_content import generate_title
+from app.domain.ai_content import generate_full_description, generate_title
 from app.domain.catalog_selection import SelectionCriteria, classify_product
+from app.domain.competencia import AnalisisCompetencia, analizar_competencia
+from app.domain.decision import evaluar_decision
+from app.domain.pricing import RecomendacionPrecio, recomendar_precio
+from app.domain.profitability import ChannelCosts
 from app.domain.listing_draft import build_draft
-from app.domain.listing_validation import construir_attributes_payload, evaluar_atributos
+from app.domain.listing_validation import (
+    RAZONES_GTIN_VACIO_VALIDAS,
+    construir_attributes_payload,
+    evaluar_atributos,
+    gtin_checksum_valido,
+)
+from app.domain.ml_listing_payload import PayloadPublicacion, construir_payload_publicacion
 from app.domain.ml_fees import resolver_listing_type
+from app.domain.ml_seller_capabilities import es_user_product_seller
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +204,29 @@ async def preparar_publicacion_mercadolibre(
         if prediccion:
             categoria_sugerida = {"id": prediccion["categoryId"], "nombre": prediccion["categoryName"]}
 
+    # max_title_length REAL de la categoría (30 de agosto de 2026, FASE 3)
+    # — si no se puede consultar (o no hay categoría sugerida todavía), se
+    # usa el default seguro de ai_content.py, nunca un número inventado.
+    max_titulo = None
+    if categoria_sugerida is not None:
+        adapter = MercadoLibreAdapter(cfg)
+        try:
+            categoria_real = await adapter.get_category(categoria_sugerida["id"])
+            max_titulo = (categoria_real.get("settings") or {}).get("max_title_length")
+        except (MercadoLibreAuthError, MercadoLibreRequestError):
+            max_titulo = None
+        finally:
+            await adapter.aclose()
+
+    titulo = generate_title(
+        nombre=producto.name, marca=producto.brand,
+        **({"max_length": max_titulo} if max_titulo else {}),
+    )
+    descripcion = generate_full_description(
+        nombre=producto.name, marca=producto.brand, categoria=producto.category,
+        descripcion_original=producto.description, codigo_barras=variante.barcode, variant_label=variante.variant_label,
+    )
+
     imagenes = [img.url for img in producto.images]
 
     advertencias: list[str] = []
@@ -207,7 +242,13 @@ async def preparar_publicacion_mercadolibre(
     return {
         "variantId": variante.id,
         "sku": variante.variant_sku or "",
-        "titulo": generate_title(nombre=producto.name, marca=producto.brand),
+        "titulo": titulo,
+        # Revisable antes de publicar (FASE 3) — nunca se manda a Mercado
+        # Libre automáticamente todavía, ver PUBLICACION_MERCADOLIBRE.md.
+        "descripcionCorta": descripcion.corta,
+        "descripcionCompleta": descripcion.completa,
+        "caracteristicas": descripcion.caracteristicas,
+        "especificaciones": descripcion.especificaciones,
         "precio": float(variante.price),
         "marketplaceStock": variante.marketplace_stock,
         "imagenes": imagenes,
@@ -312,6 +353,297 @@ async def validar_publicacion_mercadolibre(
 
 
 # ------------------------------------------------------------------
+# GET /{variant_id}/mercadolibre/competencia — 30 de agosto de 2026, FASE 4
+# del roadmap comercial (análisis de competencia). Solo lectura, nunca
+# publica ni modifica nada. Cubre el "Caso 2" confirmado oficialmente
+# (investigación de mercadolibre-researcher, 30/08/2026): un producto que
+# el dueño TODAVÍA NO publicó — GET /products/search para encontrar el
+# producto real de catálogo (por GTIN si hay uno válido, si no por
+# nombre) + GET /products/{id} para el ganador real (buy_box_winner) y el
+# rango real de precios de la competencia (buy_box_winner_price_range).
+#
+# Deliberadamente NO implementado todavía (documentado como próximo paso,
+# no como "no existe"): /suggestions/items/{id}/details y
+# price_to_win — ambos exigen que el vendedor YA sea dueño de un ítem
+# publicado en Mercado Libre, y Nexo todavía no tiene ninguna publicación
+# real (ver "próximo bloqueo" del informe anterior).
+# ------------------------------------------------------------------
+
+
+async def _buscar_producto_en_catalogo(
+    adapter: MercadoLibreAdapter, access_token: str, site_id: str, variante: ProductVariant, producto: Product
+) -> tuple[Optional[str], Optional[dict]]:
+    """GET /products/search + GET /products/{id} — compartido por
+    /competencia (FASE 4) y /precio-recomendado (FASE 5), para no tener dos
+    formas distintas de encontrar el mismo producto de catálogo. Devuelve
+    (None, None) si Mercado Libre no encontró nada — nunca inventa un
+    match. Deja subir MercadoLibreAuthError/MercadoLibreRequestError tal
+    cual, el caller decide qué responder."""
+    if variante.barcode and gtin_checksum_valido(variante.barcode):
+        # GTIN real (checksum válido) primero — más preciso que buscar por
+        # nombre (evita moderaciones por mala productización, ver
+        # documentación oficial de /products/search).
+        busqueda = await adapter.search_catalog_products(access_token, site_id, product_identifier=variante.barcode)
+    else:
+        busqueda = await adapter.search_catalog_products(access_token, site_id, q=producto.name)
+
+    resultados = busqueda.get("results") or []
+    if not resultados:
+        return None, None
+
+    catalog_product_id = resultados[0].get("id")
+    detalle = await adapter.get_catalog_product(access_token, catalog_product_id)
+    return catalog_product_id, detalle
+
+
+@router.get("/{variant_id}/mercadolibre/competencia")
+async def analizar_competencia_mercadolibre(
+    variant_id: int, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    variante, _fila = _variante_de_la_empresa(db, store, variant_id)
+    producto = variante.product
+    account = _cuenta_ml_conectada(db, store)
+
+    settings = get_settings()
+    cfg = _build_ml_config(settings)
+    _require_configured(cfg, settings)
+    try:
+        access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
+    except HTTPException as err:
+        # _get_valid_access_token puede incluir texto crudo de Mercado Libre
+        # en su detail (falla de refresh) — nunca se lo devolvemos tal cual
+        # al frontend (hallazgo de security-engineer, FASE 6, 30/08/2026).
+        raise HTTPException(
+            status_code=502,
+            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
+        ) from err
+
+    adapter = MercadoLibreAdapter(cfg)
+    try:
+        try:
+            catalog_product_id, detalle = await _buscar_producto_en_catalogo(
+                adapter, access_token, account.external_account_site_id, variante, producto
+            )
+        except (MercadoLibreAuthError, MercadoLibreRequestError) as err:
+            raise HTTPException(
+                status_code=502,
+                detail="No pudimos consultar productos similares en Mercado Libre en este momento. Intentá de nuevo más tarde.",
+            ) from err
+    finally:
+        await adapter.aclose()
+
+    if detalle is None:
+        return {"encontrado": False, "catalogProductId": None, "nombreCatalogo": None, "analisis": None}
+
+    analisis = analizar_competencia(
+        detalle, precio_propio=float(variante.price) if variante.price is not None else None
+    )
+
+    return {
+        "encontrado": True,
+        "catalogProductId": catalog_product_id,
+        "nombreCatalogo": detalle.get("name"),
+        "analisis": {
+            "hayCompetencia": analisis.hay_competencia,
+            "precioGanador": analisis.precio_ganador,
+            "monedaGanador": analisis.moneda_ganador,
+            "condicionGanador": analisis.condicion_ganador,
+            "envioGratisGanador": analisis.envio_gratis_ganador,
+            "logisticaGanador": analisis.logistica_ganador,
+            "reputacionGanador": analisis.reputacion_ganador,
+            "rangoPrecioMinimo": analisis.rango_precio_minimo,
+            "rangoPrecioMaximo": analisis.rango_precio_maximo,
+            "posicionPrecioPropio": analisis.posicion_precio_propio,
+        },
+    }
+
+
+# ------------------------------------------------------------------
+# GET /{variant_id}/mercadolibre/precio-recomendado — 30 de agosto de 2026,
+# FASE 5 del roadmap comercial. Solo lectura, SOLO RECOMIENDA — nunca
+# modifica el precio real de Mercado Libre ni el de Nexo. Reutiliza
+# domain/profitability.py (rentabilidad) y domain/competencia.py (FASE 4),
+# nunca duplica ninguno de los dos cálculos. El costo/comisión/margen son
+# el núcleo (siempre requeridos); la competencia es un agregado opcional —
+# si Mercado Libre no está conectado, o no se encuentra el producto en su
+# catálogo, la recomendación se sigue calculando igual, solo sin la
+# comparación de mercado.
+# ------------------------------------------------------------------
+
+
+async def _resolver_recomendacion_precio(
+    db: Session, store: Store, variante: ProductVariant, producto: Product
+) -> tuple[RecomendacionPrecio, Optional[AnalisisCompetencia]]:
+    """Calcula la recomendación de precio + el análisis de competencia
+    crudo, en un solo lugar — usado tanto por /precio-recomendado como por
+    /decision (FASE 6), para no consultar Mercado Libre dos veces ni tener
+    dos formas distintas de llegar al mismo resultado. Devuelve el
+    AnalisisCompetencia crudo (no solo lo que RecomendacionPrecio guardó de
+    él) porque decision.py necesita distinguir "nunca se consultó
+    competencia" de "se consultó y no hay ganador"."""
+    config_canal = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
+    channel_costs = ChannelCosts(
+        commission_pct=float(config_canal.commission_pct) if config_canal and config_canal.commission_pct is not None else None,
+        shipping_cost=float(config_canal.shipping_cost) if config_canal and config_canal.shipping_cost is not None else None,
+        other_fixed_cost=float(config_canal.other_fixed_cost) if config_canal and config_canal.other_fixed_cost is not None else None,
+    )
+    margen_objetivo_pct = float(config_canal.target_margin_pct) if config_canal and config_canal.target_margin_pct is not None else None
+    margen_minimo_pct = float(config_canal.min_margin_pct) if config_canal and config_canal.min_margin_pct is not None else None
+
+    # Competencia: agregado OPCIONAL — cualquier problema acá (sin cuenta
+    # conectada, sin credenciales de la app, Mercado Libre no encontró el
+    # producto, error de red) nunca bloquea la recomendación de precio en
+    # sí, que no depende de Mercado Libre para nada más que esto.
+    analisis_competencia: Optional[AnalisisCompetencia] = None
+    account = _get_account(db, store)
+    if account is not None and account.status == "connected" and account.external_account_site_id:
+        settings = get_settings()
+        cfg = _build_ml_config(settings)
+        if cfg.is_configured():
+            try:
+                access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
+                adapter = MercadoLibreAdapter(cfg)
+                try:
+                    _catalog_id, detalle = await _buscar_producto_en_catalogo(
+                        adapter, access_token, account.external_account_site_id, variante, producto
+                    )
+                finally:
+                    await adapter.aclose()
+                if detalle is not None:
+                    analisis_competencia = analizar_competencia(
+                        detalle, precio_propio=float(variante.price) if variante.price is not None else None
+                    )
+            except (HTTPException, MercadoLibreAuthError, MercadoLibreRequestError):
+                analisis_competencia = None
+
+    recomendacion = recomendar_precio(
+        costo=float(variante.cost_price) if variante.cost_price is not None else None,
+        channel_costs=channel_costs,
+        margen_objetivo_pct=margen_objetivo_pct,
+        margen_minimo_pct=margen_minimo_pct,
+        analisis_competencia=analisis_competencia,
+    )
+    return recomendacion, analisis_competencia
+
+
+@router.get("/{variant_id}/mercadolibre/precio-recomendado")
+async def precio_recomendado_mercadolibre(
+    variant_id: int, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    variante, _fila = _variante_de_la_empresa(db, store, variant_id)
+    producto = variante.product
+
+    recomendacion, _analisis_competencia = await _resolver_recomendacion_precio(db, store, variante, producto)
+
+    return {
+        # Siempre "RECOMENDACION" — Nexo v1 nunca aplica un cambio de
+        # precio real automáticamente, ver PUBLICACION_MERCADOLIBRE.md.
+        "tipo": "RECOMENDACION",
+        "estado": recomendacion.estado,
+        "faltantes": recomendacion.faltantes,
+        "precioMinimoRentable": recomendacion.precio_minimo_rentable,
+        "precioRecomendado": recomendacion.precio_recomendado,
+        "margenEstimadoClp": recomendacion.margen_estimado_clp,
+        "margenEstimadoPct": recomendacion.margen_estimado_pct,
+        "gananciaEstimada": recomendacion.ganancia_estimada,
+        "precioMercadoGanador": recomendacion.precio_mercado_ganador,
+        "posicionFrenteACompetencia": recomendacion.posicion_frente_a_competencia,
+        "alcanzaMargenObjetivo": recomendacion.alcanza_margen_objetivo,
+        "alcanzaMargenMinimo": recomendacion.alcanza_margen_minimo,
+        # Hook para FASE 6 ("conviene publicar") — siempre None en V1.
+        "clasificacion": recomendacion.clasificacion,
+    }
+
+
+# ------------------------------------------------------------------
+# GET /{variant_id}/mercadolibre/decision — 30 de agosto de 2026, FASE 6
+# del roadmap comercial. Motor "¿conviene vender esto?" — SOLO análisis,
+# nunca modifica nada en Mercado Libre ni en Nexo (ver domain/decision.py).
+# Se construye encima de /precio-recomendado (comparte exactamente el mismo
+# cálculo vía _resolver_recomendacion_precio, nunca lo duplica).
+# ------------------------------------------------------------------
+
+
+@router.get("/{variant_id}/mercadolibre/decision")
+async def decision_mercadolibre(
+    variant_id: int, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    variante, _fila = _variante_de_la_empresa(db, store, variant_id)
+    producto = variante.product
+
+    recomendacion, analisis_competencia = await _resolver_recomendacion_precio(db, store, variante, producto)
+    decision = evaluar_decision(recomendacion, analisis_competencia)
+
+    competencia_resumen = None
+    if analisis_competencia is not None and analisis_competencia.hay_competencia:
+        competencia_resumen = {
+            "precioGanador": analisis_competencia.precio_ganador,
+            "rangoPrecioMinimo": analisis_competencia.rango_precio_minimo,
+            "rangoPrecioMaximo": analisis_competencia.rango_precio_maximo,
+            "posicionPrecioPropio": recomendacion.posicion_frente_a_competencia,
+        }
+
+    return {
+        # Nunca publica, nunca modifica precio/stock — solo lectura y
+        # cálculo (ver domain/decision.py).
+        "tipo": "DECISION",
+        "decision": decision.decision,  # "conviene" | "revisar" | "no_conviene"
+        "razon": decision.razon,
+        "precioRecomendado": decision.precio_recomendado,
+        "precioMinimoRentable": decision.precio_minimo_rentable,
+        "gananciaEstimada": decision.ganancia_estimada,
+        "margenEstimadoPct": decision.margen_estimado_pct,
+        "competencia": competencia_resumen,
+        "faltantes": decision.faltantes,
+    }
+
+
+# ------------------------------------------------------------------
+# GET /mercadolibre/decision-lote — 30 de agosto de 2026, frontend del
+# flujo de decisión. Versión liviana de /decision para pintar una columna
+# "Decisión" en una lista de productos: calcula la decisión de negocio para
+# TODAS las variantes de la tienda de una sola vez, sin consultar
+# competencia (evita N llamadas salientes a Mercado Libre, una por fila).
+# Reutiliza domain/pricing.py y domain/decision.py tal cual — cero
+# algoritmo nuevo, solo la misma función corrida sin el agregado opcional
+# de competencia. decision.py ya sabe responder "revisar" cuando no hay
+# suficiente información en vez de asumir nada.
+# ------------------------------------------------------------------
+
+
+@router.get("/mercadolibre/decision-lote")
+def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> list[dict]:
+    config_canal = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
+    channel_costs = ChannelCosts(
+        commission_pct=float(config_canal.commission_pct) if config_canal and config_canal.commission_pct is not None else None,
+        shipping_cost=float(config_canal.shipping_cost) if config_canal and config_canal.shipping_cost is not None else None,
+        other_fixed_cost=float(config_canal.other_fixed_cost) if config_canal and config_canal.other_fixed_cost is not None else None,
+    )
+    margen_objetivo_pct = float(config_canal.target_margin_pct) if config_canal and config_canal.target_margin_pct is not None else None
+    margen_minimo_pct = float(config_canal.min_margin_pct) if config_canal and config_canal.min_margin_pct is not None else None
+
+    variantes = db.query(ProductVariant).filter_by(store_id=store.id).all()
+    resultado = []
+    for variante in variantes:
+        recomendacion = recomendar_precio(
+            costo=float(variante.cost_price) if variante.cost_price is not None else None,
+            channel_costs=channel_costs,
+            margen_objetivo_pct=margen_objetivo_pct,
+            margen_minimo_pct=margen_minimo_pct,
+            analisis_competencia=None,
+        )
+        decision = evaluar_decision(recomendacion, analisis_competencia=None)
+        resultado.append({
+            "variantId": variante.id,
+            "decision": decision.decision,
+            "precioRecomendado": decision.precio_recomendado,
+            "margenEstimadoPct": decision.margen_estimado_pct,
+            "faltantes": decision.faltantes,
+        })
+    return resultado
+
+
+# ------------------------------------------------------------------
 # Publicación REAL (commit 4/N, 29 de agosto de 2026) — el único endpoint
 # de todo el backend que puede terminar ejecutando POST /items de verdad.
 #
@@ -348,15 +680,38 @@ class ConfirmarPublicacionRequest(BaseModel):
     condition: str = "new"
     listing_type: str  # "classic" | "premium"
     attributes: dict[str, str] = {}
+    # Solo se usa (y se manda a Mercado Libre) si la cuenta es
+    # user_product_seller (ver domain/ml_seller_capabilities.py) — 30 de
+    # agosto de 2026, soporte User Products. Si no se manda, se calcula un
+    # default (título truncado al max_title_length real de la categoría).
+    family_name: Optional[str] = Field(default=None, max_length=500)
 
 
-@router.post("/{variant_id}/mercadolibre/confirmar")
-async def confirmar_publicacion_mercadolibre(
-    variant_id: int,
-    body: ConfirmarPublicacionRequest,
-    db: Session = Depends(get_db),
-    store: Store = Depends(get_current_store),
-) -> dict:
+@dataclass
+class ResolucionPublicacion:
+    """Todo lo que hace falta para ejecutar (o previsualizar) el POST /items
+    real — separado en su propio tipo para que /confirmar y
+    /confirmar/preview (30 de agosto de 2026, ver PARTE 5/7 de la auditoría)
+    compartan EXACTAMENTE la misma validación y el mismo payload, sin
+    duplicar lógica. `access_token` viaja acá porque preview no lo usa
+    (nunca llama a create_item), pero /confirmar sí lo necesita después."""
+
+    variante: ProductVariant
+    producto: Product
+    account: MarketplaceAccount
+    es_user_product_seller: bool
+    resultado_payload: PayloadPublicacion
+    access_token: str
+
+
+async def _resolver_publicacion(
+    db: Session, store: Store, variant_id: int, body: "ConfirmarPublicacionRequest"
+) -> tuple[ResolucionPublicacion, MercadoLibreAdapter]:
+    """Validación local + construcción del payload — TODO lo que pasa
+    ANTES de POST /items, compartido por /confirmar y /confirmar/preview.
+    Devuelve también el adapter (todavía abierto): quien llama es
+    responsable de cerrarlo (`await adapter.aclose()`), y /confirmar lo
+    reusa para el POST real en vez de abrir uno nuevo."""
     if body.condition not in ("new", "used"):
         raise HTTPException(status_code=400, detail="La condición tiene que ser 'new' o 'used'.")
     if not body.category_id or not body.category_id.strip():
@@ -408,6 +763,47 @@ async def confirmar_publicacion_mercadolibre(
             detail="Este producto no tiene ninguna imagen cargada — Mercado Libre no permite publicar sin imagen.",
         )
 
+    # 30 de agosto de 2026 — segundo bug real de la prueba end-to-end
+    # (Moleskine): un GTIN con checksum inválido llegaba intacto hasta
+    # POST /items y recién ahí Mercado Libre lo rechazaba. Se detecta acá,
+    # 100% local, ANTES de gastar ningún llamado a Mercado Libre — nunca se
+    # corrige el dígito, solo se bloquea con un mensaje accionable.
+    if variante.barcode and not gtin_checksum_valido(variante.barcode):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "El código de barras cargado para este producto no es válido (no pasa el checksum GTIN/EAN) — "
+                "corregilo en la ficha del producto antes de publicar."
+            ),
+        )
+
+    # EMPTY_GTIN_REASON nunca es texto libre inventado — tiene que ser una
+    # de las 4 razones reales que Mercado Libre ofrece (ver
+    # domain/listing_validation.py::RAZONES_GTIN_VACIO_VALIDAS).
+    razon_gtin_vacio = body.attributes.get("EMPTY_GTIN_REASON")
+    if razon_gtin_vacio is not None and razon_gtin_vacio not in RAZONES_GTIN_VACIO_VALIDAS.values():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "El motivo de GTIN vacío tiene que ser una de las opciones reales de Mercado Libre: "
+                f"{', '.join(RAZONES_GTIN_VACIO_VALIDAS.values())}."
+            ),
+        )
+    # 30 de agosto de 2026 — Caso D (Nexo todavía no conoce el GTIN) nunca
+    # se puede resolver eligiendo "no tiene código registrado" sin que el
+    # dueño lo haya confirmado antes, explícitamente, fuera de este mismo
+    # request — si no, esa razón se convierte en un atajo para esconder un
+    # dato que en realidad falta cargar (ver PUBLICACION_MERCADOLIBRE.md).
+    if razon_gtin_vacio == RAZONES_GTIN_VACIO_VALIDAS["17055160"] and not variante.gtin_confirmado_ausente:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Datos incompletos: antes de publicar sin código, confirmá explícitamente que este producto "
+                "no tiene GTIN (PUT /api/productos/{id}/codigo-barras con confirmarSinCodigo=true) — no elijas "
+                "esa razón solo para completar el formulario si todavía no revisaste si el producto tiene uno real."
+            ).format(id=variant_id),
+        )
+
     settings = get_settings()
     cfg = _build_ml_config(settings)
     _require_configured(cfg, settings)
@@ -422,6 +818,23 @@ async def confirmar_publicacion_mercadolibre(
         datos_conocidos["UPC"] = variante.barcode
 
     adapter = MercadoLibreAdapter(cfg)
+    # ¿Esta cuenta ya está migrada al modelo User Products de Mercado
+    # Libre? SIEMPRE se consulta fresco acá — nunca se cachea en
+    # MarketplaceAccount — porque si Mercado Libre migra la cuenta
+    # entre dos publicaciones, un valor cacheado seguiría mandando el
+    # payload viejo (title) y Mercado Libre lo rechazaría (confirmado
+    # en la prueba real del 30 de agosto de 2026: 400 "family_name"
+    # requerido).
+    try:
+        user_info = await adapter.get_user_info(access_token)
+    except (MercadoLibreAuthError, MercadoLibreRequestError) as err:
+        await adapter.aclose()
+        raise HTTPException(
+            status_code=502,
+            detail="No pudimos verificar el estado de tu cuenta de Mercado Libre en este momento. Intentá de nuevo más tarde.",
+        ) from err
+    es_up = es_user_product_seller(user_info)
+
     try:
         # Atributos de la categoría, consultados de nuevo en este momento —
         # nunca los que trajo /validar antes (pudieron cambiar).
@@ -440,7 +853,13 @@ async def confirmar_publicacion_mercadolibre(
                 detail="No pudimos consultar los atributos de esa categoría en Mercado Libre en este momento.",
             ) from err
 
-        resultado = evaluar_atributos(atributos_categoria, body.condition, datos_conocidos, body.attributes)
+        # es_user_product_seller=es_up: bajo User Products, un atributo
+        # PARENT_PK (ej. MODEL) se trata como obligatorio aunque la
+        # categoría solo lo marque catalog_required — ver
+        # domain/listing_validation.py::_es_requerido.
+        resultado = evaluar_atributos(
+            atributos_categoria, body.condition, datos_conocidos, body.attributes, es_user_product_seller=es_up
+        )
         if not resultado.listo_para_publicar:
             faltantes = ", ".join(f.nombre for f in resultado.faltantes)
             raise HTTPException(
@@ -468,19 +887,107 @@ async def confirmar_publicacion_mercadolibre(
                 detail=f"Mercado Libre no ofrece el tipo de publicación '{body.listing_type}' para esta categoría/precio ahora mismo.",
             )
 
-        payload = {
-            "title": generate_title(nombre=producto.name, marca=producto.brand),
-            "category_id": category_id,
-            "price": float(variante.price),
-            "currency_id": listing_type_raw["currency_id"],
-            "available_quantity": variante.marketplace_stock or 0,
-            "buying_mode": "buy_it_now",
-            "listing_type_id": listing_type_raw["listing_type_id"],
-            "pictures": [{"source": url} for url in imagenes],
-            "attributes": construir_attributes_payload(resultado),
-            "shipping": {"mode": "not_specified"},
-        }
+        titulo_generado = generate_title(nombre=producto.name, marca=producto.brand)
 
+        family_name = body.family_name
+        if es_up and not family_name:
+            # Default: el título que Nexo ya calculó, truncado al
+            # max_title_length REAL de la categoría — nunca un número
+            # inventado. Este llamado solo se hace en esta rama puntual
+            # (cuenta user_product_seller SIN family_name explícito) para
+            # no sumar una llamada de más en el camino común (legacy).
+            try:
+                categoria = await adapter.get_category(category_id)
+            except (MercadoLibreAuthError, MercadoLibreRequestError) as err:
+                raise HTTPException(
+                    status_code=502,
+                    detail="No pudimos consultar los datos de esa categoría en Mercado Libre en este momento.",
+                ) from err
+            max_len = (categoria.get("settings") or {}).get("max_title_length")
+            # Reusa generate_title solo para el truncado (con "…" si hace
+            # falta) — sin marca/modelo, titulo_generado ya los tiene.
+            family_name = generate_title(nombre=titulo_generado, max_length=max_len) if max_len else titulo_generado
+
+        resultado_payload: PayloadPublicacion = construir_payload_publicacion(
+            titulo=titulo_generado,
+            category_id=category_id,
+            price=float(variante.price),
+            currency_id=listing_type_raw["currency_id"],
+            available_quantity=variante.marketplace_stock or 0,
+            listing_type_id=listing_type_raw["listing_type_id"],
+            pictures=[{"source": url} for url in imagenes],
+            attributes=construir_attributes_payload(resultado),
+            es_user_product_seller=es_up,
+            family_name=family_name,
+        )
+    except Exception:
+        await adapter.aclose()
+        raise
+
+    return (
+        ResolucionPublicacion(
+            variante=variante, producto=producto, account=account,
+            es_user_product_seller=es_up, resultado_payload=resultado_payload, access_token=access_token,
+        ),
+        adapter,
+    )
+
+
+def _preview_sanitizado(resolucion: ResolucionPublicacion) -> dict:
+    """Payload que se PIENSA mandar — nunca token/refresh_token/client
+    secret/cookies/credenciales (30 de agosto de 2026, PARTE 5 de la
+    auditoría). Todo lo que devuelve viene del payload ya construido, no
+    hay ningún camino por el que un secreto pueda colarse acá."""
+    payload = resolucion.resultado_payload.payload
+    atributos_por_id = {a["id"]: a.get("value_name") for a in payload["attributes"]}
+    account = resolucion.account
+    return {
+        "seller": {"nickname": account.external_account_nickname, "siteId": account.external_account_site_id},
+        "userProductSeller": resolucion.es_user_product_seller,
+        "categoryId": payload["category_id"],
+        "familyName": payload.get("family_name"),
+        "title": payload.get("title"),
+        "model": atributos_por_id.get("MODEL"),
+        "gtin": atributos_por_id.get("GTIN") or atributos_por_id.get("EAN") or atributos_por_id.get("UPC"),
+        "emptyGtinReason": atributos_por_id.get("EMPTY_GTIN_REASON"),
+        "price": payload["price"],
+        "currencyId": payload["currency_id"],
+        "availableQuantity": payload["available_quantity"],
+        "listingTypeId": payload["listing_type_id"],
+        "pictures": payload["pictures"],
+        "attributes": payload["attributes"],
+        "shipping": payload["shipping"],
+    }
+
+
+@router.post("/{variant_id}/mercadolibre/confirmar/preview")
+async def preview_publicacion_mercadolibre(
+    variant_id: int, body: ConfirmarPublicacionRequest, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    """Corre EXACTAMENTE la misma validación local + construcción de
+    payload que /confirmar — pero nunca llega a POST /items. Para poder
+    inspeccionar el payload real antes de autorizar la publicación (30 de
+    agosto de 2026, ver PARTE 5/7 de la auditoría de User Products)."""
+    resolucion, adapter = await _resolver_publicacion(db, store, variant_id, body)
+    await adapter.aclose()
+    return _preview_sanitizado(resolucion)
+
+
+@router.post("/{variant_id}/mercadolibre/confirmar")
+async def confirmar_publicacion_mercadolibre(
+    variant_id: int,
+    body: ConfirmarPublicacionRequest,
+    db: Session = Depends(get_db),
+    store: Store = Depends(get_current_store),
+) -> dict:
+    resolucion, adapter = await _resolver_publicacion(db, store, variant_id, body)
+    variante = resolucion.variante
+    producto = resolucion.producto
+    account = resolucion.account
+    access_token = resolucion.access_token
+    payload = resolucion.resultado_payload.payload
+
+    try:
         # ---- ejecución real, después de todas las validaciones ----
         try:
             respuesta = await _ejecutar_publicacion_real(adapter, access_token, payload)
@@ -555,7 +1062,13 @@ async def confirmar_publicacion_mercadolibre(
             external_listing_id=str(item_id),
             user_product_id=str(user_product_id) if user_product_id else None,
             status="active",
-            title=payload["title"],
+            # El título real: bajo el modelo User Products, Mercado Libre
+            # lo genera y lo devuelve en la RESPUESTA (nunca en `payload`,
+            # que en esa rama no tiene la clave "title" — ver
+            # domain/ml_listing_payload.py). Se usa el de la respuesta
+            # cuando viene; si no, el que Nexo calculó localmente.
+            title=respuesta.get("title") or resolucion.resultado_payload.titulo_local,
+            family_name=payload.get("family_name"),
             price=variante.price,
             created_at=datetime.now(),
         )

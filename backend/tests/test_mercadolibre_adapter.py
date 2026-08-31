@@ -325,6 +325,87 @@ async def test_get_listing_fees_sin_permiso_lanza_auth_error():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_search_catalog_products_manda_bearer_y_product_identifier():
+    # Forma real capturada en vivo el 30 de agosto de 2026 contra
+    # GET https://api.mercadolibre.com/products/search?site_id=MLC&q=cuaderno+moleskine
+    # (recortada — solo lo necesario para el test).
+    route = respx.get(url__regex=r"https://api\.mercadolibre\.com/products/search\?.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "keywords": "cuaderno moleskine", "paging": {"total": 3269, "limit": 10, "offset": 0},
+                "results": [{"id": "MLC44481022", "catalog_product_id": "MLC44481022", "name": "Cuaderno Moleskine Clásico Rayado Rojo Escarlata"}],
+            },
+        )
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    resultado = await adapter.search_catalog_products("mi-token", "MLC", product_identifier="8058647628160")
+    await adapter.aclose()
+
+    assert resultado["results"][0]["id"] == "MLC44481022"
+    assert route.calls[0].request.headers["authorization"] == "Bearer mi-token"
+    assert "product_identifier=8058647628160" in str(route.calls[0].request.url)
+
+
+@pytest.mark.asyncio
+async def test_search_catalog_products_sin_gtin_ni_q_lanza_value_error():
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    with pytest.raises(ValueError):
+        await adapter.search_catalog_products("mi-token", "MLC")
+    await adapter.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_catalog_product_devuelve_buy_box_winner_real():
+    # Forma real capturada en vivo el 30 de agosto de 2026 contra
+    # GET https://api.mercadolibre.com/products/MLC44481022 — en este caso
+    # real puntual buy_box_winner vino null (sin competencia activa en ese
+    # momento), forma documentada oficialmente para el caso "con ganador".
+    route = respx.get("https://api.mercadolibre.com/products/MLC44481022").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "MLC44481022", "name": "Cuaderno Moleskine Clásico Rayado Rojo Escarlata",
+                "buy_box_winner": {"item_id": "MLC123", "price": 22990, "currency_id": "CLP", "condition": "new", "shipping": {"free_shipping": True, "logistic_type": "fulfillment"}, "seller": {"reputation_level_id": "5_green"}},
+                "buy_box_winner_price_range": {"min": {"price": 19990}, "max": {"price": 25990}},
+            },
+        )
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    detalle = await adapter.get_catalog_product("mi-token", "MLC44481022")
+    await adapter.aclose()
+
+    assert detalle["buy_box_winner"]["price"] == 22990
+    assert route.calls[0].request.headers["authorization"] == "Bearer mi-token"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_category_devuelve_max_title_length_real_sin_authorization_header():
+    # 30 de agosto de 2026, soporte User Products: subconjunto REAL
+    # capturado en vivo contra GET https://api.mercadolibre.com/categories/MLC180937
+    # (categoría "Cuadernos") — mismo criterio público que
+    # get_category_attributes/predict_category, sin token.
+    route = respx.get("https://api.mercadolibre.com/categories/MLC180937").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "MLC180937", "name": "Cuadernos",
+                "settings": {"max_title_length": 60, "max_sub_title_length": 70},
+            },
+        )
+    )
+    adapter = MercadoLibreAdapter(MercadoLibreConfig(**BASE_CONFIG))
+    categoria = await adapter.get_category("MLC180937")
+    await adapter.aclose()
+
+    assert categoria["settings"]["max_title_length"] == 60
+    assert "authorization" not in route.calls[0].request.headers
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_category_attributes_no_manda_authorization_header():
     # Confirmado en vivo el 29 de agosto de 2026 con
     # GET https://api.mercadolibre.com/categories/MLC180937/attributes:

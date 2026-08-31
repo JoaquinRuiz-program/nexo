@@ -44,6 +44,13 @@ class ChannelCostSettings(Base):
     # universal correcto). NULL = todavía no eligió: se muestran las dos
     # comisiones reales una al lado de la otra, sin asumir ninguna.
     listing_type_pref: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # 30 de agosto de 2026 — FASE 5 (precio recomendado): margen objetivo y
+    # mínimo aceptable, configurables POR CANAL (mismo criterio que
+    # commission_pct: NULL = "no configurado todavía", nunca un número
+    # inventado como default — ver domain/pricing.py, que devuelve
+    # "datos_insuficientes" si esto falta en vez de asumir, p.ej., 25%).
+    target_margin_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    min_margin_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     store: Mapped["Store"] = relationship(back_populates="channel_cost_settings")  # noqa: F821

@@ -98,6 +98,14 @@ class ProductVariant(Base):
     # color de un producto suele tener su propio código de barras (ver
     # find_barcode_candidates en domain/analysis.py).
     barcode: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 30 de agosto de 2026 — distingue "el producto realmente no tiene
+    # GTIN" (Caso C) de "Nexo todavía no cargó el código real" (Caso D):
+    # sin esto, EMPTY_GTIN_REASON="El producto no tiene código registrado"
+    # se podía usar para esconder un dato simplemente faltante. Default
+    # False = estado inicial "no sabemos" — el dueño lo pone en True
+    # explícitamente vía PUT /api/productos/{id}/codigo-barras (ver
+    # app/api/routes/productos_db.py). Nunca se infiere solo.
+    gtin_confirmado_ausente: Mapped[bool] = mapped_column(default=False)
     price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     # Precio de compra (lo que le cuesta al dueño, no lo que cobra) — nunca
     # viene de WooCommerce ni de Mercado Libre, ninguno de los dos lo expone.

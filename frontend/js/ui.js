@@ -56,6 +56,31 @@ window.LC = window.LC || {};
     return "Próximamente";
   }
 
+  // 30 de agosto de 2026 — a diferencia de formatCLP() de arriba (que
+  // oculta montos en toda la app por pedido del dueño, 22 de agosto de
+  // 2026), la pantalla de decisión/publicación en Mercado Libre SÍ
+  // necesita mostrar montos reales (precio recomendado, ganancia,
+  // competencia) — sin eso la pantalla no tiene ningún sentido. Mismo
+  // formato que ya usaba js/importFlow.js en su copia local (ver
+  // formatCLPReal ahí) — acá queda compartido para no triplicarlo.
+  function formatCLPReal(value) {
+    if (value === null || value === undefined) return "—";
+    const n = typeof value === "number" ? value : parseFloat(value);
+    if (Number.isNaN(n)) return "—";
+    try {
+      return new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n);
+    } catch (_e) {
+      return `$${Math.round(n)}`;
+    }
+  }
+
+  function formatPct(value) {
+    if (value === null || value === undefined) return "—";
+    const n = typeof value === "number" ? value : parseFloat(value);
+    if (Number.isNaN(n)) return "—";
+    return `${n.toFixed(1)}%`;
+  }
+
   function formatDate(date) {
     if (!date) return "—";
     return new Intl.DateTimeFormat("es-CL", { day: "2-digit", month: "short", year: "numeric" }).format(date);
@@ -153,5 +178,5 @@ window.LC = window.LC || {};
     openModal({ title, body: `<p>${escapeHtml(message)}</p>`, primaryLabel: "Entendido", ...(opts || {}) });
   }
 
-  LC.ui = { toast, openModal, infoModal, escapeHtml, formatCLP, formatDate, initials, icon };
+  LC.ui = { toast, openModal, infoModal, escapeHtml, formatCLP, formatCLPReal, formatPct, formatDate, initials, icon };
 })();

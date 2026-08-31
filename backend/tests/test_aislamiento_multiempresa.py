@@ -267,6 +267,39 @@ def test_empresa_a_no_puede_validar_publicacion_de_un_producto_de_empresa_b(clie
     assert res.status_code == 404
 
 
+def test_empresa_a_no_puede_ver_competencia_precio_ni_decision_de_un_producto_de_empresa_b(client_a, client_b, db_session, monkeypatch):
+    """/competencia, /precio-recomendado y /decision (FASE 4/5/6) no tenían
+    todavía una prueba de aislamiento acá (sugerencia de security-engineer,
+    30/08/2026) — ninguna de las tres requiere cuenta ML conectada para
+    responder, así que alcanza con confirmar el 404 cruzado de siempre."""
+    a = _registrar(client_a, email="a10@empresas.cl", empresa="Empresa A10")
+    b = _registrar(client_b, email="b10@empresas.cl", empresa="Empresa B10")
+    variant_id_b = _crear_producto(client_b, sku="COMPDEC-B", nombre="Producto de B", precio=10000)
+
+    assert client_a.get(f"/api/publicaciones/{variant_id_b}/mercadolibre/competencia").status_code == 404
+    assert client_a.get(f"/api/publicaciones/{variant_id_b}/mercadolibre/precio-recomendado").status_code == 404
+    assert client_a.get(f"/api/publicaciones/{variant_id_b}/mercadolibre/decision").status_code == 404
+
+    # Ninguna de las tres consultas de A altera nada del producto de B.
+    detalle_b = client_b.get(f"/api/productos/{variant_id_b}").json()
+    assert detalle_b["precio"] == 10000
+
+
+def test_decision_lote_de_empresa_a_nunca_incluye_variantes_de_empresa_b(client_a, client_b):
+    _registrar(client_a, email="a12@empresas.cl", empresa="Empresa A12")
+    _registrar(client_b, email="b12@empresas.cl", empresa="Empresa B12")
+    variant_id_a = _crear_producto(client_a, sku="LOTE-A", nombre="Producto de A", precio=10000)
+    variant_id_b = _crear_producto(client_b, sku="LOTE-B", nombre="Producto de B", precio=10000)
+
+    body_a = client_a.get("/api/publicaciones/mercadolibre/decision-lote").json()
+    body_b = client_b.get("/api/publicaciones/mercadolibre/decision-lote").json()
+
+    ids_a = {fila["variantId"] for fila in body_a}
+    ids_b = {fila["variantId"] for fila in body_b}
+    assert variant_id_a in ids_a and variant_id_b not in ids_a
+    assert variant_id_b in ids_b and variant_id_a not in ids_b
+
+
 def test_empresa_a_nunca_usa_la_cuenta_ml_de_empresa_b_para_preparar_su_propio_producto(client_a, client_b, db_session, monkeypatch):
     """Empresa A tiene su cuenta ML conectada con un site_id distinto al
     de Empresa B — si Nexo confundiera de cuenta, la predicción de
@@ -284,6 +317,7 @@ def test_empresa_a_nunca_usa_la_cuenta_ml_de_empresa_b_para_preparar_su_propio_p
         ruta_mlc = respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/domain_discovery/search.*").mock(
             return_value=httpx.Response(200, json=[{"category_id": "MLC180937", "category_name": "Cuadernos"}])
         )
+        respx.get("https://api.mercadolibre.com/categories/MLC180937").mock(return_value=httpx.Response(200, json={"id": "MLC180937", "name": "Cuadernos", "settings": {"max_title_length": 60}}))
         res = client_a.post(f"/api/publicaciones/{variant_id_a}/mercadolibre/preparar")
 
     assert res.status_code == 200
@@ -387,6 +421,9 @@ def test_empresa_a_publica_su_producto_y_nunca_puede_publicar_ni_usar_la_cuenta_
 
     # A publica SU PROPIO producto, usando solo su propia cuenta (site MLC).
     with respx.mock:
+        ruta_users_me = respx.get("https://api.mercadolibre.com/users/me").mock(
+            return_value=httpx.Response(200, json={"id": 1, "nickname": "A", "site_id": "MLC", "tags": ["normal"]})
+        )
         respx.get("https://api.mercadolibre.com/categories/MLC1/attributes").mock(return_value=httpx.Response(200, json=atributos))
         respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=fees))
         ruta_items = respx.post("https://api.mercadolibre.com/items").mock(
@@ -399,6 +436,10 @@ def test_empresa_a_publica_su_producto_y_nunca_puede_publicar_ni_usar_la_cuenta_
     assert res_propio.status_code == 200, res_propio.text
     assert ruta_items.calls.call_count == 1
     assert res_propio.json()["itemId"] == "MLC000000A"
+    # GET /users/me para detectar user_product_seller (30 de agosto de
+    # 2026) tiene que usar el token de A, nunca el de B — nunca cacheado.
+    token_usado = ruta_users_me.calls[0].request.headers["authorization"]
+    assert token_usado == f"Bearer token-empresa-{a['empresa']['id']}"
 
     # A intenta publicar el producto de B, incluso mandando el store_id de
     # B en el body — nunca lo lee (Pydantic lo descarta), sigue resolviendo

@@ -85,7 +85,14 @@ frontend/
     importFlow.js        Pantalla "Importar catálogo": asistente de 6 pasos
                        (subir → mapeo → confirmar → oportunidades →
                        publicaciones → listo), conectado al backend real.
-    auth.js             Sesión mock (login/registro/logout).
+    mercadolibrePublicar.js  Pantalla "Publicar en Mercado Libre" por
+                       producto (30 de agosto de 2026, FASE 6): decisión
+                       ¿conviene? → preparar → revisar (preview) →
+                       publicar. Ruta `#/publicaciones/:id`. Solo lectura
+                       hasta el último paso — el preview nunca publica;
+                       publicar de verdad exige checkbox + modal explícitos.
+    auth.js             Sesión real (login/registro/logout, cookie HttpOnly
+                       — ver app/api/deps.py del backend).
     app.js               Todas las pantallas: dashboard, productos, detalle
                        de producto, Mercado Libre, sincronización,
                        suscripción, configuración, y el shell (sidebar,
@@ -142,12 +149,14 @@ indicador "Modo demostración" visible en todo momento.
 
 **Real cuando el backend está corriendo:** Dashboard (stock, alertas,
 rentabilidad, ventas importadas, estado de Mercado Libre), Productos y
-detalle de producto, e Importar catálogo (el asistente completo, incluida
-la preparación de publicaciones — sigue siendo un borrador, nunca publica
-de verdad en Mercado Libre).
+detalle de producto, Importar catálogo (el asistente completo, incluida
+la preparación de publicaciones en lote — sigue siendo un borrador, nunca
+publica de verdad en Mercado Libre), cuenta/login (sesión real por cookie),
+y el flujo completo "Publicar en Mercado Libre" por producto
+(`#/publicaciones/:id` — decisión, competencia, precio recomendado,
+preparación, y la publicación real en sí, protegida por doble
+confirmación explícita).
 
-**Siempre en Demo Mode todavía, con o sin backend corriendo:** cuenta/login
-(no hay autenticación real de usuarios del panel), suscripción, la sección
-de ventas/pedidos/gráfico de Mercado Libre (no hay agregación por fecha en
-el backend todavía) y sincronización (no hay motor real). La contraseña
-nunca se guarda en ningún lado, sea Demo Mode o no.
+**Siempre en Demo Mode todavía, con o sin backend corriendo:** suscripción,
+la sección de ventas/pedidos/gráfico de Mercado Libre (no hay agregación
+por fecha en el backend todavía) y sincronización (no hay motor real).

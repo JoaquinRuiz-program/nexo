@@ -37,16 +37,26 @@ class GeneratedContent:
     simulado: bool = True  # False el día que esto lo genere un modelo real
 
 
-def generate_title(*, nombre: str, marca: Optional[str] = None) -> str:
-    """Antepone la marca si existe y no está ya mencionada en el nombre —
-    nunca agrega adjetivos ni características que no vinieron en los datos."""
+def generate_title(
+    *, nombre: str, marca: Optional[str] = None, modelo: Optional[str] = None, max_length: int = TITLE_MAX_LENGTH
+) -> str:
+    """Antepone la marca y agrega el modelo si existen y no están ya
+    mencionados en el nombre — nunca agrega adjetivos ni características
+    que no vinieron en los datos.
+
+    `max_length`: 60 por defecto (límite típico), pero se puede pasar el
+    `max_title_length` REAL de la categoría (ver
+    MercadoLibreAdapter.get_category, 30 de agosto de 2026) para no
+    truncar de más ni de menos — nunca se inventa un límite."""
     nombre = nombre.strip()
+    partes = [nombre]
     if marca and marca.strip().lower() not in nombre.lower():
-        titulo = f"{marca.strip()} {nombre}"
-    else:
-        titulo = nombre
-    if len(titulo) > TITLE_MAX_LENGTH:
-        titulo = titulo[: TITLE_MAX_LENGTH - 1].rstrip() + "…"
+        partes.insert(0, marca.strip())
+    if modelo and modelo.strip().lower() not in nombre.lower():
+        partes.append(modelo.strip())
+    titulo = " ".join(partes)
+    if len(titulo) > max_length:
+        titulo = titulo[: max_length - 1].rstrip() + "…"
     return titulo
 
 
@@ -80,6 +90,74 @@ def extract_attributes(*, marca: Optional[str] = None, codigo_barras: Optional[s
     if variant_label:
         atributos["Variante"] = variant_label.strip()
     return atributos
+
+
+DESCRIPCION_CORTA_MAX_LENGTH = 160
+
+
+@dataclass(frozen=True)
+class DescripcionGenerada:
+    corta: str
+    completa: str
+    # Lista de líneas tipo "Marca: Torre" — para mostrar como viñetas.
+    caracteristicas: list[str]
+    # Mismos datos que `caracteristicas`, en forma de dict — para uso
+    # programático (ej. mostrar una tabla, o mandarlos como atributos).
+    especificaciones: dict[str, str]
+    simulado: bool = True
+
+
+def generate_full_description(
+    *,
+    nombre: str,
+    marca: Optional[str] = None,
+    categoria: Optional[str] = None,
+    descripcion_original: Optional[str] = None,
+    codigo_barras: Optional[str] = None,
+    variant_label: Optional[str] = None,
+    atributos_confirmados: Optional[dict[str, str]] = None,
+) -> DescripcionGenerada:
+    """30 de agosto de 2026 — FASE 3 (títulos/descripciones): versión
+    "revisable antes de publicar" de la descripción — corta + completa +
+    características + especificaciones, para mostrar en /preparar antes de
+    que el dueño confirme. Misma regla de siempre: NUNCA se inventa un
+    material, medida, garantía, certificación o accesorio que no esté
+    literalmente en los datos del producto. `atributos_confirmados` son
+    pares nombre-valor que Nexo YA CONFIRMÓ como reales (ej. MODEL/COLOR
+    que el dueño completó en /validar) — nunca datos supuestos."""
+    especificaciones: dict[str, str] = {}
+    if marca:
+        especificaciones["Marca"] = marca.strip()
+    if categoria:
+        especificaciones["Categoría"] = categoria.strip()
+    if variant_label:
+        especificaciones["Variante"] = variant_label.strip()
+    if codigo_barras:
+        especificaciones["Código de barras"] = codigo_barras.strip()
+    for clave, valor in (atributos_confirmados or {}).items():
+        if valor:
+            especificaciones[clave] = valor.strip()
+
+    caracteristicas = [f"{clave}: {valor}" for clave, valor in especificaciones.items()]
+
+    if descripcion_original and descripcion_original.strip():
+        completa = descripcion_original.strip()
+        corta = completa if len(completa) <= DESCRIPCION_CORTA_MAX_LENGTH else completa[: DESCRIPCION_CORTA_MAX_LENGTH - 1].rstrip() + "…"
+    else:
+        # Sin descripción cargada por el vendedor: se arma una oración
+        # simple solo con los campos que sí existen, igual criterio que
+        # generate_description — nunca se completa con un adjetivo o
+        # característica supuesta.
+        oracion = generate_description(
+            nombre=nombre, marca=marca, categoria=categoria, descripcion_original=None
+        )
+        if caracteristicas:
+            completa = oracion + "\n\n" + "\n".join(f"- {c}" for c in caracteristicas)
+        else:
+            completa = oracion
+        corta = oracion if len(oracion) <= DESCRIPCION_CORTA_MAX_LENGTH else oracion[: DESCRIPCION_CORTA_MAX_LENGTH - 1].rstrip() + "…"
+
+    return DescripcionGenerada(corta=corta, completa=completa, caracteristicas=caracteristicas, especificaciones=especificaciones)
 
 
 def generate_content(

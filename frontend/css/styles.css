@@ -1096,6 +1096,20 @@ main::-webkit-scrollbar-track {
 .reco-badge.reco-no_seleccionado { background: #f1f5f9; color: #64748b; }
 .dark .reco-badge.reco-no_seleccionado { background: #1e293b; color: #64748b; }
 
+/* Decisión "¿conviene vender en Mercado Libre?" (FASE 6) — mismos colores
+   que la clasificación de rentabilidad de arriba, pero con su propio
+   nombre: son dos vocabularios de negocio distintos (rentabilidad interna
+   vs. decisión de publicar en ML) que hoy coinciden en color, no en
+   significado — no reusar reco-rentable/reco-margen_bajo/etc. acá. */
+.reco-badge.reco-conviene { background: #ecfdf5; color: #047857; }
+.dark .reco-badge.reco-conviene { background: #064e3b; color: #34d399; }
+.reco-badge.reco-revisar { background: #fffbeb; color: #92400e; }
+.dark .reco-badge.reco-revisar { background: #451a03; color: #fbbf24; }
+.reco-badge.reco-no_conviene { background: #fef2f2; color: #b91c1c; }
+.dark .reco-badge.reco-no_conviene { background: #450a0a; color: #f87171; }
+.reco-badge.reco-datos_insuficientes { background: #f1f5f9; color: #475569; }
+.dark .reco-badge.reco-datos_insuficientes { background: #1e293b; color: #94a3b8; }
+
 .draft-card {
   border: 1px solid #e2e8f0;
   border-radius: 1rem;

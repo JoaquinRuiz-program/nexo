@@ -89,6 +89,13 @@ class MarketplaceListing(Base):
     # necesariamente lo tendrán (ver User Products, ítems previos al
     # modelo nuevo).
     user_product_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # `family_name` real mandado a Mercado Libre (30 de agosto de 2026,
+    # soporte User Products) — solo se llena cuando la cuenta es
+    # `user_product_seller` (ver domain/ml_seller_capabilities.py); NULL en
+    # cualquier publicación hecha con el modelo clásico (`title`). Es
+    # puramente de auditoría: Nexo v1 no agrupa variantes en una familia
+    # real de Mercado Libre todavía, cada publicación es independiente.
+    family_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # not_published | active | paused | closed
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="not_published")
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)

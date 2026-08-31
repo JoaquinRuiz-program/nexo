@@ -247,6 +247,67 @@ window.LC = window.LC || {};
     });
   }
 
+  // ------------------------------------------------------------------
+  // 30 de agosto de 2026 — flujo por producto de decisión + publicación en
+  // Mercado Libre (FASE 6 frontend). Nombre explícito "MercadoLibre" (no
+  // "publicacion" a secas) para no confundirse con prepararPublicaciones()
+  // de arriba, que es un endpoint distinto (en lote, genérico "tienda").
+  // ------------------------------------------------------------------
+
+  async function decisionMercadoLibre(variantId) {
+    return request(`/api/publicaciones/${variantId}/mercadolibre/decision`);
+  }
+
+  async function decisionLoteMercadoLibre() {
+    return request("/api/publicaciones/mercadolibre/decision-lote");
+  }
+
+  async function competenciaMercadoLibre(variantId) {
+    return request(`/api/publicaciones/${variantId}/mercadolibre/competencia`);
+  }
+
+  async function precioRecomendadoMercadoLibre(variantId) {
+    return request(`/api/publicaciones/${variantId}/mercadolibre/precio-recomendado`);
+  }
+
+  async function prepararPublicacionMercadoLibre(variantId) {
+    return request(`/api/publicaciones/${variantId}/mercadolibre/preparar`, { method: "POST" });
+  }
+
+  async function validarPublicacionMercadoLibre(variantId, { categoryId, condition }) {
+    return request(`/api/publicaciones/${variantId}/mercadolibre/validar`, {
+      method: "POST",
+      body: { category_id: categoryId, condition },
+    });
+  }
+
+  async function previewPublicacionMercadoLibre(variantId, body) {
+    return request(`/api/publicaciones/${variantId}/mercadolibre/confirmar/preview`, { method: "POST", body });
+  }
+
+  async function confirmarPublicacionMercadoLibre(variantId, body) {
+    // POST /items real puede tardar más que una consulta normal (Mercado
+    // Libre valida categoría/atributos/comisión antes de responder) —
+    // mismo timeout generoso que las otras llamadas lentas a Mercado
+    // Libre, para no cortar la request antes de que el backend confirme.
+    return request(`/api/publicaciones/${variantId}/mercadolibre/confirmar`, { method: "POST", body, timeoutMs: UPLOAD_TIMEOUT_MS });
+  }
+
+  async function actualizarCodigoBarras(variantId, { barcode, confirmarSinCodigo }) {
+    return request(`/api/productos/${variantId}/codigo-barras`, {
+      method: "PUT",
+      body: { barcode: barcode ?? null, confirmarSinCodigo: !!confirmarSinCodigo },
+    });
+  }
+
+  async function obtenerConfiguracionCanales() {
+    return request("/api/configuracion/canales");
+  }
+
+  async function configurarCanal(channel, body) {
+    return request(`/api/configuracion/canales/${channel}`, { method: "PUT", body });
+  }
+
   LC.backendApi = {
     API_BASE_URL,
     login,
@@ -270,5 +331,16 @@ window.LC = window.LC || {};
     confirmarImportacion,
     obtenerSeleccion,
     prepararPublicaciones,
+    decisionMercadoLibre,
+    decisionLoteMercadoLibre,
+    competenciaMercadoLibre,
+    precioRecomendadoMercadoLibre,
+    prepararPublicacionMercadoLibre,
+    validarPublicacionMercadoLibre,
+    previewPublicacionMercadoLibre,
+    confirmarPublicacionMercadoLibre,
+    actualizarCodigoBarras,
+    obtenerConfiguracionCanales,
+    configurarCanal,
   };
 })();

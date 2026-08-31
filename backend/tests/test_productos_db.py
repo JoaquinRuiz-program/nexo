@@ -280,6 +280,74 @@ def test_configurar_costo_de_producto_inexistente_devuelve_404(client, a_store):
     assert res.status_code == 404
 
 
+# ------------------------------------------------------------------
+# PUT /{variant_id}/codigo-barras — 30 de agosto de 2026, distingue Caso
+# A/B/C/D de GTIN (ver PUBLICACION_MERCADOLIBRE.md).
+# ------------------------------------------------------------------
+
+
+def test_producto_sin_gtin_cargado_queda_en_datos_incompletos(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="GTIN-001", nombre="Producto nuevo", precio=5000, stock=5)
+    res = client.get("/api/productos")
+    assert res.json()[0]["estadoGtin"] == "datos_incompletos"
+    assert res.json()[0]["codigoBarras"] is None
+
+
+def test_cargar_un_gtin_valido_queda_como_valido(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="GTIN-002", nombre="Producto", precio=5000, stock=5)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.put(f"/api/productos/{variant_id}/codigo-barras", json={"barcode": "9788883701122"})
+
+    assert res.status_code == 200
+    assert res.json()["codigoBarras"] == "9788883701122"
+    assert res.json()["estadoGtin"] == "valido"
+
+
+def test_cargar_un_gtin_con_checksum_invalido_es_rechazado(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="GTIN-003", nombre="Producto", precio=5000, stock=5)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.put(f"/api/productos/{variant_id}/codigo-barras", json={"barcode": "8058647628161"})
+
+    assert res.status_code == 400
+    variante = db_session.get(ProductVariant, variant_id)
+    assert variante.barcode is None  # nunca se guarda un código inválido
+
+
+def test_confirmar_sin_codigo_marca_el_estado_correspondiente(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="GTIN-004", nombre="Producto artesanal", precio=5000, stock=5)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.put(f"/api/productos/{variant_id}/codigo-barras", json={"confirmarSinCodigo": True})
+
+    assert res.status_code == 200
+    assert res.json()["codigoBarras"] is None
+    assert res.json()["estadoGtin"] == "sin_codigo_confirmado"
+    variante = db_session.get(ProductVariant, variant_id)
+    assert variante.gtin_confirmado_ausente is True
+
+
+def test_cargar_un_gtin_real_despues_de_haber_confirmado_que_no_tenia_lo_reemplaza(client, db_session, a_store):
+    """Si después aparece el código real, cargarlo vuelve a dejar el
+    producto en estado "válido" — no se queda pegado en "confirmado sin
+    código"."""
+    _producto_simple(db_session, a_store, sku="GTIN-005", nombre="Producto", precio=5000, stock=5)
+    variant_id = db_session.query(ProductVariant).one().id
+    client.put(f"/api/productos/{variant_id}/codigo-barras", json={"confirmarSinCodigo": True})
+
+    res = client.put(f"/api/productos/{variant_id}/codigo-barras", json={"barcode": "9788883701122"})
+
+    assert res.json()["estadoGtin"] == "valido"
+    variante = db_session.get(ProductVariant, variant_id)
+    assert variante.gtin_confirmado_ausente is False
+
+
+def test_configurar_codigo_barras_de_producto_inexistente_devuelve_404(client, a_store):
+    res = client.put("/api/productos/999999/codigo-barras", json={"barcode": "9788883701122"})
+    assert res.status_code == 404
+
+
 def test_ruta_reporte_no_es_capturada_por_la_ruta_dinamica(client, a_store, monkeypatch):
     """Si /api/productos/{variant_id} se matcheara antes que la ruta literal
     /api/productos/reporte, FastAPI intentaría convertir "reporte" a int y

@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_store
 from app.db.models import Product, ProductVariant, Store
 from app.db.session import get_db
+from app.domain.listing_validation import gtin_checksum_valido
 from app.domain.marketplace_stock import set_manual_stock
 
 router = APIRouter(prefix="/api/productos", tags=["productos-bd"])
@@ -39,6 +40,25 @@ class MarketplaceStockUpdate(BaseModel):
 class CostoUpdate(BaseModel):
     # None = borrar el costo cargado (vuelve a "sin costo", nunca $0).
     costo: float | None = None
+
+
+class CodigoBarrasUpdate(BaseModel):
+    # None = no hay código para cargar en esta llamada — ver
+    # confirmarSinCodigo para distinguir "no sabemos todavía" de "el dueño
+    # confirmó que este producto no tiene GTIN" (30 de agosto de 2026).
+    barcode: str | None = None
+    confirmarSinCodigo: bool = False
+
+
+def _estado_gtin(variante: ProductVariant) -> str:
+    """valido | invalido | sin_codigo_confirmado | datos_incompletos — ver
+    PUBLICACION_MERCADOLIBRE.md, Caso A/B/C/D. Nunca se usa para bloquear
+    nada acá (solo informa) — el bloqueo real vive en /confirmar."""
+    if variante.barcode:
+        return "valido" if gtin_checksum_valido(variante.barcode) else "invalido"
+    if variante.gtin_confirmado_ausente:
+        return "sin_codigo_confirmado"
+    return "datos_incompletos"
 
 
 def build_producto_fila(producto: Product, variante: ProductVariant) -> dict:
@@ -59,6 +79,8 @@ def build_producto_fila(producto: Product, variante: ProductVariant) -> dict:
         "esVariante": producto.product_type == "variable",
         "colorVariante": variante.variant_label,
         "parentId": producto.id,
+        "codigoBarras": variante.barcode,
+        "estadoGtin": _estado_gtin(variante),
         # Todavía no hay vínculo con WooCommerce para datos de prueba —
         # nunca se inventa un ID que no existe (ver app/domain/analysis.py).
         "woocommerceParentId": None,
@@ -125,6 +147,34 @@ def configurar_costo(
         raise HTTPException(status_code=400, detail="El costo no puede ser negativo.")
 
     variante.cost_price = body.costo
+    db.commit()
+    db.refresh(variante)
+    return build_producto_fila(variante.product, variante)
+
+
+@router.put("/{variant_id}/codigo-barras")
+def configurar_codigo_barras(
+    variant_id: int, body: CodigoBarrasUpdate, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    """Carga el GTIN real de un producto, o confirma explícitamente que no
+    tiene — nunca las dos cosas a la vez. Ver Caso A/B/C/D en
+    PUBLICACION_MERCADOLIBRE.md: esto es lo que cierra el Caso D ("Nexo
+    todavía no lo sabe") sin que /confirmar tenga que adivinarlo."""
+    variante = _variante_de_la_tienda(db, store, variant_id)
+
+    codigo = (body.barcode or "").strip() or None
+    if codigo is not None:
+        if not gtin_checksum_valido(codigo):
+            raise HTTPException(
+                status_code=400,
+                detail="Ese código no es válido (no pasa el checksum GTIN/EAN) — revisalo antes de guardarlo.",
+            )
+        variante.barcode = codigo
+        variante.gtin_confirmado_ausente = False
+    else:
+        variante.barcode = None
+        variante.gtin_confirmado_ausente = body.confirmarSinCodigo
+
     db.commit()
     db.refresh(variante)
     return build_producto_fila(variante.product, variante)

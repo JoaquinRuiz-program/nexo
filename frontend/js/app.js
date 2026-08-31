@@ -16,6 +16,7 @@ window.LC = window.LC || {};
   const SECTION_TITLES = {
     dashboard: "Dashboard",
     productos: "Productos",
+    publicaciones: "Publicar en Mercado Libre",
     oportunidades: "Oportunidades",
     importar: "Importar catálogo",
     integraciones: "Integraciones",
@@ -85,6 +86,9 @@ window.LC = window.LC || {};
           break;
         case "oportunidades":
           await renderOportunidades(main);
+          break;
+        case "publicaciones":
+          await LC.mlPublicar.render(main, param);
           break;
         case "importar":
           await LC.importFlow.render(main);
@@ -1132,9 +1136,8 @@ window.LC = window.LC || {};
             <p class="text-xs text-slate-400 dark:text-slate-500">IDs de ejemplo — este producto todavía no está sincronizado con una tienda WooCommerce real.</p>
           </div>
           <div class="panel-card">
-            <h3 class="panel-title mb-2">Información de Mercado Libre</h3>
-            <p class="text-sm font-medium text-slate-600 dark:text-slate-300 mb-3">No vinculado</p>
-            <button id="link-ml-btn" class="btn-secondary">Vincular producto</button>
+            <h3 class="panel-title mb-2">Mercado Libre</h3>
+            <div id="ml-mini-decision"><p class="text-sm text-slate-400">Consultando…</p></div>
           </div>
         </div>
 
@@ -1157,9 +1160,7 @@ window.LC = window.LC || {};
     `;
 
     document.getElementById("back-to-list").addEventListener("click", () => LC.router.navigate("/productos"));
-    document.getElementById("link-ml-btn").addEventListener("click", () => {
-      infoModal("Vincular con Mercado Libre", "La vinculación de productos con Mercado Libre estará disponible cuando conectemos la integración real.");
-    });
+    cargarMiniDecisionMercadoLibre(main, row.id);
     main.querySelectorAll("[data-nav]").forEach((btn) => {
       btn.addEventListener("click", () => LC.router.navigate(btn.dataset.nav));
     });
@@ -1169,6 +1170,37 @@ window.LC = window.LC || {};
         abrirEditorCosto({ id: row.id, nombre: row.nombre, costo: rentabilidad ? rentabilidad.costo : null }, () => renderProductDetail(main, id));
       });
     }
+  }
+
+  // Miniatura de decisión "¿conviene vender en Mercado Libre?" (30 de
+  // agosto de 2026, FASE 6 frontend) — carga aparte del resto del detalle
+  // del producto porque puede consultar Mercado Libre y tardar más; nunca
+  // bloquea el resto de la pantalla mientras responde.
+  const MINI_DECISION_LABEL = { conviene: "Conviene", revisar: "Conviene revisar", no_conviene: "No conviene", datos_insuficientes: "Faltan datos" };
+
+  async function cargarMiniDecisionMercadoLibre(main, variantId) {
+    const el = document.getElementById("ml-mini-decision");
+    if (!el) return;
+    const modo = await LC.dataSource.getModo();
+    if (modo !== "real") {
+      el.innerHTML = `<p class="text-sm text-slate-400">Disponible cuando conectes el backend real.</p>`;
+      return;
+    }
+    const res = await LC.backendApi.decisionMercadoLibre(variantId);
+    if (!document.getElementById("ml-mini-decision")) return; // la pantalla ya cambió
+    if (!res.ok) {
+      el.innerHTML = `<p class="text-sm text-slate-400 mb-3">${escapeHtml(res.error.mensaje)}</p><button data-mini-ml class="btn-secondary">Analizar para Mercado Libre</button>`;
+    } else {
+      const d = res.data;
+      const visual = d.decision === "revisar" && d.faltantes && d.faltantes.length ? "datos_insuficientes" : d.decision;
+      el.innerHTML = `
+        <span class="reco-badge reco-${visual} mb-3">${escapeHtml(MINI_DECISION_LABEL[visual] || visual)}</span>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">${escapeHtml(d.razon)}</p>
+        <button data-mini-ml class="btn-secondary">Analizar para Mercado Libre</button>
+      `;
+    }
+    const btn = el.querySelector("[data-mini-ml]");
+    if (btn) btn.addEventListener("click", () => LC.router.navigate(`/publicaciones/${variantId}`));
   }
 
   // ------------------------------------------------------------------
@@ -1587,7 +1619,16 @@ window.LC = window.LC || {};
     return partes.length ? partes.join(" · ") : "—";
   }
 
-  function filaOportunidad(p) {
+  const DECISION_COLUMNA_LABEL = { conviene: "Conviene", revisar: "Revisar", no_conviene: "No conviene", datos_insuficientes: "Faltan datos" };
+
+  function celdaDecision(p, decisionMap) {
+    const d = decisionMap && decisionMap.get(p.id);
+    if (!d) return `<td class="px-3 py-2.5"><span class="text-xs text-slate-400">—</span></td>`;
+    const visual = d.decision === "revisar" && d.faltantes && d.faltantes.length ? "datos_insuficientes" : d.decision;
+    return `<td class="px-3 py-2.5"><span class="reco-badge reco-${visual} !text-xs !py-1">${DECISION_COLUMNA_LABEL[visual] || visual}</span></td>`;
+  }
+
+  function filaOportunidad(p, decisionMap) {
     const accion =
       p.clasificacion === "sin_datos"
         ? `<button data-agregar-costo="${p.id}" class="btn-secondary !py-1.5 !text-xs">Agregar costo</button>`
@@ -1603,11 +1644,12 @@ window.LC = window.LC || {};
         <td class="px-3 py-2.5 text-right font-medium ${p.margenTiendaClp != null && p.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${p.margenTiendaClp != null ? formatCLP(p.margenTiendaClp) : "—"}</td>
         <td class="px-3 py-2.5 text-right">${p.margenTiendaPct != null ? `${p.margenTiendaPct.toFixed(1)}%` : "—"}</td>
         <td class="px-3 py-2.5 text-right text-xs text-slate-500 dark:text-slate-400">${escapeHtml(comisionMlTexto(p.comisionMlReal))}</td>
+        ${celdaDecision(p, decisionMap)}
         <td class="px-3 py-2.5">${accion}</td>
       </tr>`;
   }
 
-  function tablaOportunidades(productos) {
+  function tablaOportunidades(productos, decisionMap) {
     return `<div class="table-wrap"><table class="w-full text-sm">
       <thead>
         <tr class="text-left border-b border-slate-200 dark:border-slate-700">
@@ -1617,10 +1659,11 @@ window.LC = window.LC || {};
           <th class="px-3 py-2 font-medium text-right">Ganancia estimada</th>
           <th class="px-3 py-2 font-medium text-right">Margen</th>
           <th class="px-3 py-2 font-medium text-right">Comisión ML real</th>
+          <th class="px-3 py-2 font-medium">Decisión</th>
           <th class="px-3 py-2 font-medium"></th>
         </tr>
       </thead>
-      <tbody>${productos.map((p) => filaOportunidad(p)).join("")}</tbody>
+      <tbody>${productos.map((p) => filaOportunidad(p, decisionMap)).join("")}</tbody>
     </table></div>`;
   }
 
@@ -1635,9 +1678,16 @@ window.LC = window.LC || {};
     // access token real); si no, se explica por qué no está disponible en
     // vez de mostrar un botón que va a fallar.
     let mlConectado = false;
+    let decisionPorVariante = new Map();
     if (esReal) {
       const estadoMl = await LC.backendApi.fetchMercadoLibreEstado();
       mlConectado = estadoMl.ok && estadoMl.data.conectado;
+      // Decisión "¿conviene publicar en Mercado Libre?" por producto (30
+      // de agosto de 2026, FASE 6) — en lote, sin competencia, para no
+      // pedirle a Mercado Libre una consulta por cada fila de la tabla
+      // (ver GET /mercadolibre/decision-lote).
+      const decisionRes = await LC.backendApi.decisionLoteMercadoLibre();
+      if (decisionRes.ok) decisionPorVariante = new Map(decisionRes.data.map((d) => [d.variantId, d]));
     }
 
     main.innerHTML = `
@@ -1678,7 +1728,7 @@ window.LC = window.LC || {};
                     <span class="text-sm text-slate-400">(${items.length})</span>
                   </div>
                   <p class="panel-subtitle mb-4">${g.desc}</p>
-                  ${tablaOportunidades(items)}
+                  ${tablaOportunidades(items, decisionPorVariante)}
                 </div>`;
               }).join("")
             : `<div class="panel-card"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("bulb")}</div><p class="empty-state-title">Todavía no hay productos para revisar</p><p class="empty-state-desc">Sube tu catálogo para que calculemos qué te conviene vender.</p></div></div>`
@@ -1878,6 +1928,15 @@ window.LC = window.LC || {};
     const session = LC.auth.getSession() || LC.demoData.account;
     const themePref = LC.theme.get();
 
+    // Comisión/envío/otros costos + margen objetivo/mínimo de Mercado
+    // Libre (30 de agosto de 2026, FASE 6 frontend) — sin esto, el precio
+    // recomendado y la decisión "¿conviene?" siempre dan "faltan datos".
+    let canalMl = null;
+    if (await LC.dataSource.getModo() === "real") {
+      const res = await LC.backendApi.obtenerConfiguracionCanales();
+      if (res.ok) canalMl = res.data.find((c) => c.channel === "mercadolibre") || {};
+    }
+
     main.innerHTML = `
       <div class="page-wrap app-fade max-w-3xl space-y-5">
 
@@ -1936,6 +1995,36 @@ window.LC = window.LC || {};
           </div>
         </div>
 
+        ${canalMl !== null ? `
+        <div class="panel-card">
+          <h3 class="panel-title mb-1">Mercado Libre — costos y margen</h3>
+          <p class="panel-subtitle mb-4">Con esto Nexo calcula el precio recomendado y si te conviene publicar cada producto. Sin margen objetivo cargado, esas pantallas van a mostrar "faltan datos".</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="form-label">Comisión de Mercado Libre (%)</label>
+              <input id="cfg-ml-comision" type="number" min="0" step="0.1" class="form-input" value="${canalMl.commissionPct ?? ""}" />
+            </div>
+            <div>
+              <label class="form-label">Costo de envío ($)</label>
+              <input id="cfg-ml-envio" type="number" min="0" step="1" class="form-input" value="${canalMl.shippingCost ?? ""}" />
+            </div>
+            <div>
+              <label class="form-label">Otros costos fijos ($)</label>
+              <input id="cfg-ml-otros" type="number" min="0" step="1" class="form-input" value="${canalMl.otherFixedCost ?? ""}" />
+            </div>
+            <div>
+              <label class="form-label">Margen objetivo (%)</label>
+              <input id="cfg-ml-margen-objetivo" type="number" min="0" step="0.1" class="form-input" value="${canalMl.targetMarginPct ?? ""}" />
+            </div>
+            <div>
+              <label class="form-label">Margen mínimo aceptable (%)</label>
+              <input id="cfg-ml-margen-minimo" type="number" min="0" step="0.1" class="form-input" value="${canalMl.minMarginPct ?? ""}" />
+            </div>
+          </div>
+          <p id="cfg-ml-feedback" class="text-sm mt-2 min-h-[1.25rem]"></p>
+          <button id="cfg-ml-guardar" class="btn-primary mt-2">Guardar</button>
+        </div>` : ""}
+
         <div class="panel-card">
           <div class="flex items-center justify-between gap-4 flex-wrap">
             <div>
@@ -1973,6 +2062,35 @@ window.LC = window.LC || {};
       });
       toast("success", "Configuración guardada correctamente.");
     });
+
+    const btnGuardarMl = document.getElementById("cfg-ml-guardar");
+    if (btnGuardarMl) {
+      btnGuardarMl.addEventListener("click", async () => {
+        const num = (id) => {
+          const v = document.getElementById(id).value.trim();
+          return v === "" ? null : Number(v);
+        };
+        const feedback = document.getElementById("cfg-ml-feedback");
+        btnGuardarMl.disabled = true;
+        btnGuardarMl.textContent = "Guardando…";
+        const res = await LC.backendApi.configurarCanal("mercadolibre", {
+          commission_pct: num("cfg-ml-comision"),
+          shipping_cost: num("cfg-ml-envio"),
+          other_fixed_cost: num("cfg-ml-otros"),
+          target_margin_pct: num("cfg-ml-margen-objetivo"),
+          min_margin_pct: num("cfg-ml-margen-minimo"),
+        });
+        btnGuardarMl.disabled = false;
+        btnGuardarMl.textContent = "Guardar";
+        if (!res.ok) {
+          feedback.textContent = res.error.mensaje;
+          feedback.className = "text-sm mt-2 min-h-[1.25rem] text-red-600 dark:text-red-400";
+          return;
+        }
+        feedback.textContent = "";
+        toast("success", "Configuración de Mercado Libre guardada.");
+      });
+    }
 
     main.querySelectorAll(".theme-opt-btn").forEach((btn) => {
       btn.addEventListener("click", () => {

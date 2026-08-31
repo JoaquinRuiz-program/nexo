@@ -233,6 +233,51 @@ class MercadoLibreAdapter:
         response = await self._request_with_retry("GET", url, access_token)
         return response.json()
 
+    async def search_catalog_products(
+        self, access_token: str, site_id: str, *, product_identifier: Optional[str] = None, q: Optional[str] = None
+    ) -> dict[str, Any]:
+        """GET /products/search — 30 de agosto de 2026, FASE 4 (análisis de
+        competencia): busca si el producto ya existe en el catálogo de
+        Mercado Libre, ANTES de publicarlo — nunca inventa un match, solo
+        pregunta. Requiere `product_identifier` (GTIN, preferido — más
+        preciso) o `q` (palabras clave, cuando no hay GTIN todavía).
+        Confirmado real (investigación oficial 30/08/2026): requiere
+        `access_token` — no es público como get_category_attributes."""
+        params: dict[str, Any] = {"site_id": site_id, "status": "active"}
+        if product_identifier:
+            params["product_identifier"] = product_identifier
+        elif q:
+            params["q"] = q
+        else:
+            raise ValueError("search_catalog_products necesita product_identifier o q.")
+        query = urlencode(params)
+        url = f"{API_BASE_URL}/products/search?{query}"
+        response = await self._request_with_retry("GET", url, access_token)
+        return response.json()
+
+    async def get_catalog_product(self, access_token: str, product_id: str) -> dict[str, Any]:
+        """GET /products/{product_id} — 30 de agosto de 2026, FASE 4: trae
+        `buy_box_winner` (precio/condición/envío/reputación real del que
+        gana ese producto de catálogo hoy) y `buy_box_winner_price_range`
+        (rango real min/max de precios de la competencia) — ambos
+        confirmados oficialmente (developers.mercadolibre.cl/es_cl/competencia-en-catalogo).
+        Nunca se inventa un competidor que esta respuesta no trajo."""
+        url = f"{API_BASE_URL}/products/{product_id}"
+        response = await self._request_with_retry("GET", url, access_token)
+        return response.json()
+
+    async def get_category(self, category_id: str) -> dict[str, Any]:
+        """GET /categories/{category_id} — público, NO necesita access_token
+        (mismo criterio que get_category_attributes/predict_category).
+        Devuelve la categoría cruda, incluyendo `settings.max_title_length`
+        (verificado en vivo el 30 de agosto de 2026 contra MLC180937 = 60) —
+        30 de agosto de 2026, soporte User Products: se usa para calcular un
+        `family_name` por defecto que no exceda el límite real de la
+        categoría, nunca un número inventado."""
+        url = f"{API_BASE_URL}/categories/{category_id}"
+        response = await self._request_with_retry("GET", url, None)
+        return response.json()
+
     async def get_category_attributes(self, category_id: str) -> list[dict[str, Any]]:
         """GET /categories/{category_id}/attributes — público, NO necesita
         access_token (verificado en vivo el 29 de agosto de 2026, mismo

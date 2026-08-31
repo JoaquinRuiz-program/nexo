@@ -30,6 +30,12 @@ class ChannelCostsUpdate(BaseModel):
     # classic | premium | None ("comparar ambas", ver domain/ml_fees.py) —
     # solo tiene sentido para channel="mercadolibre".
     listing_type_pref: str | None = None
+    # 30 de agosto de 2026 — FASE 5 (precio recomendado): margen objetivo y
+    # mínimo aceptable, POR CANAL. NULL = "no configurado" (ver
+    # domain/pricing.py: sin esto, la recomendación de precio devuelve
+    # DATOS_INSUFICIENTES en vez de asumir un % inventado).
+    target_margin_pct: float | None = None
+    min_margin_pct: float | None = None
 
 
 def _fila(costos: ChannelCostSettings) -> dict:
@@ -39,6 +45,8 @@ def _fila(costos: ChannelCostSettings) -> dict:
         "shippingCost": float(costos.shipping_cost) if costos.shipping_cost is not None else None,
         "otherFixedCost": float(costos.other_fixed_cost) if costos.other_fixed_cost is not None else None,
         "listingTypePref": costos.listing_type_pref,
+        "targetMarginPct": float(costos.target_margin_pct) if costos.target_margin_pct is not None else None,
+        "minMarginPct": float(costos.min_margin_pct) if costos.min_margin_pct is not None else None,
         # Ningún campo configurado todavía = el canal existe pero no se usa
         # para calcular margen neto (ver domain/profitability.py.is_configured).
         "configurado": costos.commission_pct is not None or costos.shipping_cost is not None or costos.other_fixed_cost is not None,
@@ -65,6 +73,8 @@ def configurar_canal(
     costos.shipping_cost = body.shipping_cost
     costos.other_fixed_cost = body.other_fixed_cost
     costos.listing_type_pref = body.listing_type_pref
+    costos.target_margin_pct = body.target_margin_pct
+    costos.min_margin_pct = body.min_margin_pct
     costos.updated_at = datetime.now()
     db.commit()
     db.refresh(costos)
