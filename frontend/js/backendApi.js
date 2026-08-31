@@ -29,7 +29,11 @@
 window.LC = window.LC || {};
 
 (function () {
-  const API_BASE_URL = "http://localhost:8000";
+  // 30 de agosto de 2026 — antes hardcodeado acá mismo; ahora viene de
+  // js/env.js (el único archivo que cambia entre desarrollo y producción).
+  // Fallback a localhost si env.js no se cargó, para no romper en dev si
+  // alguien lo borra por error.
+  const API_BASE_URL = (window.LC && window.LC.env && window.LC.env.API_BASE_URL) || "http://localhost:8000";
   const FETCH_TIMEOUT_MS = 10000;
   // Analizar/confirmar un catálogo grande puede tardar más que una consulta
   // normal (lee y valida cada fila) — timeout más generoso solo para eso.

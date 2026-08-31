@@ -128,4 +128,30 @@ def test_sku_no_encontrado_se_reporta_sin_romper_la_respuesta(client, a_store):
     res = client.post("/api/costos/importar", files={"file": ("costos.csv", archivo, "text/csv")})
 
     assert res.status_code == 200
-    assert res.json()["noEncontrados"] == ["NO-EXISTE"]
+
+
+def test_importar_costos_nunca_toca_un_sku_de_otra_empresa(client, db_session, a_store):
+    """30 de agosto de 2026 — hallazgo de qa-engineer: ningún test cubría
+    explícitamente que subir un archivo de costos de la Empresa A no
+    pueda tocar un SKU de la Empresa B, aunque coincida el texto del SKU
+    (import_costs ya filtra por store_id, esto confirma el comportamiento
+    con un test HTTP real de punta a punta, no solo lectura de código)."""
+    otro_usuario = User(email="otra@empresa.cl", password_hash=hash_password("x"), full_name="Dueño B", created_at=NOW, updated_at=NOW)
+    db_session.add(otro_usuario)
+    tienda_b = Store(owner=otro_usuario, name="Empresa B", created_at=NOW)
+    db_session.add(tienda_b)
+    db_session.commit()
+    _crear_producto(db_session, tienda_b, sku="MISMO-SKU", nombre="Producto de Empresa B")
+
+    # a_store (Empresa A) NUNCA tuvo este SKU — sube un archivo que
+    # intenta actualizarlo de todas formas.
+    archivo = io.BytesIO(b"sku,costo\nMISMO-SKU,999\n")
+    res = client.post("/api/costos/importar", files={"file": ("costos.csv", archivo, "text/csv")})
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["actualizados"] == []
+    assert body["noEncontrados"] == ["MISMO-SKU"]  # existe, pero es de OTRA empresa — nunca se toca
+
+    variante_b = db_session.query(ProductVariant).filter_by(store_id=tienda_b.id, variant_sku="MISMO-SKU").first()
+    assert variante_b.cost_price is None  # intacto

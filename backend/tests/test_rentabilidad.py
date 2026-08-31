@@ -189,3 +189,27 @@ def test_rentabilidad_esta_scopeada_por_tienda_no_mezcla_empresas(client, db_ses
 def test_configurar_canal_sin_dato_no_lo_marca_configurado(client, a_store):
     res = client.put("/api/configuracion/canales/mercadolibre", json={})
     assert res.json()["configurado"] is False
+
+
+def test_configurar_margen_objetivo_via_endpoint_habilita_precio_recomendado(client, db_session, a_store):
+    """30 de agosto de 2026 — hallazgo de qa-engineer: todos los tests que
+    ejercitan margen objetivo/mínimo lo insertaban directo en la base
+    (ChannelCostSettings.target_margin_pct = ...), nunca a través del PUT
+    real — es decir, nadie probaba automáticamente que la pantalla
+    "Configurar costos y margen" funciona de punta a punta. Este test hace
+    el PUT real (comisión + margen) y confirma en el endpoint de precio
+    recomendado que deja de dar "datos_insuficientes"."""
+    _producto_con_precio_y_costo(db_session, a_store, sku="MARGEN-HTTP", nombre="Producto con margen vía HTTP", precio=10000, costo=7000)
+
+    res = client.put(
+        "/api/configuracion/canales/mercadolibre",
+        json={"commission_pct": 15.0, "shipping_cost": 0, "other_fixed_cost": 0, "target_margin_pct": 25.0, "min_margin_pct": 10.0},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["targetMarginPct"] == 25.0
+    assert body["minMarginPct"] == 10.0
+
+    canal = client.get("/api/configuracion/canales").json()[0]
+    assert canal["targetMarginPct"] == 25.0
+    assert canal["minMarginPct"] == 10.0

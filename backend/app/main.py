@@ -41,22 +41,28 @@ app = FastAPI(
     version="0.2.0",
 )
 
-# CORS: el frontend (frontend/index.html) se sirve desde un servidor estático
-# local en un puerto distinto al de este backend, así que el navegador lo
-# trata como un origen distinto y bloquea el fetch() si no se habilita acá.
-# Se listan los orígenes EXACTOS que vamos a usar en desarrollo local (el
-# mismo servidor estático responde tanto en "localhost" como en "127.0.0.1",
-# y los navegadores los tratan como orígenes distintos) — nada de "*"
-# (cualquier origen), que sería inseguro y además no funciona junto con
-# credenciales.
-DEV_FRONTEND_ORIGINS = [
-    "http://localhost:5500",
-    "http://127.0.0.1:5500",
-]
+# CORS: el frontend (frontend/index.html) se sirve desde un origen distinto
+# al de este backend (puerto propio en dev, dominio propio en producción),
+# así que el navegador lo trata como un origen distinto y bloquea el
+# fetch() si no se habilita acá — nada de "*" (cualquier origen), que sería
+# inseguro y además no funciona junto con credenciales.
+#
+# 30 de agosto de 2026 — antes esta lista estaba fija en código (solo
+# localhost:5500) — eso bloquea TODO en producción hasta que alguien tocara
+# este archivo y redesplegara. Ahora sale de settings.cors_allowed_origins
+# (variable de entorno CORS_ALLOWED_ORIGINS, coma-separada); vacío usa los
+# orígenes de desarrollo local como fallback, para no romper nada hoy.
+_settings_cors = get_settings()
+_DEV_FRONTEND_ORIGINS = ["http://localhost:5500", "http://127.0.0.1:5500"]
+_frontend_origins = (
+    [o.strip() for o in _settings_cors.cors_allowed_origins.split(",") if o.strip()]
+    if _settings_cors.cors_allowed_origins
+    else _DEV_FRONTEND_ORIGINS
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=DEV_FRONTEND_ORIGINS,
+    allow_origins=_frontend_origins,
     # GET para consultas; PUT (configurar costos de canal) y POST (subir
     # el archivo de costos) desde que existen esos endpoints — ninguno
     # borra nada, así que no hace falta DELETE.

@@ -48,22 +48,14 @@ window.LC = window.LC || {};
     return `<svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"${classAttr} aria-hidden="true">${body}</svg>`;
   }
 
-  function formatCLP(_value) {
-    // Por pedido explícito del dueño (22 de agosto de 2026): no mostrar
-    // montos exactos en la demo para el cliente, ni siquiera de ejemplo —
-    // todo lo que antes pasaba por acá (precios de producto, ventas de
-    // Mercado Libre) ahora muestra este texto en vez de un número.
-    return "Próximamente";
-  }
-
-  // 30 de agosto de 2026 — a diferencia de formatCLP() de arriba (que
-  // oculta montos en toda la app por pedido del dueño, 22 de agosto de
-  // 2026), la pantalla de decisión/publicación en Mercado Libre SÍ
-  // necesita mostrar montos reales (precio recomendado, ganancia,
-  // competencia) — sin eso la pantalla no tiene ningún sentido. Mismo
-  // formato que ya usaba js/importFlow.js en su copia local (ver
-  // formatCLPReal ahí) — acá queda compartido para no triplicarlo.
-  function formatCLPReal(value) {
+  // 30 de agosto de 2026 — revertido: la regla de ocultar montos (22 de
+  // agosto de 2026) tenía sentido para mostrarle Nexo a un prospecto sin
+  // exponer datos reales de Librería Central. Con un cliente real pagando,
+  // ocultar sus propios montos le rompe el producto (Oportunidades pierde
+  // su propósito: "¿qué me conviene vender?" no se puede responder sin
+  // ver la ganancia real). Mismo formato que ya usaban formatCLPReal() en
+  // importFlow.js/mercadolibrePublicar.js — unificado acá.
+  function formatCLP(value) {
     if (value === null || value === undefined) return "—";
     const n = typeof value === "number" ? value : parseFloat(value);
     if (Number.isNaN(n)) return "—";
@@ -73,6 +65,12 @@ window.LC = window.LC || {};
       return `$${Math.round(n)}`;
     }
   }
+
+  // 30 de agosto de 2026 — formatCLP() ya muestra montos reales (ver
+  // arriba), así que esto es un alias — se mantiene el nombre porque
+  // mercadolibrePublicar.js/adminPanel.js ya lo importan así, para no
+  // tocar esos archivos sin necesidad.
+  const formatCLPReal = formatCLP;
 
   function formatPct(value) {
     if (value === null || value === undefined) return "—";

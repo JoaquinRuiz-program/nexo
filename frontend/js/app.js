@@ -28,6 +28,18 @@ window.LC = window.LC || {};
     configuracion: "Configuración",
   };
 
+  // ------------------------------------------------------------------
+  // ⚠️ CONTENIDO LEGAL INTERINO — NO es un documento legal real, y quien
+  // lo escribió (Claude, 30 de agosto de 2026) no es abogado. Es un texto
+  // informativo mínimo y honesto para el piloto, mientras el dueño de
+  // Nexo no tenga términos de servicio y política de privacidad reales
+  // redactados. REEMPLAZAR este string entero antes de un lanzamiento
+  // público — es el único lugar de todo el frontend que hay que tocar
+  // para eso.
+  // ------------------------------------------------------------------
+  const TEXTO_TERMINOS_INTERINO =
+    "Nexo está en etapa piloto. Guardamos los datos que cargás para operar la plataforma (tu catálogo, costos, configuración de márgenes, y — si conectás Mercado Libre — los datos de tu cuenta vendedora, cifrados). No compartimos tus datos con terceros salvo lo estrictamente necesario para conectar los servicios que vos mismo autorices. Este texto es informativo, no un documento legal — antes de un lanzamiento público vamos a publicar términos de servicio y política de privacidad formales. Cualquier duda, escribinos directamente.";
+
   const state = {
     search: "",
     filterTipo: "todos",
@@ -285,10 +297,7 @@ window.LC = window.LC || {};
     });
 
     document.getElementById("signup-terms-link").addEventListener("click", () => {
-      infoModal(
-        "Términos de servicio",
-        "Este es un documento de ejemplo para la demostración. Se reemplazará por el documento legal real antes de operar con usuarios reales."
-      );
+      infoModal("Términos de servicio", TEXTO_TERMINOS_INTERINO);
     });
 
     document.getElementById("login-form").addEventListener("submit", async (e) => {

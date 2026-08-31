@@ -27,7 +27,13 @@ from app.config import get_settings
 def build_engine(database_url: str | None = None) -> Engine:
     url = database_url or get_settings().database_url
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    return create_engine(url, connect_args=connect_args, future=True)
+    # pool_pre_ping: 30 de agosto de 2026, hallazgo de backend-architect
+    # para producción — un Postgres gestionado (RDS, Supabase, Neon, etc.)
+    # corta conexiones idle; sin esto, el primer request después de un
+    # rato inactivo puede fallar con "server closed the connection"
+    # (SQLAlchemy hace un SELECT 1 barato antes de reusar la conexión del
+    # pool). Sin efecto práctico en SQLite.
+    return create_engine(url, connect_args=connect_args, future=True, pool_pre_ping=True)
 
 
 # Engine "de proceso" — se usa cuando corre la app real (no en los tests,

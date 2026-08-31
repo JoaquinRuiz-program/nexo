@@ -81,6 +81,15 @@ class Settings(BaseSettings):
     # Cambiar si el dueño abre Nexo desde otro host/puerto.
     frontend_base_url: str = "http://localhost:5500"
 
+    # 30 de agosto de 2026 — orígenes permitidos para CORS (ver app/main.py),
+    # separados por coma, ej. "https://app.nexo.cl,https://www.nexo.cl".
+    # Vacío por defecto: se usan los orígenes de desarrollo local
+    # (localhost:5500) — nunca "*", CORS con allow_credentials=True lo
+    # prohíbe. OBLIGATORIO configurar esto en producción con el/los
+    # dominios HTTPS reales del frontend, o el navegador del cliente
+    # bloquea todas las requests al backend.
+    cors_allowed_origins: str = ""
+
     # Clave con la que se cifran (NUNCA se guardan en texto plano) los
     # access_token/refresh_token de Mercado Libre en la base de datos — ver
     # app/domain/token_crypto.py. Se genera una vez con:
