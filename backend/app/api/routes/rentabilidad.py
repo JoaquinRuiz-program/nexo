@@ -40,60 +40,16 @@ CHANNEL_MERCADO_LIBRE = "mercadolibre"
 _LISTING_TYPE_ID_A_CLAVE = {v: k for k, v in LISTING_TYPE_IDS.items()}
 
 
-def _comision_ml_real(db: Session, store_id: int, producto: Product, precio: float | None, costos_manual: ChannelCosts) -> dict | None:
-    """Comisión REAL de Mercado Libre (Clásica/Premium) para este producto a
-    este precio exacto, si ya se consultó antes (ver POST
-    /api/mercadolibre/comisiones/recalcular — acá nunca se llama a la API
-    de Mercado Libre, solo se lee la caché). None si el producto todavía no
-    tiene categoría de ML detectada, o no hay ningún dato cacheado para su
-    precio actual — nunca se inventa ni se aproxima con otro precio."""
+def comisiones_ml_cacheadas(db: Session, store_id: int, producto: Product, precio: float | None) -> dict[str, ListingFee]:
+    """31 de agosto de 2026 — único lookup a MercadoLibreCategoryFee de todo
+    este archivo (store_id + category_id + price EXACTO, nunca aproximado
+    ni interpolado): tanto _comision_ml_real (comparación Clásica/Premium,
+    informativa) como resolver_costos_ml (single source of truth para
+    calcular) parten de este mismo dict — antes cada una hacía su propia
+    consulta idéntica. {} si el producto no tiene categoría de ML detectada
+    o no hay nada cacheado para su precio actual — nunca se inventa."""
     if not producto.ml_category_id or precio is None:
-        return None
-    filas = (
-        db.query(MercadoLibreCategoryFee)
-        .filter_by(store_id=store_id, category_id=producto.ml_category_id, price=precio)
-        .all()
-    )
-    if not filas:
-        return None
-
-    resultado: dict = {}
-    for fila in filas:
-        clave = _LISTING_TYPE_ID_A_CLAVE.get(fila.listing_type_id)
-        if clave is None:
-            continue
-        costos_reales = ChannelCosts(
-            commission_pct=float(fila.percentage_fee),
-            shipping_cost=costos_manual.shipping_cost,
-            other_fixed_cost=(costos_manual.other_fixed_cost or 0.0) + float(fila.fixed_fee),
-        )
-        costo_producto = float(producto.variants[0].cost_price) if producto.variants and producto.variants[0].cost_price is not None else None
-        resultado[clave] = {
-            "nombre": fila.listing_type_id,
-            "comisionPct": float(fila.percentage_fee),
-            "comisionFija": float(fila.fixed_fee),
-            "comisionTotal": float(fila.sale_fee_amount),
-            "margenClp": net_margin(precio, costo_producto, costos_reales),
-            "margenPct": net_margin_pct(precio, costo_producto, costos_reales),
-        }
-    return resultado or None
-
-
-def _comision_ml_principal(
-    db: Session, store_id: int, producto: Product, precio: float | None, listing_type_pref: str | None
-) -> ListingFee | None:
-    """30 de agosto de 2026 — fuente única de verdad de "qué comisión de
-    Mercado Libre uso para ESTE cálculo" (precio recomendado, decisión,
-    margen ML): a diferencia de _comision_ml_real (que expone Clásica Y
-    Premium en paralelo, solo para mostrar la comparación), acá hace falta
-    UN solo % para poder calcular. Reusa exactamente el mismo lookup
-    (store_id + category_id + price exacto, nunca aproximado) y
-    elegir_comision_principal (domain/ml_fees.py) para no duplicar esa
-    decisión — sin listing_type_pref configurado, nunca elige por el
-    dueño (devuelve None a propósito, ver elegir_comision_principal), y
-    quien llama cae al fallback manual."""
-    if not producto.ml_category_id or precio is None:
-        return None
+        return {}
     filas = (
         db.query(MercadoLibreCategoryFee)
         .filter_by(store_id=store_id, category_id=producto.ml_category_id, price=precio)
@@ -110,27 +66,62 @@ def _comision_ml_principal(
             fixed_fee=float(fila.fixed_fee),
             sale_fee_amount=float(fila.sale_fee_amount),
         )
-    return elegir_comision_principal(comisiones, listing_type_pref)
+    return comisiones
+
+
+def _comision_ml_real(comisiones: dict[str, ListingFee], producto: Product, precio: float | None, costos_manual: ChannelCosts) -> dict | None:
+    """Comisión REAL de Mercado Libre (Clásica/Premium) para este producto a
+    este precio exacto, si ya se consultó antes (ver POST
+    /api/mercadolibre/comisiones/recalcular — acá nunca se llama a la API
+    de Mercado Libre, solo se lee la caché). `comisiones` viene ya resuelto
+    por comisiones_ml_cacheadas (no vuelve a consultar la BD). None si no
+    hay ningún dato cacheado para su precio actual — nunca se inventa ni se
+    aproxima con otro precio."""
+    if not comisiones:
+        return None
+
+    costo_producto = float(producto.variants[0].cost_price) if producto.variants and producto.variants[0].cost_price is not None else None
+    resultado: dict = {}
+    for clave, fee in comisiones.items():
+        costos_reales = ChannelCosts(
+            commission_pct=fee.percentage_fee,
+            shipping_cost=costos_manual.shipping_cost,
+            other_fixed_cost=(costos_manual.other_fixed_cost or 0.0) + fee.fixed_fee,
+        )
+        resultado[clave] = {
+            "nombre": fee.listing_type_name,
+            "comisionPct": fee.percentage_fee,
+            "comisionFija": fee.fixed_fee,
+            "comisionTotal": fee.sale_fee_amount,
+            "margenClp": net_margin(precio, costo_producto, costos_reales),
+            "margenPct": net_margin_pct(precio, costo_producto, costos_reales),
+        }
+    return resultado or None
 
 
 def resolver_costos_ml(
-    db: Session, store_id: int, producto: Product, precio: float | None, costos_manual: ChannelCosts, listing_type_pref: str | None
+    comisiones: dict[str, ListingFee], costos_manual: ChannelCosts, listing_type_pref: str | None
 ) -> tuple[ChannelCosts, str]:
     """ÚNICA función de todo el backend que decide "comisión real vs.
     manual" — la usan build_profitability_rows (Rentabilidad/Oportunidades)
     y app/api/routes/publicaciones.py (/precio-recomendado, /decision,
-    /decision-lote) para que los seis lugares donde el dueño ve un margen
-    de Mercado Libre calculen siempre el mismo número para el mismo
-    producto. Regla (pedido explícito del dueño, 31 de agosto de 2026):
-    la comisión REAL ya verificada contra Mercado Libre gana siempre que
-    exista y haya una preferencia Clásica/Premium configurada; la manual
-    (ChannelCostSettings) es el fallback explícito. Nunca inventa un
-    número: sin ninguna de las dos, devuelve la manual tal cual (puede
-    venir vacía — ChannelCosts.is_configured() ya sabe manejar eso, cae en
-    "datos_insuficientes" río abajo). Devuelve también la fuente
-    ("real"|"manual") para que el frontend nunca muestre una estimación
-    como si fuera un dato real."""
-    principal = _comision_ml_principal(db, store_id, producto, precio, listing_type_pref)
+    /decision-lote) para que los lugares donde el dueño ve un margen de
+    Mercado Libre calculen siempre el mismo número para el mismo producto.
+    `comisiones` viene ya resuelto por comisiones_ml_cacheadas — esta
+    función es pura (sin DB), así ningún caller repite el mismo lookup dos
+    veces para el mismo producto (ver _fila, que necesita tanto esto como
+    _comision_ml_real). Regla (pedido explícito del dueño, 31 de agosto de
+    2026): la comisión REAL ya verificada contra Mercado Libre gana siempre
+    que exista y haya una preferencia Clásica/Premium configurada; la
+    manual (ChannelCostSettings) es el fallback explícito — sin
+    listing_type_pref configurado, elegir_comision_principal
+    (domain/ml_fees.py) nunca elige por el dueño y cae acá al manual.
+    Nunca inventa un número: sin ninguna de las dos, devuelve la manual tal
+    cual (puede venir vacía — ChannelCosts.is_configured() ya sabe manejar
+    eso, cae en "datos_insuficientes" río abajo). Devuelve también la
+    fuente ("real"|"manual") para que el frontend nunca muestre una
+    estimación como si fuera un dato real."""
+    principal = elegir_comision_principal(comisiones, listing_type_pref)
     if principal is not None:
         return (
             ChannelCosts(
@@ -147,7 +138,8 @@ def _fila(db: Session, store_id: int, producto: Product, variante: ProductVarian
     precio = float(variante.price) if variante.price is not None else None
     costo = float(variante.cost_price) if variante.cost_price is not None else None
 
-    costos_ml_efectivos, fuente_comision_ml = resolver_costos_ml(db, store_id, producto, precio, costos_ml_manual, listing_type_pref)
+    comisiones = comisiones_ml_cacheadas(db, store_id, producto, precio)
+    costos_ml_efectivos, fuente_comision_ml = resolver_costos_ml(comisiones, costos_ml_manual, listing_type_pref)
     ml_configurado = costos_ml_efectivos.is_configured()
 
     return {
@@ -178,7 +170,7 @@ def _fila(db: Session, store_id: int, producto: Product, variante: ProductVarian
         # paralelo, para decidir cuál conviene. None hasta que se corra
         # POST /api/mercadolibre/comisiones/recalcular; nunca se calcula acá
         # con un valor estimado.
-        "comisionMlReal": _comision_ml_real(db, store_id, producto, precio, costos_ml_manual),
+        "comisionMlReal": _comision_ml_real(comisiones, producto, precio, costos_ml_manual),
         "mlCategoriaId": producto.ml_category_id,
         "mlCategoriaNombre": producto.ml_category_name,
     }

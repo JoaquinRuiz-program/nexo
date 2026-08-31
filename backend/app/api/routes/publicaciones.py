@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from app.adapters.mercadolibre import MercadoLibreAdapter, MercadoLibreAuthError, MercadoLibreRequestError
 from app.api.deps import get_current_store
 from app.api.routes.mercadolibre import _build_ml_config, _get_account, _get_valid_access_token, _require_configured
-from app.api.routes.rentabilidad import build_profitability_rows, resolver_costos_ml
+from app.api.routes.rentabilidad import build_profitability_rows, comisiones_ml_cacheadas, resolver_costos_ml
 from app.config import get_settings
 from app.db.models import ChannelCostSettings, MarketplaceAccount, MarketplaceListing, MarketplaceListingVariant, Product, ProductVariant, Store
 from app.db.session import get_db
@@ -262,6 +262,11 @@ async def preparar_publicacion_mercadolibre(
             "margenTiendaPct": fila.get("margenTiendaPct"),
             "margenMercadoLibreClp": fila.get("margenMercadoLibreClp"),
             "margenMercadoLibrePct": fila.get("margenMercadoLibrePct"),
+            # 31 de agosto de 2026 — mismo campo que rentabilidad.py/_fila,
+            # "real"|"manual"|None: para que el paso "Preparar publicación"
+            # nunca muestre una comisión estimada como si fuera un dato
+            # verificado contra Mercado Libre.
+            "comisionMlFuente": fila.get("comisionMlFuente"),
         },
         "advertencias": advertencias,
     }
@@ -348,6 +353,7 @@ async def validar_publicacion_mercadolibre(
             "razon": clasificacion["razon"],
             "margenMercadoLibreClp": fila.get("margenMercadoLibreClp"),
             "margenMercadoLibrePct": fila.get("margenMercadoLibrePct"),
+            "comisionMlFuente": fila.get("comisionMlFuente"),
         },
         "nota": _NOTA_VALIDACION_NO_ES_AUTORIZACION,
     }
@@ -498,7 +504,8 @@ async def _resolver_recomendacion_precio(
     )
     listing_type_pref = config_canal.listing_type_pref if config_canal else None
     precio_actual = float(variante.price) if variante.price is not None else None
-    channel_costs, fuente_comision_ml = resolver_costos_ml(db, store.id, producto, precio_actual, channel_costs_manual, listing_type_pref)
+    comisiones = comisiones_ml_cacheadas(db, store.id, producto, precio_actual)
+    channel_costs, fuente_comision_ml = resolver_costos_ml(comisiones, channel_costs_manual, listing_type_pref)
     margen_objetivo_pct = float(config_canal.target_margin_pct) if config_canal and config_canal.target_margin_pct is not None else None
     margen_minimo_pct = float(config_canal.min_margin_pct) if config_canal and config_canal.min_margin_pct is not None else None
 
@@ -653,7 +660,8 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
     resultado = []
     for variante in variantes:
         precio_actual = float(variante.price) if variante.price is not None else None
-        channel_costs, _fuente = resolver_costos_ml(db, store.id, variante.product, precio_actual, channel_costs_manual, listing_type_pref)
+        comisiones = comisiones_ml_cacheadas(db, store.id, variante.product, precio_actual)
+        channel_costs, _fuente = resolver_costos_ml(comisiones, channel_costs_manual, listing_type_pref)
         recomendacion = recomendar_precio(
             costo=float(variante.cost_price) if variante.cost_price is not None else None,
             channel_costs=channel_costs,

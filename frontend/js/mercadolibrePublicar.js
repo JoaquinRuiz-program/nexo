@@ -221,6 +221,7 @@ window.LC = window.LC || {};
             <div><p class="stat-label">Precio recomendado</p><p class="font-medium mt-1">${formatCLPReal(d.precioRecomendado)}</p></div>
             <div><p class="stat-label">Margen esperado</p><p class="font-medium mt-1">${formatPct(d.margenEstimadoPct)}</p></div>
           </div>
+          ${etiquetaComisionMl(d.comisionMlFuente)}
         </div>
 
         <div class="mb-5">
@@ -275,7 +276,7 @@ window.LC = window.LC || {};
       return `<p class="text-xs text-emerald-600 dark:text-emerald-400 mb-3 flex items-center gap-1">${icon("checkCircle")} Comisión Mercado Libre: Real</p>`;
     }
     if (fuente === "manual") {
-      return `<p class="text-xs text-amber-600 dark:text-amber-400 mb-3">Comisión estimada — configuración manual</p>`;
+      return `<p class="text-xs text-amber-600 dark:text-amber-400 mb-3">Comisión estimada — puede variar del cobro real de Mercado Libre</p>`;
     }
     return "";
   }
@@ -321,6 +322,7 @@ window.LC = window.LC || {};
           <div><p class="stat-label">Ganancia en Mercado Libre</p><p class="font-medium mt-1 ${p.rentabilidad.margenMercadoLibreClp != null && p.rentabilidad.margenMercadoLibreClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${formatCLPReal(p.rentabilidad.margenMercadoLibreClp)}</p></div>
           <div><p class="stat-label">Margen en Mercado Libre</p><p class="font-medium mt-1">${formatPct(p.rentabilidad.margenMercadoLibrePct)}</p></div>
         </div>
+        ${etiquetaComisionMl(p.rentabilidad.comisionMlFuente)}
         <p class="text-xs text-slate-400 dark:text-slate-500">El precio se lee de tu producto en Nexo — para cambiarlo, editá el producto.</p>
       </div>
 

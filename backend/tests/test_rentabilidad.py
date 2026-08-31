@@ -339,3 +339,20 @@ def test_comision_real_de_una_empresa_nunca_se_mezcla_con_otra(client, db_sessio
     fila_b = next(f for f in client.get("/api/rentabilidad").json()["productos"] if f["sku"] == "B-REAL")
     assert fila_b["comisionMlFuente"] == "real"
     assert fila_b["margenMercadoLibreClp"] == 1500.0  # 10000-6000-2500 (25% real de B)
+
+
+def test_comision_real_cacheada_a_otro_precio_no_se_usa_cae_al_fallback_manual(client, db_session, a_store):
+    """Hallazgo de qa-engineer (31 de agosto de 2026, revisión final): el
+    lookup de comisión real es por precio EXACTO — si el producto cambió de
+    precio desde la última vez que se consultó Mercado Libre, la comisión
+    cacheada al precio viejo NUNCA debe usarse como si fuera válida para el
+    precio nuevo (sería un dato desactualizado disfrazado de "real")."""
+    _producto_con_categoria_ml(db_session, a_store, sku="PRECIO-CAMBIO", nombre="Producto con precio nuevo", precio=12000, costo=6000)
+    # Comisión real cacheada a un precio DISTINTO (10000) del precio actual de la variante (12000).
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_special", percentage_fee=10.0)
+    _configurar_canal_manual(client, commission_pct=15.0, listing_type_pref="classic")
+
+    body = client.get("/api/rentabilidad").json()
+    fila = next(f for f in body["productos"] if f["sku"] == "PRECIO-CAMBIO")
+    assert fila["comisionMlFuente"] == "manual"
+    assert fila["margenMercadoLibreClp"] == 12000 - 6000 - 12000 * 0.15  # manual 15%, nunca el 10% cacheado a otro precio

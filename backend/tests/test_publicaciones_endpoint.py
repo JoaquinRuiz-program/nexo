@@ -1464,6 +1464,90 @@ def test_precio_recomendado_de_comision_real_nunca_usa_la_de_otra_empresa(client
     assert body_b["precioRecomendado"] == round(8000 / (1 - 0.25 - 0.40), 2)  # 40% de B, nunca el 10% de A
 
 
+def _quitar_comision_manual(db_session, tienda):
+    canal = db_session.query(ChannelCostSettings).filter_by(store_id=tienda.id, channel="mercadolibre").first()
+    canal.commission_pct = None
+    db_session.commit()
+
+
+def test_precio_recomendado_sin_ninguna_comision_es_datos_insuficientes(client, db_session, a_store):
+    """Caso 4 del pedido del dueño: ni comisión real cacheada ni manual
+    configurada -> nunca se inventa un número, comisionMlFuente queda None
+    (no False, no 'manual' con un 0% inventado)."""
+    variant_id = _producto_publicable(db_session, a_store, sku="SIN-NINGUNA-COMISION", costo=8000, precio=20000)
+    _quitar_comision_manual(db_session, a_store)
+    _configurar_margen(db_session, a_store, objetivo=25.0, minimo=10.0)
+
+    res = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/precio-recomendado")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["estado"] == "datos_insuficientes"
+    assert "comisión/costos del canal" in body["faltantes"]
+    assert body["precioRecomendado"] is None
+    assert body["comisionMlFuente"] is None
+
+
+def test_preparar_expone_fuente_de_comision_real(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    """El paso "Preparar publicación" comparte la misma `fila` (rentabilidad.py)
+    que Rentabilidad/Oportunidades — nunca debe mostrar una ganancia en
+    Mercado Libre sin decir de dónde sale esa comisión."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    producto = Product(
+        store=a_store, internal_sku="PREPARAR-REAL", name="Cuaderno universitario", brand="Torre",
+        ml_category_id="MLC180937", ml_category_name="Cuadernos", product_type="simple", created_at=NOW, updated_at=NOW,
+    )
+    db_session.add(producto)
+    db_session.flush()
+    db_session.add(ProductVariant(product=producto, store_id=a_store.id, variant_sku="PREPARAR-REAL", price=20000, cost_price=8000, marketplace_stock=5, created_at=NOW, updated_at=NOW))
+    db_session.add(ProductImage(product=producto, url="http://cdn.test/img.png", source="excel_url", position=0, created_at=NOW))
+    db_session.commit()
+    variant_id = producto.variants[0].id
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=20000, listing_type_id="gold_special", percentage_fee=10.0)
+    db_session.add(ChannelCostSettings(store=a_store, channel="mercadolibre", commission_pct=50.0, listing_type_pref="classic", updated_at=NOW))  # manual absurda
+    db_session.commit()
+
+    res = client.post(f"/api/publicaciones/{variant_id}/mercadolibre/preparar")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["rentabilidad"]["comisionMlFuente"] == "real"
+    assert body["rentabilidad"]["margenMercadoLibreClp"] == 20000 - 8000 - 20000 * 0.10  # comisión real 10%, nunca la manual 50%
+
+
+def test_preparar_sin_comision_real_expone_fuente_manual(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id = _producto_publicable(db_session, a_store, sku="PREPARAR-MANUAL", costo=8000, precio=20000)  # comisión manual 15%, sin real cacheada
+
+    res = client.post(f"/api/publicaciones/{variant_id}/mercadolibre/preparar")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["rentabilidad"]["comisionMlFuente"] == "manual"
+
+
+def test_validar_expone_fuente_de_comision(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    producto = Product(
+        store=a_store, internal_sku="VALIDAR-REAL", name="Cuaderno universitario", brand="Torre",
+        ml_category_id="MLC180937", ml_category_name="Cuadernos", product_type="simple", created_at=NOW, updated_at=NOW,
+    )
+    db_session.add(producto)
+    db_session.flush()
+    db_session.add(ProductVariant(product=producto, store_id=a_store.id, variant_sku="VALIDAR-REAL", price=20000, cost_price=8000, marketplace_stock=5, created_at=NOW, updated_at=NOW))
+    db_session.commit()
+    variant_id = producto.variants[0].id
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=20000, listing_type_id="gold_special", percentage_fee=10.0)
+    db_session.add(ChannelCostSettings(store=a_store, channel="mercadolibre", commission_pct=50.0, listing_type_pref="classic", updated_at=NOW))
+    db_session.commit()
+
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=[]))
+    res = client.post(f"/api/publicaciones/{variant_id}/mercadolibre/validar", json={"category_id": "MLC180937", "condition": "new"})
+
+    assert res.status_code == 200, res.text
+    assert res.json()["rentabilidad"]["comisionMlFuente"] == "real"
+
+
 def test_confirmar_sin_imagen_bloquea_con_400(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
     monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
     variant_id = _producto_publicable(db_session, a_store, sku="SIN-IMG", con_imagen=False)
