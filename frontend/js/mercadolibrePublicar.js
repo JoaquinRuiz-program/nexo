@@ -191,6 +191,7 @@ window.LC = window.LC || {};
           <div><p class="stat-label">Competencia</p><p class="stat-value stat-value--sm mt-1">${d.competencia ? `${formatCLPReal(d.competencia.rangoPrecioMinimo)} – ${formatCLPReal(d.competencia.rangoPrecioMaximo)}` : "Sin datos"}</p></div>
         </div>
         ${etiquetaComisionMl(d.comisionMlFuente)}
+        ${etiquetaTipoDecision(d)}
         <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">${escapeHtml(d.razon)}</p>
         ${d.faltantes && d.faltantes.length ? `
           <div class="space-y-1.5 mb-4">
@@ -279,6 +280,22 @@ window.LC = window.LC || {};
       return `<p class="text-xs text-amber-600 dark:text-amber-400 mb-3">Comisión estimada — puede variar del cobro real de Mercado Libre</p>`;
     }
     return "";
+  }
+
+  // 31 de agosto de 2026 — cierre de la segunda inconsistencia de negocio:
+  // la tabla de Oportunidades (columna "Decisión preliminar") evalúa SIN
+  // competencia por rendimiento, mientras que ESTA pantalla sí la consulta
+  // cuando hay dato disponible — el mismo producto puede mostrar "Conviene"
+  // en la tabla y "Revisar" acá, sin que sea una contradicción real (son
+  // dos evaluaciones con distinto insumo). Se los distingue con la misma
+  // etiqueta visual que ya usa etiquetaComisionMl, reusando `d.competencia`
+  // (null cuando no hubo dato de competencia, igual que en la tabla) —
+  // ningún campo nuevo del backend, ninguna consulta extra.
+  function etiquetaTipoDecision(d) {
+    if (d.competencia) {
+      return `<p class="text-xs text-emerald-600 dark:text-emerald-400 mb-3 flex items-center gap-1">${icon("checkCircle")} Evaluación con competencia</p>`;
+    }
+    return `<p class="text-xs text-slate-400 dark:text-slate-500 mb-3">Decisión preliminar — sin datos de competencia</p>`;
   }
 
   function textoPosicion(pos) {

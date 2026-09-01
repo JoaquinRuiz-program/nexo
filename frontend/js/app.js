@@ -1730,7 +1730,7 @@ window.LC = window.LC || {};
           <th class="px-3 py-2 font-medium text-right">Ganancia estimada</th>
           <th class="px-3 py-2 font-medium text-right">Margen</th>
           <th class="px-3 py-2 font-medium text-right">Comisión ML real</th>
-          <th class="px-3 py-2 font-medium">Decisión</th>
+          <th class="px-3 py-2 font-medium" title="Evaluación rápida sin consultar competencia — abrí el producto para la evaluación completa.">Decisión preliminar</th>
           <th class="px-3 py-2 font-medium"></th>
         </tr>
       </thead>

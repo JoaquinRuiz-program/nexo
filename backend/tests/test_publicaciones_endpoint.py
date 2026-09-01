@@ -1574,6 +1574,146 @@ def test_confirmar_producto_no_rentable_bloquea_con_400(client, db_session, a_st
     assert db_session.query(MarketplaceListing).count() == 0
 
 
+# ------------------------------------------------------------------
+# 31 de agosto de 2026 — cierre de inconsistencia de negocio: el gate de
+# /confirmar ahora respeta el margen mínimo configurado (ChannelCostSettings
+# .min_margin_pct), no solo el margen negativo. Evalúa siempre al precio
+# ACTUAL de la variante (el que se publica), nunca al precio recomendado.
+# ------------------------------------------------------------------
+
+
+def test_confirmar_bloquea_si_no_alcanza_el_margen_minimo_configurado(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    # precio=5000, costo=3000, comisión manual 15% -> margen 25% (rentable,
+    # positivo) -- pero por debajo del mínimo que el dueño configuró (40%).
+    variant_id = _producto_publicable(db_session, a_store, sku="MARGEN-BAJO", precio=5000, costo=3000)
+    _configurar_margen(db_session, a_store, minimo=40.0)
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic"},
+    )
+    assert res.status_code == 400, res.text
+    assert "rentable" in res.json()["detail"].lower()
+    assert "mínimo" in res.json()["detail"].lower()
+    assert db_session.query(MarketplaceListing).count() == 0
+
+
+@respx.mock
+def test_confirmar_permite_publicar_si_alcanza_el_margen_minimo_configurado(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id = _producto_publicable(db_session, a_store, sku="MARGEN-OK", precio=5000, costo=3000, barcode="7891234567895")
+    _configurar_margen(db_session, a_store, minimo=20.0)  # margen real (25%) alcanza el mínimo
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(201, json={"id": "MLC1", "user_product_id": "MLCU1", "permalink": "https://x"}))
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+    assert res.status_code == 200, res.text
+
+
+@respx.mock
+def test_confirmar_margen_exactamente_igual_al_minimo_no_bloquea(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    """classify_product compara con `<`, nunca `<=` -- igualar el mínimo
+    exactamente alcanza, no bloquea (documentado en domain/catalog_selection.py)."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id = _producto_publicable(db_session, a_store, sku="MARGEN-IGUAL", precio=5000, costo=3000, barcode="7891234567895")
+    _configurar_margen(db_session, a_store, minimo=25.0)  # margen real es EXACTAMENTE 25%
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(201, json={"id": "MLC1", "user_product_id": "MLCU1", "permalink": "https://x"}))
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+    assert res.status_code == 200, res.text
+
+
+@respx.mock
+def test_confirmar_sin_margen_minimo_configurado_solo_bloquea_por_negativo(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    """Excepción documentada: sin min_margin_pct configurado, el gate no
+    cambia -- sigue bloqueando únicamente margen negativo, nunca se inventa
+    un mínimo implícito."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    # Margen bajo (5%) pero positivo, y NINGÚN mínimo configurado.
+    variant_id = _producto_publicable(db_session, a_store, sku="SIN-MINIMO", precio=5000, costo=4000, barcode="7891234567895")
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(201, json={"id": "MLC1", "user_product_id": "MLCU1", "permalink": "https://x"}))
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+    assert res.status_code == 200, res.text
+
+
+@respx.mock
+def test_confirmar_evalua_el_margen_al_precio_actual_no_al_recomendado(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    """El precio recomendado (calculado a partir de target_margin_pct) puede
+    ser mucho más alto que el precio actual -- el gate SIEMPRE debe evaluar
+    el margen al precio que realmente se va a publicar (variante.price),
+    nunca al hipotético recomendado."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    # Precio actual 5000, costo 3000 -> margen real 25%. target_margin_pct
+    # 60% haría que /precio-recomendado sugiera un precio bastante más alto
+    # -- el gate no debe mirar ESE número, solo el margen al precio actual.
+    variant_id = _producto_publicable(db_session, a_store, sku="PRECIO-ACTUAL", precio=5000, costo=3000, barcode="7891234567895")
+    _configurar_margen(db_session, a_store, objetivo=60.0, minimo=20.0)
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    ruta_items = respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(201, json={"id": "MLC1", "user_product_id": "MLCU1", "permalink": "https://x"}))
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+    assert res.status_code == 200, res.text
+    payload_enviado = json.loads(ruta_items.calls[0].request.content)
+    assert payload_enviado["price"] == 5000  # el precio actual, nunca el recomendado
+
+
+@respx.mock
+def test_confirmar_margen_minimo_de_otra_empresa_nunca_afecta_el_gate(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    """Aislamiento multiempresa: el min_margin_pct de la empresa B (altísimo)
+    nunca debe bloquear una publicación de la empresa A."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id = _producto_publicable(db_session, a_store, sku="AISLADO-A", precio=5000, costo=3000, barcode="7891234567895")
+    _configurar_margen(db_session, a_store, minimo=20.0)
+
+    otro_usuario = User(email="empresa-b-margen@ejemplo.cl", password_hash=hash_password("x"), full_name="Dueño B", created_at=NOW, updated_at=NOW)
+    db_session.add(otro_usuario)
+    tienda_b = Store(owner=otro_usuario, name="Empresa B", created_at=NOW)
+    db_session.add(tienda_b)
+    db_session.add(StoreSettings(store=tienda_b, company_name="Empresa B", store_name="Empresa B"))
+    db_session.commit()
+    _producto_publicable(db_session, tienda_b, sku="AISLADO-B", precio=5000, costo=3000)
+    _configurar_margen(db_session, tienda_b, minimo=99.0)  # absurdo, nunca debe usarse para A
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(201, json={"id": "MLC1", "user_product_id": "MLCU1", "permalink": "https://x"}))
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+    assert res.status_code == 200, res.text  # el 99% de B nunca bloqueó a A
+
+
 def test_confirmar_recalcula_rentabilidad_de_cero_aunque_antes_pareciera_una_oportunidad(
     client, db_session, a_store, cuenta_ml_conectada, monkeypatch
 ):

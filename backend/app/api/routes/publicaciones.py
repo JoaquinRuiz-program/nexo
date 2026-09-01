@@ -793,8 +793,35 @@ async def _resolver_publicacion(
 
     # Rentabilidad recalculada de cero, con datos frescos de la base — nunca
     # se confía en lo que haya devuelto /validar en algún momento anterior.
-    clasificacion = classify_product(fila, SelectionCriteria(channel="mercadolibre", require_marketplace_stock=True))
-    if clasificacion["clasificacion"] not in ("rentable", "margen_bajo"):
+    #
+    # 31 de agosto de 2026 — cierre de inconsistencia de negocio (hallazgo
+    # propio + revisión de backend-architect/product-reviewer): antes este
+    # gate solo bloqueaba margen negativo, nunca el margen mínimo
+    # configurado (ChannelCostSettings.min_margin_pct) — "margen_bajo"
+    # estaba en la tupla permitida pero era INALCANZABLE (el threshold
+    # nunca se pasaba a SelectionCriteria), así que un producto podía
+    # publicarse al precio actual con un margen por debajo del piso que el
+    # propio dueño configuró. `fila` ya trae el margen al precio ACTUAL de
+    # la variante (el que realmente se publica, ver rentabilidad.py/_fila),
+    # nunca el precio recomendado — este gate siempre evaluó el precio
+    # correcto, solo le faltaba el threshold.
+    #
+    # Mismo criterio que domain/decision.py regla 3 ("no alcanza margen
+    # mínimo -> no_conviene, sin excepción"): un mínimo configurado es un
+    # piso de seguridad, no una sugerencia que el paso final pueda saltear
+    # en silencio. Si el dueño quiere publicar igual con menos margen (ej.
+    # liquidación), la vía correcta es bajar/quitar min_margin_pct en
+    # Configuración para ese canal — un dato explícito y auditable, nunca
+    # un botón que ignora el piso configurado. Sin min_margin_pct
+    # configurado (None), el comportamiento no cambia: classify_product
+    # nunca devuelve "margen_bajo" sin threshold, así que el gate sigue
+    # bloqueando únicamente por margen negativo, igual que siempre.
+    config_canal_gate = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
+    margen_minimo_pct = float(config_canal_gate.min_margin_pct) if config_canal_gate and config_canal_gate.min_margin_pct is not None else None
+    clasificacion = classify_product(
+        fila, SelectionCriteria(channel="mercadolibre", require_marketplace_stock=True, min_margin_pct=margen_minimo_pct)
+    )
+    if clasificacion["clasificacion"] != "rentable":
         raise HTTPException(
             status_code=400,
             detail=f"Este producto no es rentable para publicar en Mercado Libre: {clasificacion['razon']}",
