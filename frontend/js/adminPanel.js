@@ -177,9 +177,9 @@ window.LC = window.LC || {};
         </div>
 
         <div class="panel-card">
-          <h3 class="panel-title mb-3">Actividad reciente</h3>
+          <h3 class="panel-title mb-3">Últimos inicios de sesión</h3>
           ${c.actividadReciente.length ? `
-            <div class="space-y-1.5 text-sm">${c.actividadReciente.map((a) => `<p class="text-slate-500 dark:text-slate-400">${formatDate(new Date(a.fecha))}</p>`).join("")}</div>
+            <div class="space-y-1.5 text-sm">${c.actividadReciente.map((a) => `<p class="text-slate-500 dark:text-slate-400">Inicio de sesión — ${formatDate(new Date(a.fecha))}</p>`).join("")}</div>
           ` : `<p class="text-sm text-slate-500 dark:text-slate-400">Sin inicios de sesión registrados todavía.</p>`}
           ${c.erroresRecientes === null ? `<p class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">Todavía no existe un registro de errores por cliente — se ve en los logs del servidor.</p>` : ""}
         </div>
