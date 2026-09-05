@@ -1992,3 +1992,75 @@ def test_preparar_publicaciones_en_lote_arma_el_resumen(client, db_session, a_st
     assert body["resumen"]["listosParaPublicar"] == 1
     assert body["resumen"]["noRecomendados"] == 1
     assert body["noEncontrados"] == [id_inexistente]
+
+
+# ------------------------------------------------------------------
+# 1 de septiembre de 2026 — hallazgo de qa-engineer (ronda de pulido):
+# cada paso del flujo tenía tests aislados con fixtures propias, pero
+# ningún test seguía UN MISMO producto de punta a punta (Rentabilidad ->
+# Oportunidades -> Precio recomendado -> Decisión -> Preparar -> Confirmar)
+# para probar que los números se reconcilian entre sí. Este es ese test.
+# ------------------------------------------------------------------
+
+
+@respx.mock
+def test_flujo_completo_un_producto_da_los_mismos_numeros_en_cada_pantalla(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    # "Excel" -> producto publicable, con categoría de ML ya detectada.
+    variant_id = _producto_publicable(db_session, a_store, sku="FLUJO-COMPLETO", precio=20000, costo=8000, barcode="7891234567895")
+    producto = db_session.query(ProductVariant).filter_by(id=variant_id).one().product
+    producto.ml_category_id = "MLC180937"
+    db_session.commit()
+    # Comisión real cacheada (10%) vs. manual absurda (50%) -- todo el
+    # flujo debe usar la real, nunca la manual.
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=20000, listing_type_id="gold_special", percentage_fee=10.0)
+    _configurar_canal_con_pref(db_session, a_store, commission_pct=50.0, listing_type_pref="classic")
+    _configurar_margen(db_session, a_store, objetivo=25.0, minimo=15.0)
+    # Mercado Libre no encuentra el producto en su catálogo de competencia
+    # -- escenario real y legítimo (analisis_competencia.hay_competencia
+    # queda False), no lo que este test evalúa; necesario para que
+    # /precio-recomendado y /decision no fallen por request sin mockear.
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/products/search.*").mock(return_value=httpx.Response(200, json={"results": []}))
+
+    # 1. Rentabilidad -- margen al precio actual, comisión real.
+    rentabilidad = client.get("/api/rentabilidad").json()
+    fila = next(f for f in rentabilidad["productos"] if f["sku"] == "FLUJO-COMPLETO")
+    assert fila["comisionMlFuente"] == "real"
+    margen_ml_rentabilidad = fila["margenMercadoLibreClp"]
+    assert margen_ml_rentabilidad == 20000 - 8000 - 2000  # 10% real de 20000, nunca el 50% manual
+
+    # 2. Oportunidades (decision-lote) -- mismo precio recomendado que el endpoint individual.
+    lote = client.get("/api/publicaciones/mercadolibre/decision-lote").json()
+    fila_lote = next(f for f in lote if f["variantId"] == variant_id)
+
+    # 3. Precio recomendado.
+    precio = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/precio-recomendado").json()
+    assert precio["comisionMlFuente"] == "real"
+    assert precio["precioRecomendado"] == fila_lote["precioRecomendado"]
+
+    # 4. Decisión -- misma comisión, mismo precio recomendado que el paso 3.
+    decision = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/decision").json()
+    assert decision["comisionMlFuente"] == "real"
+    assert decision["precioRecomendado"] == precio["precioRecomendado"]
+    assert decision["gananciaEstimada"] == precio["gananciaEstimada"]
+
+    # 5. Preparar publicación -- mismo margen que Rentabilidad (paso 1),
+    #    calculado al precio ACTUAL, no al recomendado.
+    respx.get("https://api.mercadolibre.com/categories/MLC180937").mock(return_value=httpx.Response(200, json=CATEGORIA_CUADERNOS_REAL))
+    preparado = client.post(f"/api/publicaciones/{variant_id}/mercadolibre/preparar").json()
+    assert preparado["rentabilidad"]["comisionMlFuente"] == "real"
+    assert preparado["rentabilidad"]["margenMercadoLibreClp"] == margen_ml_rentabilidad
+
+    # 6. Confirmar -- publica al precio ACTUAL (20000), nunca al recomendado
+    #    (que es distinto, ya que target_margin_pct=25% no es el margen real).
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    ruta_items = respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(201, json={"id": "MLC1", "user_product_id": "MLCU1", "permalink": "https://x"}))
+    confirmar = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+    assert confirmar.status_code == 200, confirmar.text
+    payload_enviado = json.loads(ruta_items.calls[0].request.content)
+    assert payload_enviado["price"] == 20000  # el precio actual, coherente con todas las pantallas de arriba
