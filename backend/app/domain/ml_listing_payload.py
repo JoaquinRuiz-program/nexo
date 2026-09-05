@@ -52,9 +52,20 @@ def construir_payload_publicacion(
     `family_name` en su lugar y `titulo` queda solo para uso interno de
     Nexo (Mercado Libre genera su propio título real, que se lee recién de
     la RESPUESTA de POST /items, nunca de este payload)."""
+    # 1 de septiembre de 2026 — bug real encontrado en la primera
+    # publicación real contra Mercado Libre: `price` llegaba como float de
+    # Python (ej. 49990.0) y json.dumps lo manda tal cual con el punto
+    # decimal — Mercado Libre rechaza el POST /items completo para
+    # monedas sin decimales (CLP, la única que usa Nexo v1) con
+    # "Currency Peso Chileno (CLP) does not support decimal precision" en
+    # cuanto ve ESE punto, sin importar que el valor sea un número entero
+    # de verdad. Nunca se redondea el precio del dueño (sería inventar un
+    # monto) — CLP nunca tiene centavos en la práctica, así que enviarlo
+    # como entero es fiel al valor real, nunca una aproximación.
+    price_final: float | int = round(price) if currency_id == "CLP" else price
     payload: dict = {
         "category_id": category_id,
-        "price": price,
+        "price": price_final,
         "currency_id": currency_id,
         "available_quantity": available_quantity,
         "buying_mode": "buy_it_now",

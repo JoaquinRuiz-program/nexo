@@ -424,6 +424,11 @@ window.LC = window.LC || {};
       </div>`;
   }
 
+  // Alias reales del mismo dato (código de barras) que puede pedir una
+  // categoría — mismo criterio que _ALIAS_GTIN en
+  // domain/listing_validation.py (backend).
+  const ALIAS_GTIN = ["GTIN", "EAN", "UPC"];
+
   function puedeRevisar() {
     if (!state.validacion) return false;
     // Mercado Libre rechaza duro publicar sin imagen — no tiene sentido
@@ -431,7 +436,18 @@ window.LC = window.LC || {};
     if (!state.preparado.imagenes || state.preparado.imagenes.length === 0) return false;
     const razon = state.atributosValores.EMPTY_GTIN_REASON;
     if (razon === "El producto no tiene código registrado" && !state.gtinSinCodigoConfirmado) return false;
-    return state.validacion.atributosFaltantes.every((f) => (state.atributosValores[f.id] || "").trim() !== "");
+    // 1 de septiembre de 2026 — bug real encontrado en la primera prueba
+    // en vivo contra Mercado Libre: una vez confirmado "sin código", el
+    // backend (evaluar_atributos) ya no exige GTIN/EAN/UPC — pero acá
+    // seguían listados en atributosFaltantes (la respuesta de /validar no
+    // se vuelve a pedir al tildar el checkbox) y el dueño quedaba
+    // trabado, sin poder avanzar a "Revisar" sin escribir algo en un
+    // campo que ya no correspondía completar.
+    const sinCodigoConfirmado = razon === "El producto no tiene código registrado" && state.gtinSinCodigoConfirmado;
+    return state.validacion.atributosFaltantes.every((f) => {
+      if (sinCodigoConfirmado && ALIAS_GTIN.includes(f.id)) return true;
+      return (state.atributosValores[f.id] || "").trim() !== "";
+    });
   }
 
   // ------------------------------------------------------------------
