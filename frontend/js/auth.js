@@ -35,6 +35,11 @@ window.LC = window.LC || {};
       // plataforma). Nunca se deduce de ningún otro dato en el frontend
       // (ej. el email) — viene siempre tal cual del backend.
       esNexoAdmin: !!data.esNexoAdmin,
+      // 6 de septiembre de 2026 — "modo soporte": null en cualquier sesión
+      // normal; {adminEmail} si un administrador de Nexo "entró como
+      // soporte" a esta cuenta (ver app/api/routes/admin.py::entrar_como_soporte).
+      // Nunca se deduce en el frontend — viene tal cual del backend.
+      modoSoporte: data.modoSoporte || null,
     };
   }
 

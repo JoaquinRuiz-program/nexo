@@ -77,13 +77,25 @@ class LoginRequest(BaseModel):
     remember_me: bool = False
 
 
-def _sesion_publica(user: User, store: Store | None) -> dict:
+def _sesion_publica(user: User, store: Store | None, sesion: AuthSession | None = None) -> dict:
+    # 6 de septiembre de 2026 — "modo soporte": si un administrador de Nexo
+    # "entró como soporte" a esta empresa (ver
+    # app/api/routes/admin.py::entrar_como_soporte), esta sesión lleva
+    # `impersonated_by_admin_id` marcado. Nunca silencioso: se lo decimos
+    # siempre al frontend (que muestra un aviso persistente), nunca solo al
+    # admin. `sesion` es None en registro/login (una sesión recién creada
+    # ahí nunca es de soporte) — solo /me lo pasa de verdad.
+    modo_soporte = None
+    if sesion is not None and sesion.impersonated_by_admin_id is not None:
+        admin = sesion.impersonated_by_admin
+        modo_soporte = {"adminEmail": admin.email if admin else None}
     return {
         "usuario": {"id": user.id, "email": user.email, "nombre": user.full_name},
         # None solo para un administrador de Nexo sin tienda propia (ver
         # is_nexo_admin) — todo usuario cliente siempre tiene una empresa.
         "empresa": {"id": store.id, "nombre": store.name} if store is not None else None,
         "esNexoAdmin": user.is_nexo_admin,
+        "modoSoporte": modo_soporte,
     }
 
 
@@ -187,4 +199,4 @@ def me(usuario: User = Depends(get_current_user), sesion: AuthSession = Depends(
     # el frontend al hidratar sesión (tiene que funcionar para los dos
     # tipos de usuario, nunca 500 para un admin válido sin empresa).
     tienda = db.get(Store, sesion.active_store_id) if sesion.active_store_id is not None else None
-    return _sesion_publica(usuario, tienda)
+    return _sesion_publica(usuario, tienda, sesion)

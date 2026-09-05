@@ -405,6 +405,14 @@ window.LC = window.LC || {};
     return request(`/api/admin/clientes/${storeId}/estado`, { method: "PUT", body: { suspendido } });
   }
 
+  // 6 de septiembre de 2026 — "entrar como soporte": la respuesta trae una
+  // cookie de sesión nueva (Set-Cookie real, ver app/api/routes/admin.py) —
+  // quien llama a esto tiene que recargar la página entera después,
+  // nunca seguir navegando en la SPA con el estado de sesión viejo en memoria.
+  async function entrarComoSoporte(storeId) {
+    return request(`/api/admin/clientes/${storeId}/entrar`, { method: "POST" });
+  }
+
   async function listarUsuariosAdmin() {
     return request("/api/admin/usuarios");
   }
@@ -508,6 +516,7 @@ window.LC = window.LC || {};
     listarClientesAdmin,
     detalleClienteAdmin,
     actualizarEstadoClienteAdmin,
+    entrarComoSoporte,
     listarUsuariosAdmin,
     listarPlanesAdmin,
     actualizarSuscripcionAdmin,
