@@ -350,7 +350,7 @@ async def validar_publicacion_mercadolibre(
         "categoryId": body.category_id.strip(),
         "condition": body.condition,
         "atributosCompletos": [
-            {"id": a.id, "valueId": a.value_id, "valueName": a.value_name} for a in resultado.completos
+            {"id": a.id, "nombre": a.nombre, "valueId": a.value_id, "valueName": a.value_name} for a in resultado.completos
         ],
         "atributosFaltantes": [
             {"id": f.id, "nombre": f.nombre, "valueType": f.value_type, "opciones": f.opciones}

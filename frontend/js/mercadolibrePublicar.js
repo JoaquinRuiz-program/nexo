@@ -395,7 +395,7 @@ window.LC = window.LC || {};
           <details class="mt-2">
             <summary class="cursor-pointer text-sm text-slate-500 dark:text-slate-400">Atributos ya resueltos (${v.atributosCompletos.length})</summary>
             <ul class="text-sm text-slate-500 dark:text-slate-400 mt-2 space-y-1">
-              ${v.atributosCompletos.map((a) => `<li>${escapeHtml(a.id)}: ${escapeHtml(a.valueName || "")}</li>`).join("")}
+              ${v.atributosCompletos.map((a) => `<li>${escapeHtml(a.nombre || a.id)}: ${escapeHtml(a.valueName || "")}</li>`).join("")}
             </ul>
           </details>` : ""}
       </div>

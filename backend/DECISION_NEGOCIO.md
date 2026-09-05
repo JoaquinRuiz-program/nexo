@@ -92,10 +92,21 @@ para TODAS las variantes de la tienda de una sola vez, usando los mismos
 `domain/pricing.py`/`domain/decision.py`, pero **sin consultar
 competencia** (pedirle a Mercado Libre una consulta por cada fila de una
 tabla no es viable). Devuelve `[{variantId, decision, precioRecomendado,
-margenEstimadoPct, faltantes}]`. La ausencia de competencia en este cálculo
-no cambia el resultado más de lo que ya contempla la regla 4 — sigue sin
-asumir nunca que falta competencia significa "no conviene". Lo usa el
-frontend para la columna "Decisión" en Oportunidades
+margenEstimadoPct, faltantes}]`. Nunca asume que falta competencia
+significa "no conviene" — pero, a diferencia de `/decision` (individual),
+acá `analisis_competencia` es SIEMPRE `None`, así que la regla 5 (precio
+por encima del rango de competencia → `revisar`) nunca puede dispararse en
+este endpoint, y con margen mínimo configurado y alcanzado la regla 6
+siempre gana → `conviene`, aunque el mismo producto en el detalle (con
+competencia real) pueda dar `revisar` (regla 5). No es un bug de cálculo
+(hallazgo de product-reviewer, ronda de pulido, 31/08/2026): son dos
+evaluaciones legítimas con distinto insumo por una razón de rendimiento
+deliberada — para que el dueño nunca lo lea como una contradicción, la
+columna "Decisión" de Oportunidades se etiqueta "Decisión preliminar" (con
+tooltip) y el detalle del producto muestra "Evaluación con competencia" o
+"Decisión preliminar — sin datos de competencia" según corresponda (ver
+`etiquetaTipoDecision`, `frontend/js/mercadolibrePublicar.js`). Lo usa el
+frontend para la columna "Decisión preliminar" en Oportunidades
 (`frontend/js/app.js`).
 
 ## Frontend

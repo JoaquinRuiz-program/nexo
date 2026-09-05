@@ -436,6 +436,9 @@ def test_validar_atributos_completos_y_faltantes_con_datos_reales(client, db_ses
     item_condition = next(a for a in body["atributosCompletos"] if a["id"] == "ITEM_CONDITION")
     assert item_condition["valueId"] == "2230284"
     assert item_condition["valueName"] == "Nuevo"
+    assert item_condition["nombre"] == "Condición del ítem"  # nombre humano, nunca el id crudo en pantalla
+    brand_completo = next(a for a in body["atributosCompletos"] if a["id"] == "BRAND")
+    assert brand_completo["nombre"] == "Marca"
 
     assert "MODEL" not in ids_faltantes  # solo catalog_required, no aplica en v1
     assert "GTIN" in ids_faltantes  # conditional_required, sin código de barras cargado

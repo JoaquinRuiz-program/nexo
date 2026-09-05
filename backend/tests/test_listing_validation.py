@@ -62,12 +62,12 @@ ATRIBUTOS_CUADERNOS = [
 
 def test_resolver_item_condition_nuevo_encuentra_el_value_id_real():
     resultado = resolver_item_condition(ATRIBUTOS_CUADERNOS, "new")
-    assert resultado == AttributeValue(id="ITEM_CONDITION", value_id="2230284", value_name="Nuevo")
+    assert resultado == AttributeValue(id="ITEM_CONDITION", value_id="2230284", value_name="Nuevo", nombre="Condición del ítem")
 
 
 def test_resolver_item_condition_usado_encuentra_el_value_id_real():
     resultado = resolver_item_condition(ATRIBUTOS_CUADERNOS, "used")
-    assert resultado == AttributeValue(id="ITEM_CONDITION", value_id="2230581", value_name="Usado")
+    assert resultado == AttributeValue(id="ITEM_CONDITION", value_id="2230581", value_name="Usado", nombre="Condición del ítem")
 
 
 def test_resolver_item_condition_sin_atributo_en_la_categoria_devuelve_none():
@@ -101,7 +101,7 @@ def test_brand_requerido_sin_dato_conocido_queda_en_faltantes():
 
 def test_brand_requerido_con_dato_conocido_de_nexo_queda_completo_nunca_faltante():
     resultado = evaluar_atributos(ATRIBUTOS_CUADERNOS, "new", datos_conocidos={"BRAND": "Torre"}, valores_ingresados={})
-    assert AttributeValue(id="BRAND", value_name="Torre") in resultado.completos
+    assert AttributeValue(id="BRAND", value_name="Torre", nombre="Marca") in resultado.completos
     assert "BRAND" not in {f.id for f in resultado.faltantes}
 
 
@@ -113,7 +113,7 @@ def test_valor_ingresado_a_mano_por_el_dueno_completa_un_faltante():
     # El dueño lo completa a mano en la pantalla de publicación.
     con_dato = evaluar_atributos(ATRIBUTOS_CUADERNOS, "new", datos_conocidos={}, valores_ingresados={"BRAND": "Genérica"})
     assert "BRAND" not in {f.id for f in con_dato.faltantes}
-    assert AttributeValue(id="BRAND", value_name="Genérica") in con_dato.completos
+    assert AttributeValue(id="BRAND", value_name="Genérica", nombre="Marca") in con_dato.completos
 
 
 def test_conditional_required_sin_dato_queda_en_faltantes_nunca_se_asume_que_no_aplica():
@@ -131,7 +131,7 @@ def test_item_condition_se_agrega_a_completos_sin_pedirselo_al_dueno():
     # resuelve y se agrega — nunca debería aparecer como faltante si la
     # categoría ofrece el value_name correspondiente.
     resultado = evaluar_atributos(ATRIBUTOS_CUADERNOS, "new", datos_conocidos={}, valores_ingresados={})
-    assert AttributeValue(id="ITEM_CONDITION", value_id="2230284", value_name="Nuevo") in resultado.completos
+    assert AttributeValue(id="ITEM_CONDITION", value_id="2230284", value_name="Nuevo", nombre="Condición del ítem") in resultado.completos
     assert "ITEM_CONDITION" not in {f.id for f in resultado.faltantes}
 
 

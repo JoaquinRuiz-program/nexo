@@ -128,6 +128,13 @@ class AttributeValue:
     id: str
     value_id: Optional[str] = None
     value_name: Optional[str] = None
+    # 1 de septiembre de 2026 — nombre humano del atributo (ej. "Marca" para
+    # BRAND), solo para mostrarlo al dueño en /validar ("Atributos ya
+    # resueltos"); nunca se manda a Mercado Libre (ver
+    # construir_attributes_payload, que arma el payload real campo por
+    # campo y no incluye este). None si no vino `name` en la categoría —
+    # quien lo muestre cae al `id` crudo, nunca se inventa un nombre.
+    nombre: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -209,7 +216,10 @@ def resolver_item_condition(atributos_categoria: list[dict[str, Any]], condition
     for valor in atributo.get("values") or []:
         nombre = (valor.get("name") or "").strip().lower()
         if nombre == nombre_buscado:
-            return AttributeValue(id=ITEM_CONDITION_ATTRIBUTE_ID, value_id=valor.get("id"), value_name=valor.get("name"))
+            return AttributeValue(
+                id=ITEM_CONDITION_ATTRIBUTE_ID, value_id=valor.get("id"), value_name=valor.get("name"),
+                nombre=atributo.get("name") or ITEM_CONDITION_ATTRIBUTE_ID,
+            )
     return None
 
 
@@ -276,11 +286,12 @@ def evaluar_atributos(
                 faltantes.append(_faltante_desde(atributo))
             continue
 
+        nombre_atributo = atributo.get("name") or attr_id
         if attr_id in valores_ingresados:
-            completos.append(AttributeValue(id=attr_id, value_name=valores_ingresados[attr_id]))
+            completos.append(AttributeValue(id=attr_id, value_name=valores_ingresados[attr_id], nombre=nombre_atributo))
             continue
         if attr_id in datos_conocidos:
-            completos.append(AttributeValue(id=attr_id, value_name=datos_conocidos[attr_id]))
+            completos.append(AttributeValue(id=attr_id, value_name=datos_conocidos[attr_id], nombre=nombre_atributo))
             continue
 
         if _es_requerido(atributo, condition, es_user_product_seller):

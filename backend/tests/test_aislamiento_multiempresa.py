@@ -252,6 +252,26 @@ def test_empresa_a_no_puede_preparar_publicacion_de_un_producto_de_empresa_b(cli
     assert res.status_code == 404  # nunca 403 — no confirma que el producto existe
 
 
+def test_empresa_a_no_puede_previsualizar_publicacion_de_un_producto_de_empresa_b(client_a, client_b, db_session, monkeypatch):
+    """1 de septiembre de 2026 — hallazgo de qa-engineer (ronda de pulido):
+    /confirmar/preview comparte _resolver_publicacion con /confirmar (mismo
+    gate, mismo 404 cruzado), pero no tenía su propia prueba de aislamiento."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    a = _registrar(client_a, email="a16@empresas.cl", empresa="Empresa A16")
+    b = _registrar(client_b, email="b16@empresas.cl", empresa="Empresa B16")
+    _conectar_cuenta_ml(db_session, a["empresa"]["id"])
+    _conectar_cuenta_ml(db_session, b["empresa"]["id"])
+    variant_id_b = _crear_producto(client_b, sku="PREVIEW-B", nombre="Producto de B", precio=10000)
+    _hacer_publicable(db_session, variant_id_b, costo=6000)
+
+    res = client_a.post(
+        f"/api/publicaciones/{variant_id_b}/mercadolibre/confirmar/preview",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic"},
+    )
+    assert res.status_code == 404
+    assert db_session.query(MarketplaceListing).count() == 0
+
+
 def test_empresa_a_no_puede_validar_publicacion_de_un_producto_de_empresa_b(client_a, client_b, db_session, monkeypatch):
     monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
     a = _registrar(client_a, email="a11@empresas.cl", empresa="Empresa A11")
@@ -283,6 +303,29 @@ def test_empresa_a_no_puede_ver_competencia_precio_ni_decision_de_un_producto_de
     # Ninguna de las tres consultas de A altera nada del producto de B.
     detalle_b = client_b.get(f"/api/productos/{variant_id_b}").json()
     assert detalle_b["precio"] == 10000
+
+
+def test_preparar_en_lote_de_empresa_a_nunca_incluye_ni_filtra_por_variante_de_empresa_b(client_a, client_b):
+    """1 de septiembre de 2026 — hallazgo de qa-engineer: POST
+    /publicaciones/preparar (el lote, no /borrador/{id} singular) reusa
+    build_profitability_rows (ya scopeado por tienda) pero no tenía su
+    propia prueba explícita de aislamiento -- un variant_id de otra
+    empresa en el body debe caer en noEncontrados, nunca en borradores."""
+    _registrar(client_a, email="a12b@empresas.cl", empresa="Empresa A12B")
+    _registrar(client_b, email="b12b@empresas.cl", empresa="Empresa B12B")
+    variant_id_a = _crear_producto(client_a, sku="LOTE-PREP-A", nombre="Producto de A", precio=10000)
+    variant_id_b = _crear_producto(client_b, sku="LOTE-PREP-B", nombre="Producto de B", precio=10000)
+
+    res = client_a.post(
+        "/api/publicaciones/preparar",
+        json={"variant_ids": [variant_id_a, variant_id_b], "canal": "tienda", "requiere_stock": False},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    ids_preparados = {b["id"] for b in body["borradores"]}
+    assert variant_id_a in ids_preparados
+    assert variant_id_b not in ids_preparados
+    assert variant_id_b in body["noEncontrados"]
 
 
 def test_decision_lote_de_empresa_a_nunca_incluye_variantes_de_empresa_b(client_a, client_b):
