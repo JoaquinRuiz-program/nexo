@@ -25,7 +25,7 @@ from typing import Any
 # Estados de Mercado Libre -> nuestro vocabulario interno de Order.status.
 # Todo lo que no sea "cancelled" entra como "recibido": el resto del ciclo
 # (picking/packing/etiquetado/despacho) lo avanza el dueño a mano dentro de
-# la librería, Mercado Libre no lo sabe ni lo reporta.
+# la empresa, Mercado Libre no lo sabe ni lo reporta.
 _ML_STATUS_TO_INTERNAL = {
     "cancelled": "cancelado",
 }

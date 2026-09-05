@@ -22,9 +22,11 @@ window.LC = window.LC || {};
     importar: "Importar catálogo",
     integraciones: "Integraciones",
     mercadolibre: "Mercado Libre",
+    "google-sheets": "Google Sheets",
     automatizaciones: "Automatizaciones",
     sincronizacion: "Automatizaciones",
-    suscripcion: "Suscripción",
+    suscripcion: "Mi plan",
+    soporte: "Ayuda y soporte",
     configuracion: "Configuración",
   };
 
@@ -48,7 +50,6 @@ window.LC = window.LC || {};
     sortDir: "asc",
     page: 1,
     pageSize: 10,
-    selected: new Set(),
   };
 
   let shellWired = false;
@@ -115,12 +116,18 @@ window.LC = window.LC || {};
         case "mercadolibre":
           await renderMercadoLibre(main);
           break;
+        case "google-sheets":
+          await LC.googleSheetsFlow.render(main);
+          break;
         case "automatizaciones":
         case "sincronizacion": // ruta anterior — misma pantalla, concepto ampliado
           await renderAutomatizaciones(main);
           break;
         case "suscripcion":
           await renderSuscripcion(main);
+          break;
+        case "soporte":
+          await LC.soporte.render(main, param);
           break;
         case "configuracion":
           await renderConfiguracion(main);
@@ -182,7 +189,7 @@ window.LC = window.LC || {};
     // ni siquiera cargarían (get_current_store le daría error), así que
     // esos links ni se muestran (además del guard de router.js que ya
     // redirige si igual se navega ahí a mano).
-    ["dashboard", "productos", "oportunidades", "importar", "integraciones", "automatizaciones", "suscripcion", "configuracion"].forEach((r) => {
+    ["dashboard", "productos", "oportunidades", "importar", "integraciones", "automatizaciones", "suscripcion", "soporte", "configuracion"].forEach((r) => {
       const link = document.querySelector(`.nav-link[data-route="${r}"]`);
       if (link) link.classList.toggle("hidden", !!session.esNexoAdmin);
     });
@@ -405,7 +412,7 @@ window.LC = window.LC || {};
           <span>${
             esReal
               ? "Catálogo real conectado al backend — el bloque de Mercado Libre y \"productos más vendidos\" abajo sigue siendo de ejemplo hasta conectar la sincronización."
-              : "Estás viendo datos de demostración (catálogo y ventas de Mercado Libre). Cuando conectemos tu WooCommerce y tu Mercado Libre reales, estos números reflejarán tu negocio real."
+              : "Estás viendo datos de demostración (catálogo y ventas de Mercado Libre). Importa tu catálogo real (Excel, CSV o Google Sheets) y conecta tu cuenta de Mercado Libre para ver tu negocio real."
           }</span>
         </div>
 
@@ -437,6 +444,7 @@ window.LC = window.LC || {};
           </div>
         </div>
 
+        ${esReal ? renderPublicacionesYPlan(resumen) : ""}
         ${esReal ? renderOnboarding(resumen, canalMl) : ""}
         ${esReal ? renderQueHacerAhora(resumen) : ""}
         ${esReal ? renderRentabilidadVentasPanel(resumen) : ""}
@@ -445,7 +453,7 @@ window.LC = window.LC || {};
           <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
             <div class="flex items-center gap-2">
               <h3 class="panel-title">Ventas Mercado Libre</h3>
-              <span class="demo-pill">Datos de demostración</span>
+              ${esReal ? `<span class="text-xs text-slate-400">Sin sincronización de ventas todavía</span>` : `<span class="demo-pill">Datos de demostración</span>`}
             </div>
             <button data-nav="/mercadolibre" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Ver Mercado Libre →</button>
           </div>
@@ -476,19 +484,19 @@ window.LC = window.LC || {};
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
           <div class="panel-card">
             <h3 class="panel-title">Estado del sistema</h3>
-            <p class="panel-subtitle mb-2">${esReal ? "Base de datos real conectada — WooCommerce y Mercado Libre según su estado real." : "Ninguna de estas conexiones está activa todavía."}</p>
+            <p class="panel-subtitle mb-2">${esReal ? "Base de datos real conectada — Mercado Libre y Google Sheets según su estado real." : "Ninguna de estas conexiones está activa todavía."}</p>
             <div>
-              ${statusRow("WooCommerce", estado.woocommerce)}
               ${statusRow("Mercado Libre", estado.mercadoLibre)}
+              ${statusRow("Google Sheets", estado.googleSheets)}
               ${statusRow("Base de datos", estado.baseDeDatos)}
             </div>
           </div>
           <div class="panel-card">
             <div class="flex items-center justify-between gap-3 mb-1">
               <h3 class="panel-title">Productos más vendidos</h3>
-              <span class="text-xs text-slate-400">Últimos 30 días (demo)</span>
+              <span class="text-xs text-slate-400">Últimos 30 días${esReal ? "" : " (demo)"}</span>
             </div>
-            ${masVendidos.length ? masVendidos.map((p, i) => rankRow(i + 1, p, masVendidos[0].cantidad)).join("") : `<p class="text-sm text-slate-400 mt-3">Todavía no hay ventas de ejemplo.</p>`}
+            ${masVendidos.length ? masVendidos.map((p, i) => rankRow(i + 1, p, masVendidos[0].cantidad)).join("") : `<p class="text-sm text-slate-400 mt-3">${esReal ? "Todavía no hay ventas registradas." : "Todavía no hay ventas de ejemplo."}</p>`}
           </div>
         </div>
 
@@ -534,13 +542,50 @@ window.LC = window.LC || {};
   // quedó aparte (ver pasosPendientesAutomatizacion): nunca se completa
   // hoy (no hay motor real), mezclarla en la misma barra de progreso hacía
   // que nunca llegara a 100%.
+  // 6 de septiembre de 2026 — auditoría comercial: el Dashboard tenía que
+  // responder de un vistazo "¿cuántas publicaciones tengo, cuántas están
+  // activas?" y "¿estoy cerca del límite de mi plan?" — antes ninguna de
+  // las dos preguntas tenía respuesta acá (había que ir a Mercado Libre o
+  // a Mi plan por separado).
+  function renderPublicacionesYPlan(resumen) {
+    const pub = resumen.publicaciones;
+    const sus = resumen.suscripcion;
+    if (!pub && !sus) return "";
+    const plan = sus && sus.plan;
+    const pctProductos = plan && plan.limiteProductos ? Math.round((sus.uso.productos / plan.limiteProductos) * 100) : null;
+    const pctPublicaciones = plan && plan.limitePublicaciones ? Math.round((sus.uso.publicaciones / plan.limitePublicaciones) * 100) : null;
+    const cercaDelLimite = (pctProductos !== null && pctProductos >= 80) || (pctPublicaciones !== null && pctPublicaciones >= 80);
+    return `
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div class="stat-card">
+          <p class="stat-label">Publicaciones en Mercado Libre</p>
+          <p class="stat-value">${pub ? pub.total : "—"}</p>
+          <p class="stat-hint">${pub ? `${pub.activas} activas · ${pub.pausadas} pausadas` : "Sin datos todavía"}</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-label">Plan actual</p>
+          <p class="stat-value stat-value--sm">${plan ? escapeHtml(plan.nombre) : "Sin asignar"}</p>
+          <p class="stat-hint"><a href="#/suscripcion" class="hover:underline">Ver Mi plan →</a></p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-label">Uso del plan</p>
+          ${plan ? `
+            <p class="stat-value stat-value--sm ${cercaDelLimite ? "stat-value--warning" : ""}">${sus.uso.productos}${plan.limiteProductos ? `/${plan.limiteProductos}` : ""} productos</p>
+            <p class="stat-hint">${sus.uso.publicaciones}${plan.limitePublicaciones ? `/${plan.limitePublicaciones}` : ""} publicaciones${cercaDelLimite ? " · cerca del límite" : ""}</p>
+          ` : `<p class="stat-value stat-value--sm">—</p><p class="stat-hint">Sin plan asignado</p>`}
+        </div>
+      </div>
+    `;
+  }
+
   function buildPasosOnboarding(resumen, canalMl) {
     return [
       { titulo: "Configura tu empresa", hecho: true, ruta: null },
       { titulo: "Importa tus productos", hecho: resumen.total > 0, ruta: "/importar" },
       { titulo: "Configura costos y margen de Mercado Libre", hecho: !!(canalMl && canalMl.targetMarginPct != null), ruta: "/configuracion" },
       { titulo: "Conecta Mercado Libre", hecho: !!(resumen.mercadoLibre && resumen.mercadoLibre.conectado), ruta: "/integraciones" },
-      { titulo: "Revisa tus oportunidades", hecho: !!(resumen.rentabilidad && resumen.rentabilidad.productosConCosto > 0), ruta: "/oportunidades" },
+      { titulo: "Sube imágenes a tus productos", hecho: (resumen.productosConImagenes || 0) > 0, ruta: "/productos" },
+      { titulo: "Publica tu primer producto", hecho: !!(resumen.publicaciones && resumen.publicaciones.total > 0), ruta: "/productos" },
     ];
   }
 
@@ -750,6 +795,20 @@ window.LC = window.LC || {};
     return { dotClass: "dot--green", label: String(qty) };
   }
 
+  // 6 de septiembre de 2026 — "estado claro de cada producto" (auditoría
+  // comercial): antes había que entrar al detalle de cada producto para
+  // saber si ya estaba publicado en Mercado Libre — ahora se ve de un
+  // vistazo en la lista. `undefined` = todavía no se consultó (demo mode
+  // no manda este campo), `null` = se consultó y nunca se publicó.
+  const ESTADO_PUBLICACION_LABEL = { active: "Publicado", paused: "Pausado", closed: "Eliminado" };
+  const ESTADO_PUBLICACION_DOT = { active: "dot--green", paused: "dot--amber", closed: "dot--gray" };
+
+  function celdaEstadoPublicacion(estado) {
+    if (estado === undefined) return `<span class="text-xs text-slate-400">—</span>`;
+    if (estado === null) return `<span class="stock-cell text-xs text-slate-400"><span class="dot dot--gray"></span> Sin publicar</span>`;
+    return `<span class="stock-cell text-xs"><span class="dot ${ESTADO_PUBLICACION_DOT[estado] || "dot--gray"}"></span> ${ESTADO_PUBLICACION_LABEL[estado] || estado}</span>`;
+  }
+
   function stockBucket(row) {
     const ind = stockIndicator(row);
     if (ind.dotClass === "dot--red") return "sin-stock";
@@ -794,7 +853,6 @@ window.LC = window.LC || {};
     main.innerHTML = `
       <div class="page-wrap app-fade">
         <div class="panel-card">
-          <div id="selection-bar-slot"></div>
           <div class="flex flex-col md:flex-row md:items-center gap-3 mb-5">
             <div class="relative flex-1">
               <svg width="16" height="16" class="search-icon-svg absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="m20 20-3-3"/></svg>
@@ -818,12 +876,12 @@ window.LC = window.LC || {};
             <table class="w-full text-sm" id="products-table">
               <thead>
                 <tr class="text-left border-b border-slate-200 dark:border-slate-700">
-                  <th class="px-3 py-2 w-8"><input type="checkbox" id="select-all-checkbox" class="form-checkbox" /></th>
                   <th class="sortable-th px-3 py-2 font-medium" data-sort="sku">SKU</th>
                   <th class="sortable-th px-3 py-2 font-medium" data-sort="nombre">Nombre</th>
                   <th class="sortable-th px-3 py-2 font-medium" data-sort="tipo">Tipo</th>
                   <th class="sortable-th px-3 py-2 font-medium" data-sort="stock">Stock</th>
                   <th class="sortable-th px-3 py-2 font-medium text-right" data-sort="precio">Precio</th>
+                  <th class="px-3 py-2 font-medium">Mercado Libre</th>
                   <th class="px-3 py-2 w-10"></th>
                 </tr>
               </thead>
@@ -884,13 +942,6 @@ window.LC = window.LC || {};
       state.page += 1;
       renderTableBody(rows);
     });
-    document.getElementById("select-all-checkbox").addEventListener("change", (e) => {
-      const visible = getFilteredSortedRows(rows).slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
-      if (e.target.checked) visible.forEach((r) => state.selected.add(r.id));
-      else visible.forEach((r) => state.selected.delete(r.id));
-      renderTableBody(rows);
-    });
-
     renderTableBody(rows);
   }
 
@@ -907,11 +958,24 @@ window.LC = window.LC || {};
     if (filtered.length === 0) {
       tbody.innerHTML = "";
       emptyEl.classList.remove("hidden");
-      emptyEl.innerHTML = `
+      // 6 de septiembre de 2026 — UX de estados vacíos: "ningún producto
+      // coincide" era el mensaje SIEMPRE, incluso con el catálogo
+      // realmente vacío (0 productos, sin ningún filtro aplicado) — ahí
+      // "probá con otro filtro" no tiene sentido, hay que decir cómo
+      // empezar.
+      const catalogoRealmenteVacio = rows.length === 0;
+      emptyEl.innerHTML = catalogoRealmenteVacio ? `
+        <div class="empty-state-icon">${icon("box")}</div>
+        <p class="empty-state-title">No tienes productos todavía</p>
+        <p class="empty-state-desc">Importa tu catálogo para comenzar.</p>
+        <button data-ir-importar class="btn-primary mt-4">Importar catálogo</button>
+      ` : `
         <div class="empty-state-icon">${icon("search")}</div>
         <p class="empty-state-title">Ningún producto coincide</p>
         <p class="empty-state-desc">Prueba con otro término de búsqueda o quita algún filtro.</p>
       `;
+      const btnIrImportar = document.getElementById("products-empty").querySelector("[data-ir-importar]");
+      if (btnIrImportar) btnIrImportar.addEventListener("click", () => LC.router.navigate("/importar"));
     } else {
       emptyEl.classList.add("hidden");
       tbody.innerHTML = pageRows
@@ -921,16 +985,14 @@ window.LC = window.LC || {};
             r.tipo === "variable"
               ? `<span class="badge badge-variable">Variable${r.colorVariante ? " · " + escapeHtml(r.colorVariante) : ""}</span>`
               : `<span class="badge badge-simple">Simple</span>`;
-          const checked = state.selected.has(r.id) ? "checked" : "";
-          const rowSelectedClass = state.selected.has(r.id) ? "row-selected" : "";
           return `
-            <tr class="${rowSelectedClass}" data-row-id="${r.id}">
-              <td class="px-3"><input type="checkbox" class="form-checkbox row-checkbox" data-id="${r.id}" ${checked} /></td>
+            <tr data-row-id="${r.id}">
               <td class="font-mono text-xs text-slate-500 dark:text-slate-400 cursor-pointer" data-open="${r.id}">${escapeHtml(r.sku) || "—"}</td>
               <td class="font-medium text-slate-800 dark:text-slate-100 cursor-pointer" data-open="${r.id}">${escapeHtml(r.nombre) || "—"}</td>
               <td>${tipoBadge}</td>
               <td><span class="stock-cell"><span class="dot ${ind.dotClass}"></span> ${ind.label}</span></td>
               <td class="text-right font-medium">${formatCLP(r.precio)}</td>
+              <td>${celdaEstadoPublicacion(r.estadoPublicacionMercadoLibre)}</td>
               <td class="relative">
                 <button class="row-menu-btn" data-menu="${r.id}">⋯</button>
               </td>
@@ -944,7 +1006,6 @@ window.LC = window.LC || {};
     document.getElementById("pagination-page").textContent = `Página ${state.page} de ${totalPages}`;
     document.getElementById("page-prev").disabled = state.page <= 1;
     document.getElementById("page-next").disabled = state.page >= totalPages;
-    document.getElementById("select-all-checkbox").checked = pageRows.length > 0 && pageRows.every((r) => state.selected.has(r.id));
 
     document.querySelectorAll(".sortable-th .sort-arrow").forEach((a) => a.remove());
     document.querySelectorAll(".sortable-th").forEach((th) => {
@@ -959,47 +1020,11 @@ window.LC = window.LC || {};
     tbody.querySelectorAll("[data-open]").forEach((cell) => {
       cell.addEventListener("click", () => LC.router.navigate(`/productos/${cell.dataset.open}`));
     });
-    tbody.querySelectorAll(".row-checkbox").forEach((cb) => {
-      cb.addEventListener("change", (e) => {
-        const id = Number(e.target.dataset.id);
-        if (e.target.checked) state.selected.add(id);
-        else state.selected.delete(id);
-        renderSelectionBar(rows);
-        tbody.querySelector(`tr[data-row-id="${id}"]`).classList.toggle("row-selected", e.target.checked);
-      });
-    });
     tbody.querySelectorAll("[data-menu]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         openRowMenu(btn, Number(btn.dataset.menu));
       });
-    });
-
-    renderSelectionBar(rows);
-  }
-
-  function renderSelectionBar(rows) {
-    const slot = document.getElementById("selection-bar-slot");
-    if (!slot) return;
-    if (state.selected.size === 0) {
-      slot.innerHTML = "";
-      return;
-    }
-    slot.innerHTML = `
-      <div class="selection-bar">
-        <span>${state.selected.size} producto${state.selected.size === 1 ? "" : "s"} seleccionado${state.selected.size === 1 ? "" : "s"}</span>
-        <div class="flex items-center gap-2">
-          <button id="selection-export-btn" class="btn-secondary !py-1.5 !text-xs">Exportar seleccionados</button>
-          <button id="selection-clear-btn" class="btn-secondary !py-1.5 !text-xs">Limpiar selección</button>
-        </div>
-      </div>
-    `;
-    document.getElementById("selection-export-btn").addEventListener("click", () => {
-      toast("info", "Exportar productos estará disponible próximamente.");
-    });
-    document.getElementById("selection-clear-btn").addEventListener("click", () => {
-      state.selected.clear();
-      renderTableBody(rows);
     });
   }
 
@@ -1136,11 +1161,11 @@ window.LC = window.LC || {};
   }
 
   // ------------------------------------------------------------------
-  // Imágenes (1 de septiembre de 2026) — Nexo todavía no tiene
-  // almacenamiento real de archivos (ver backend/app/db/models/products.py,
-  // ProductImage), así que esto es agregar por URL con previsualización
-  // inmediata, arrastrar para reordenar, quitar y ver cuál es la
-  // principal — no una subida de archivo real desde la computadora.
+  // Imágenes — subida real desde el computador (5 de septiembre de 2026:
+  // click o arrastrar y soltar archivos, ver
+  // backend/app/domain/image_storage.py) + el agregar-por-URL que ya
+  // existía (útil para pegar una imagen ya alojada afuera). Arrastrar una
+  // miniatura reordena; la primera es la principal al publicar.
   // ------------------------------------------------------------------
 
   function renderImagenesDetalle(row) {
@@ -1159,19 +1184,70 @@ window.LC = window.LC || {};
             </div>
           `).join("")}
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <input id="img-nueva-url" type="text" class="form-input flex-1 min-w-[220px]" placeholder="Pegá la URL de una imagen (https://...)" />
-          <button id="img-agregar" class="btn-secondary">Agregar imagen</button>
+
+        <div id="img-dropzone" class="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg p-5 text-center cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors">
+          <input id="img-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple class="hidden" />
+          <p class="text-sm text-slate-500 dark:text-slate-400">Arrastrá imágenes acá o <span class="text-indigo-600 dark:text-indigo-400 font-medium">hacé clic para elegirlas</span></p>
+          <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">JPG, PNG o WEBP · hasta 5 MB cada una</p>
+        </div>
+        <div id="img-upload-progreso" class="mt-3 space-y-1.5"></div>
+
+        <div class="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+          <input id="img-nueva-url" type="text" class="form-input flex-1 min-w-[220px]" placeholder="O pegá la URL de una imagen ya alojada (https://...)" />
+          <button id="img-agregar" class="btn-secondary">Agregar por URL</button>
         </div>
         <div id="img-preview-nueva" class="mt-2"></div>
       </div>
     `;
   }
 
+  async function subirArchivosDeImagen(row, fileList, onCambio) {
+    const progreso = document.getElementById("img-upload-progreso");
+    const archivos = Array.from(fileList);
+    if (archivos.length === 0) return;
+    const fila = document.createElement("p");
+    fila.className = "text-sm text-slate-500 dark:text-slate-400";
+    fila.textContent = archivos.length === 1 ? `Subiendo ${archivos[0].name}…` : `Subiendo ${archivos.length} imágenes…`;
+    progreso.appendChild(fila);
+
+    const res = await LC.backendApi.subirImagenesProducto(row.id, archivos);
+    fila.remove();
+    if (!res.ok) {
+      toast("error", res.error.mensaje);
+      return;
+    }
+    const { guardadas, rechazadas } = res.data.subidas || { guardadas: 0, rechazadas: [] };
+    if (guardadas > 0) toast("success", guardadas === 1 ? "Imagen subida." : `${guardadas} imágenes subidas.`);
+    rechazadas.forEach((r) => toast("error", `${r.archivo}: ${r.motivo}`));
+    if (guardadas > 0) onCambio();
+  }
+
   function wireImagenesDetalle(main, row, onCambio) {
     const input = document.getElementById("img-nueva-url");
     const preview = document.getElementById("img-preview-nueva");
     const btnAgregar = document.getElementById("img-agregar");
+
+    const dropzone = document.getElementById("img-dropzone");
+    const fileInput = document.getElementById("img-file-input");
+    dropzone.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      subirArchivosDeImagen(row, fileInput.files, onCambio);
+      fileInput.value = "";
+    });
+    dropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropzone.classList.add("border-indigo-400", "dark:border-indigo-500");
+    });
+    dropzone.addEventListener("dragleave", () => {
+      dropzone.classList.remove("border-indigo-400", "dark:border-indigo-500");
+    });
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropzone.classList.remove("border-indigo-400", "dark:border-indigo-500");
+      if (e.dataTransfer && e.dataTransfer.files.length) {
+        subirArchivosDeImagen(row, e.dataTransfer.files, onCambio);
+      }
+    });
 
     // Previsualización inmediata (nunca sube nada al escribir) — si la
     // imagen no carga, se avisa antes de que el dueño intente agregarla.
@@ -1294,19 +1370,9 @@ window.LC = window.LC || {};
           </div>
         </div>` : ""}
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
-          <div class="panel-card">
-            <h3 class="panel-title mb-2">Información de WooCommerce</h3>
-            <div class="text-sm space-y-1.5 mb-3">
-              <div class="flex justify-between"><span class="text-slate-500 dark:text-slate-400">ID de producto (padre)</span><span class="font-mono">${row.woocommerceParentId ?? "—"}</span></div>
-              ${row.woocommerceVariationId ? `<div class="flex justify-between"><span class="text-slate-500 dark:text-slate-400">ID de variación</span><span class="font-mono">${row.woocommerceVariationId}</span></div>` : ""}
-            </div>
-            <p class="text-xs text-slate-400 dark:text-slate-500">IDs de ejemplo — este producto todavía no está sincronizado con una tienda WooCommerce real.</p>
-          </div>
-          <div class="panel-card">
-            <h3 class="panel-title mb-2">Mercado Libre</h3>
-            <div id="ml-mini-decision"><p class="text-sm text-slate-400">Consultando…</p></div>
-          </div>
+        <div class="panel-card mb-5">
+          <h3 class="panel-title mb-2">Mercado Libre</h3>
+          <div id="ml-mini-decision"><p class="text-sm text-slate-400">Consultando…</p></div>
         </div>
 
         <div id="detail-historial" class="panel-card">
@@ -1454,12 +1520,14 @@ window.LC = window.LC || {};
       window.history.replaceState(null, "", url.pathname + url.search + url.hash);
     }
 
-    const [estadoRes, resumen, productosFiltro] = await Promise.all([
+    const [estadoRes, resumen, productosFiltro, modo] = await Promise.all([
       LC.backendApi.fetchMercadoLibreEstado(),
       LC.dataSource.getResumenMercadoLibre(),
       LC.dataSource.getProductosVendidosEnMercadoLibre(),
+      LC.dataSource.getModo(),
     ]);
     const ml = estadoRes.ok ? estadoRes.data : null;
+    const esReal = modo === "real";
     mlState.page = 1;
 
     main.innerHTML = `
@@ -1468,8 +1536,9 @@ window.LC = window.LC || {};
 
         <div class="panel-card mb-6">
           <div class="flex items-center gap-2">
-            <span class="demo-pill">Datos de demostración</span>
-            <p class="text-sm text-slate-500 dark:text-slate-400">Ventas, pedidos e ingresos de acá abajo son de ejemplo, para poder evaluar la interfaz.</p>
+            ${esReal
+              ? `<p class="text-sm text-slate-500 dark:text-slate-400">Todavía no hay sincronización real de ventas de Mercado Libre — las cifras de acá abajo reflejan eso (en cero), no son datos de ejemplo.</p>`
+              : `<span class="demo-pill">Datos de demostración</span><p class="text-sm text-slate-500 dark:text-slate-400">Ventas, pedidos e ingresos de acá abajo son de ejemplo, para poder evaluar la interfaz.</p>`}
           </div>
         </div>
 
@@ -1506,7 +1575,7 @@ window.LC = window.LC || {};
         <div class="panel-card mb-6">
           <div class="flex items-center justify-between gap-3 mb-1">
             <h3 class="panel-title">Productos más vendidos</h3>
-            <span class="text-xs text-slate-400">Últimos 30 días (demo)</span>
+            <span class="text-xs text-slate-400">Últimos 30 días${esReal ? "" : " (demo)"}</span>
           </div>
           <div id="ml-top-productos" class="mt-2"></div>
         </div>
@@ -1695,7 +1764,8 @@ window.LC = window.LC || {};
     if (!slot) return;
     const top = await LC.dataSource.getProductosMasVendidosMercadoLibre(mlState.rango, 8);
     if (!top.length) {
-      slot.innerHTML = `<p class="text-sm text-slate-400 mt-2">Sin ventas de ejemplo en este período.</p>`;
+      const esReal = (await LC.dataSource.getModo()) === "real";
+      slot.innerHTML = `<p class="text-sm text-slate-400 mt-2">${esReal ? "Sin ventas registradas en este período." : "Sin ventas de ejemplo en este período."}</p>`;
       return;
     }
     const maxCantidad = top[0].cantidad;
@@ -1719,7 +1789,14 @@ window.LC = window.LC || {};
     if (rows.length === 0) {
       tbody.innerHTML = "";
       emptyEl.classList.remove("hidden");
-      emptyEl.innerHTML = `
+      const sinFiltros = !mlState.search && mlState.filterEstado === "todos" && mlState.filterProducto === "todos";
+      emptyEl.innerHTML = sinFiltros
+        ? `
+        <div class="empty-state-icon">${icon("box")}</div>
+        <p class="empty-state-title">Todavía no hay pedidos registrados</p>
+        <p class="empty-state-desc">Van a aparecer acá cuando Nexo sincronice ventas reales de Mercado Libre.</p>
+      `
+        : `
         <div class="empty-state-icon">${icon("search")}</div>
         <p class="empty-state-title">Ningún pedido coincide</p>
         <p class="empty-state-desc">Prueba con otro término de búsqueda o quita algún filtro.</p>
@@ -1794,7 +1871,10 @@ window.LC = window.LC || {};
     const d = decisionMap && decisionMap.get(p.id);
     if (!d) return `<td class="px-3 py-2.5"><span class="text-xs text-slate-400">—</span></td>`;
     const visual = d.decision === "revisar" && d.faltantes && d.faltantes.length ? "datos_insuficientes" : d.decision;
-    return `<td class="px-3 py-2.5"><span class="reco-badge reco-${visual} !text-xs !py-1">${DECISION_COLUMNA_LABEL[visual] || visual}</span></td>`;
+    return `<td class="px-3 py-2.5">
+      <span class="reco-badge reco-${visual} !text-xs !py-1">${DECISION_COLUMNA_LABEL[visual] || visual}</span>
+      ${d.decision !== "conviene" && d.razon ? `<p class="text-xs text-slate-400 mt-1 max-w-[220px]">${escapeHtml(d.razon)}</p>` : ""}
+    </td>`;
   }
 
   // 30 de agosto de 2026 — hallazgo de frontend-ux-engineer: "sin_datos"
@@ -1877,9 +1957,36 @@ window.LC = window.LC || {};
       if (decisionRes.ok) decisionPorVariante = new Map(decisionRes.data.map((d) => [d.variantId, d]));
     }
 
+    // 6 de septiembre de 2026 — Preview de publicación: mismo dato que ya
+    // trae decisionPorVariante (GET /mercadolibre/decision-lote), agregado
+    // acá nomás para responder de un vistazo "si publico esto en Mercado
+    // Libre, ¿qué va a pasar?" — nunca un cálculo nuevo, solo un resumen
+    // de lo que el motor de decisión ya calculó por producto.
+    const decisiones = [...decisionPorVariante.values()];
+    const previewMl = esReal && decisiones.length ? (() => {
+      const listos = decisiones.filter((d) => d.decision === "conviene");
+      const revision = decisiones.filter((d) => d.decision === "revisar");
+      const omitidos = decisiones.filter((d) => d.decision === "no_conviene");
+      const margenes = listos.map((d) => d.margenEstimadoPct).filter((m) => m != null);
+      const margenPromedio = margenes.length ? margenes.reduce((a, b) => a + b, 0) / margenes.length : null;
+      return { listos, revision, omitidos, margenPromedio };
+    })() : null;
+
     main.innerHTML = `
       <div class="page-wrap app-fade">
         ${esReal ? "" : `<div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 mb-6 text-sm text-amber-800 dark:text-amber-200">Estás viendo datos de demostración — sube tu catálogo en "Importar catálogo" para ver tus oportunidades reales.</div>`}
+
+        ${previewMl ? `
+        <div class="panel-card mb-6">
+          <h3 class="panel-title mb-1">Vista previa de publicación en Mercado Libre</h3>
+          <p class="panel-subtitle mb-4">Qué pasaría si preparás una publicación para cada producto de tu catálogo, hoy.</p>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="stat-card"><p class="stat-label">Listos para publicar</p><p class="stat-value stat-value--sm stat-value--success">${previewMl.listos.length}</p></div>
+            <div class="stat-card"><p class="stat-label">Requieren revisión</p><p class="stat-value stat-value--sm stat-value--warning">${previewMl.revision.length}</p></div>
+            <div class="stat-card"><p class="stat-label">Omitidos</p><p class="stat-value stat-value--sm stat-value--danger">${previewMl.omitidos.length}</p></div>
+            <div class="stat-card"><p class="stat-label">Margen promedio (listos)</p><p class="stat-value stat-value--sm">${previewMl.margenPromedio != null ? previewMl.margenPromedio.toFixed(1) + "%" : "—"}</p></div>
+          </div>
+        </div>` : ""}
 
         ${
           esReal
@@ -1964,16 +2071,16 @@ window.LC = window.LC || {};
   // Libre es UNA integración más, no el centro de la plataforma.
   // ------------------------------------------------------------------
 
-  const INTEGRACION_ICON = { mercadolibre: "cart", woocommerce: "store", excel: "upload", shopify: "cart", sheets: "document" };
-  const INTEGRACION_ESTADO_LABEL = { conectado: "Conectado", no_conectado: "No conectado", disponible: "Disponible", proximamente: "Próximamente" };
-  const INTEGRACION_ESTADO_DOT = { conectado: "dot--green", no_conectado: "dot--gray", disponible: "dot--green", proximamente: "dot--gray" };
-  const INTEGRACION_CTA = { conectado: "Ver detalles", no_conectado: "Conectar", disponible: "Usar ahora", proximamente: "" };
+  const INTEGRACION_ICON = { mercadolibre: "cart", excel: "upload" };
+  const INTEGRACION_ESTADO_LABEL = { conectado: "Conectado", no_conectado: "No conectado", disponible: "Disponible" };
+  const INTEGRACION_ESTADO_DOT = { conectado: "dot--green", no_conectado: "dot--gray", disponible: "dot--green" };
+  const INTEGRACION_CTA = { conectado: "Ver detalles", no_conectado: "Conectar", disponible: "Usar ahora" };
 
   async function renderIntegraciones(main) {
     const data = await LC.dataSource.getIntegraciones();
     main.innerHTML = `
       <div class="page-wrap app-fade">
-        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6 max-w-2xl">Estas son las integraciones con las que tu empresa puede conectarse. Algunas ya están disponibles hoy; otras están planificadas.</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6 max-w-2xl">Estas son las integraciones con las que tu empresa puede conectarse hoy.</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           ${data.integraciones
             .map(
@@ -1985,7 +2092,7 @@ window.LC = window.LC || {};
               </div>
               <p class="text-xs text-slate-400 mb-3">${escapeHtml(i.categoria)} · ${INTEGRACION_ESTADO_LABEL[i.estado]}</p>
               <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">${escapeHtml(i.detalle)}</p>
-              ${i.ruta ? `<button data-nav="${i.ruta}" class="btn-secondary">${INTEGRACION_CTA[i.estado]}</button>` : `<span class="btn-disabled">Próximamente</span>`}
+              ${i.ruta ? `<button data-nav="${i.ruta}" class="btn-secondary">${INTEGRACION_CTA[i.estado]}</button>` : `<span class="btn-disabled">No disponible</span>`}
             </div>`
             )
             .join("")}
@@ -2031,10 +2138,19 @@ window.LC = window.LC || {};
   // Suscripción
   // ------------------------------------------------------------------
 
+  const ESTADO_SUSCRIPCION_LABEL = { trialing: "Prueba gratuita", active: "Activa", past_due: "Pago pendiente", canceled: "Cancelada", expired: "Vencida" };
+
   async function renderSuscripcion(main) {
     const sus = await LC.dataSource.getSuscripcion();
     const pct = sus.plan.limite ? Math.min(100, Math.round((sus.productosUtilizados / sus.plan.limite) * 100)) : 0;
     const barClass = pct >= 90 ? "progress-danger" : pct >= 70 ? "progress-warn" : "";
+    // 5 de septiembre de 2026 — en modo real, cambiar de plan es exclusivo
+    // del administrador de Nexo (todavía no hay proveedor de pagos
+    // conectado, ver backend/app/api/routes/suscripcion.py) — la pantalla
+    // es de solo lectura, nunca ofrece "Elegir plan" con datos reales.
+    const pctPub = sus.real && sus.plan.limitePublicaciones
+      ? Math.min(100, Math.round((sus.publicacionesUtilizadas / sus.plan.limitePublicaciones) * 100)) : 0;
+    const barClassPub = pctPub >= 90 ? "progress-danger" : pctPub >= 70 ? "progress-warn" : "";
 
     main.innerHTML = `
       <div class="page-wrap app-fade">
@@ -2043,20 +2159,35 @@ window.LC = window.LC || {};
             <div>
               <p class="stat-label">Plan actual</p>
               <p class="text-2xl font-bold mt-1">${escapeHtml(sus.plan.nombre)}</p>
-              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">${escapeHtml(sus.plan.precio)} / mes · Próxima renovación: ${formatDate(sus.fechaRenovacion)}</p>
+              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                ${escapeHtml(sus.plan.precio)}${sus.real ? "" : " / mes"}
+                ${sus.real && sus.estado ? ` · ${escapeHtml(ESTADO_SUSCRIPCION_LABEL[sus.estado] || sus.estado)}` : ""}
+                ${sus.fechaRenovacion ? ` · Próxima renovación: ${formatDate(sus.fechaRenovacion)}` : ""}
+              </p>
             </div>
-            <button id="manage-sub-btn" class="btn-secondary">Administrar suscripción</button>
+            ${sus.real ? "" : '<button id="manage-sub-btn" class="btn-secondary">Administrar suscripción</button>'}
           </div>
 
           <div>
             <div class="flex items-center justify-between text-sm mb-1.5">
-              <span class="text-slate-500 dark:text-slate-400">Productos utilizados</span>
+              <span class="text-slate-500 dark:text-slate-400">Productos</span>
               <span class="font-medium">${sus.productosUtilizados} / ${sus.plan.limite ?? "∞"} <span class="text-slate-400">(${pct}%)</span></span>
             </div>
             <div class="progress-track"><div class="progress-fill ${barClass}" style="width:${pct}%"></div></div>
           </div>
+          ${sus.real ? `
+          <div class="mt-4">
+            <div class="flex items-center justify-between text-sm mb-1.5">
+              <span class="text-slate-500 dark:text-slate-400">Publicaciones</span>
+              <span class="font-medium">${sus.publicacionesUtilizadas} / ${sus.plan.limitePublicaciones ?? "∞"} <span class="text-slate-400">(${pctPub}%)</span></span>
+            </div>
+            <div class="progress-track"><div class="progress-fill ${barClassPub}" style="width:${pctPub}%"></div></div>
+          </div>` : ""}
         </div>
 
+        ${sus.real ? `
+          <p class="text-xs text-slate-400 dark:text-slate-500">¿Necesitás más productos o publicaciones? Escribinos desde <a href="#/soporte" class="text-indigo-600 dark:text-indigo-400 hover:underline">Ayuda y soporte</a> para actualizar tu plan.</p>
+        ` : `
         <h3 class="panel-title mb-3">Planes disponibles</h3>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           ${sus.planes
@@ -2083,12 +2214,16 @@ window.LC = window.LC || {};
             .join("")}
         </div>
         <p class="text-xs text-slate-400 dark:text-slate-500 mt-4">Los precios todavía no están definidos — se confirmarán antes de operar con clientes reales.</p>
+        `}
       </div>
     `;
 
-    document.getElementById("manage-sub-btn").addEventListener("click", () => {
-      infoModal("Administrar suscripción", "La gestión de suscripciones y pagos estará disponible cuando conectemos Stripe u otro proveedor de pagos.");
-    });
+    const manageBtn = document.getElementById("manage-sub-btn");
+    if (manageBtn) {
+      manageBtn.addEventListener("click", () => {
+        infoModal("Administrar suscripción", "La gestión de suscripciones y pagos estará disponible cuando conectemos Stripe u otro proveedor de pagos.");
+      });
+    }
 
     main.querySelectorAll(".choose-plan-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -2221,19 +2356,9 @@ window.LC = window.LC || {};
           <div class="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <h3 class="panel-title mb-1">Integraciones</h3>
-              <p class="panel-subtitle">Mercado Libre, WooCommerce, Excel y las que se agreguen más adelante.</p>
+              <p class="panel-subtitle">Mercado Libre, Excel/CSV y Google Sheets.</p>
             </div>
             <button data-nav="/integraciones" class="btn-secondary shrink-0">Ver integraciones</button>
-          </div>
-        </div>
-
-        <div class="panel-card">
-          <div class="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <h3 class="panel-title mb-1">Usuarios y permisos</h3>
-              <p class="panel-subtitle">Todavía solo hay una cuenta por empresa — más adelante vas a poder invitar a tu equipo con distintos permisos.</p>
-            </div>
-            <span class="btn-disabled shrink-0">Próximamente</span>
           </div>
         </div>
 

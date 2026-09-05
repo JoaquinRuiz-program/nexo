@@ -2,8 +2,9 @@
 Punto de entrada del backend.
 
 24 de agosto de 2026 — pivote de "app de una librería" a plataforma
-universal para vendedores de Mercado Libre (Librería Central queda como
-primer caso de uso, no como límite de arquitectura): importador de catálogo
+universal para vendedores de Mercado Libre (Nexo es el producto, cualquier
+rubro es un caso de uso válido, nunca un límite de arquitectura): importador
+de catálogo
 desde cualquier Excel/CSV (app/api/routes/catalogo.py), motor de
 rentabilidad configurable por canal, selección de qué conviene publicar
 (app/api/routes/seleccion.py), lectura de WooCommerce, y OAuth real de
@@ -16,8 +17,11 @@ app/api/deps.py): cada request a un endpoint de negocio pasa a resolver
 primera tienda que exista". Ver DATABASE.md para el detalle de cada fase.
 """
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import (
     admin,
@@ -26,18 +30,21 @@ from app.api.routes import (
     configuracion,
     costos,
     dashboard,
+    google_sheets,
     mercadolibre,
     productos,
     productos_db,
     publicaciones,
     rentabilidad,
     seleccion,
+    soporte,
+    suscripcion,
 )
 from app.config import get_settings, print_env_diagnostics
 
 app = FastAPI(
-    title="Backend de catálogo y rentabilidad para Mercado Libre",
-    description="Importa cualquier catálogo (Excel/CSV), calcula rentabilidad y decide qué conviene publicar en Mercado Libre. Librería Central es el primer caso de uso, no un límite de arquitectura.",
+    title="Nexo — catálogo y rentabilidad para Mercado Libre",
+    description="Importa cualquier catálogo (Excel/CSV), calcula rentabilidad y decide qué conviene publicar en Mercado Libre. Sirve a cualquier rubro, no a un cliente específico.",
     version="0.2.0",
 )
 
@@ -89,11 +96,22 @@ app.include_router(rentabilidad.router)
 app.include_router(configuracion.router)
 app.include_router(costos.router)
 app.include_router(mercadolibre.router)
+app.include_router(google_sheets.router)
 app.include_router(catalogo.router)
 app.include_router(seleccion.router)
 app.include_router(publicaciones.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
+app.include_router(suscripcion.router)
+app.include_router(soporte.router)
+
+# 5 de septiembre de 2026 — imágenes de producto subidas desde el
+# computador (ver app/domain/image_storage.py): se sirven como archivos
+# estáticos, la misma carpeta que usa productos_db.py para guardarlas
+# (`Settings.uploads_dir`). Se crea si no existe todavía (primer arranque).
+_uploads_dir = Path(get_settings().uploads_dir)
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
 
 
 @app.on_event("startup")

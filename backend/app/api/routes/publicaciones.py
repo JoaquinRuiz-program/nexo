@@ -53,6 +53,7 @@ from app.domain.listing_validation import (
     gtin_checksum_valido,
 )
 from app.domain.ml_error_messages import mensaje_amigable_error_publicacion
+from app.domain.plans import limite_alcanzado
 from app.domain.ml_listing_payload import PayloadPublicacion, construir_payload_publicacion
 from app.domain.ml_fees import resolver_listing_type
 from app.domain.ml_seller_capabilities import es_user_product_seller
@@ -683,6 +684,7 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
         resultado.append({
             "variantId": variante.id,
             "decision": decision.decision,
+            "razon": decision.razon,
             "precioRecomendado": decision.precio_recomendado,
             "margenEstimadoPct": decision.margen_estimado_pct,
             "faltantes": decision.faltantes,
@@ -796,6 +798,23 @@ async def _resolver_publicacion(
         raise HTTPException(
             status_code=409,
             detail="Este producto ya tiene una publicación de Mercado Libre para esta cuenta.",
+        )
+
+    # 5 de septiembre de 2026 — límite de publicaciones activas del plan
+    # (ver app/domain/plans.py): se cuenta acá, ANTES de gastar ningún
+    # llamado real a Mercado Libre — nunca se le permite a un plan agotado
+    # publicar una más y recién ahí fallar.
+    limite_publicaciones = store.subscription.plan.publication_limit if (store.subscription and store.subscription.plan) else None
+    cantidad_publicaciones_activas = (
+        db.query(MarketplaceListing)
+        .join(MarketplaceAccount)
+        .filter(MarketplaceAccount.store_id == store.id, MarketplaceListing.status.in_(["active", "paused"]))
+        .count()
+    )
+    if limite_alcanzado(cantidad_publicaciones_activas, limite_publicaciones):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Has alcanzado el límite de publicaciones de tu plan ({limite_publicaciones}). Actualiza tu plan para agregar más.",
         )
 
     # Rentabilidad recalculada de cero, con datos frescos de la base — nunca

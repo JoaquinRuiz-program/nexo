@@ -7,13 +7,13 @@ probados, no una lógica nueva.
 
 29 de agosto de 2026: exige sesión válida (Depends(get_current_user)), pero
 NO se scopea por tienda — las credenciales de WooCommerce son globales de
-`.env` (una sola tienda WooCommerce real, la de Librería Central), no un
-dato por empresa en la base todavía. Integrar WooCommerce al modelo
+`.env` (una sola tienda WooCommerce real, la del primer cliente piloto), no
+un dato por empresa en la base todavía. Integrar WooCommerce al modelo
 multiempresa (credenciales por `Store`) queda fuera de esta ronda.
 
 30 de agosto de 2026 — hallazgo de security-engineer: sin scope de tienda,
-cualquier empresa autenticada veía el mismo catálogo (el de Librería
-Central). Mitigación mínima mientras no se integra de verdad: el endpoint
+cualquier empresa autenticada veía el mismo catálogo (el del cliente
+piloto). Mitigación mínima mientras no se integra de verdad: el endpoint
 ahora exige además `get_current_store` y solo responde para
 `settings.woocommerce_legacy_store_id` — ninguna otra tienda puede
 llamarlo (404, nunca revela que existe).

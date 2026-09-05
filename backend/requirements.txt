@@ -25,6 +25,12 @@ openpyxl==3.1.5
 # POST /api/costos/importar.
 python-multipart==0.0.32
 
+# 5 de septiembre de 2026 — subida real de imágenes de producto (ver
+# app/domain/image_storage.py): abrir el archivo con Pillow es la única
+# forma confiable de distinguir un archivo corrupto/no-imagen de uno
+# válido (una extensión .jpg no garantiza nada sobre el contenido real).
+Pillow==11.3.0
+
 # Cifrado simétrico de los tokens OAuth de Mercado Libre en la base de datos
 # (nunca se guardan en texto plano) — ver app/domain/token_crypto.py.
 cryptography==50.0.0

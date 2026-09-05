@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Librería Central — asistente "Importar catálogo" (24 de agosto de 2026).
+ * Nexo — asistente "Importar catálogo" (24 de agosto de 2026).
  *
  * Flujo: Subir archivo → Analizamos tus productos → Revisar mapeo de
  * columnas → Oportunidades (rentabilidad + selección) → Revisar

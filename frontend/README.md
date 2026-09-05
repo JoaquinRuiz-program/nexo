@@ -1,4 +1,4 @@
-# Librería Central — Frontend (Fase 3, ahora en Demo Mode)
+# Nexo — Frontend (Fase 3, ahora en Demo Mode)
 
 Panel web del proyecto: vanilla HTML + CSS + JavaScript (sin frameworks —
 no había una razón que justificara React/Vue/Next). Usa Tailwind CSS vía

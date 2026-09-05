@@ -82,7 +82,8 @@ window.LC = window.LC || {};
 
   async function render(main, variantId) {
     if (!variantId) {
-      main.innerHTML = `<div class="page-wrap"><div class="empty-state"><p class="empty-state-title">Producto no indicado</p></div></div>`;
+      main.innerHTML = `<div class="page-wrap"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("box")}</div><p class="empty-state-title">Elegí un producto para publicarlo</p><p class="empty-state-desc">Entrá a Productos, abrí el que querés publicar en Mercado Libre y empezá desde ahí.</p><button data-ir-productos class="btn-primary mt-4">Ir a Productos</button></div></div>`;
+      main.querySelector("[data-ir-productos]").addEventListener("click", () => LC.router.navigate("/productos"));
       return;
     }
     // Siempre se arranca de cero al entrar a esta pantalla — nunca se
@@ -369,7 +370,6 @@ window.LC = window.LC || {};
         ${p.imagenes && p.imagenes.length
           ? `<div class="flex flex-wrap gap-2">${p.imagenes.map((url) => `<img src="${escapeHtml(url)}" class="w-20 h-20 object-cover rounded-lg border border-slate-200 dark:border-slate-700" />`).join("")}</div>`
           : `<p class="text-sm text-red-600 dark:text-red-400">Sin imagen cargada — Mercado Libre no permite publicar sin al menos una imagen.</p>`}
-        <button class="btn-disabled mt-3" disabled>Mejorar imagen (próximamente)</button>
       </div>
 
       ${p.advertencias && p.advertencias.length ? `

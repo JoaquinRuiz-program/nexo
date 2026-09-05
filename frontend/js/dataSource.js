@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Librería Central — capa de datos.
+ * Nexo — capa de datos.
  *
  * Esta es la ÚNICA puerta por la que las pantallas (js/app.js) piden datos.
  * Ningún componente visual llama a fetch() ni a js/demoData.js directo.
@@ -35,13 +35,16 @@
  * 22 de agosto de 2026 — se agregaron 5 funciones más para las ventas y
  * pedidos de Mercado Libre (getResumenMercadoLibre, getGraficoVentasMercadoLibre,
  * getProductosMasVendidosMercadoLibre, getPedidosMercadoLibre,
- * getProductosVendidosEnMercadoLibre). Hoy leen y CALCULAN todo a partir de
- * LC.demoData.pedidosML (datos de ejemplo). El día de mañana, cada una se
- * reemplaza por una consulta a la tabla `orders`/`order_items` ya diseñada
- * en la base de datos (ver backend/DATABASE.md) — el cálculo (sumas,
- * agrupaciones, filtros) se puede seguir haciendo acá o moverlo al backend;
- * lo importante es que las pantallas de Mercado Libre y el Dashboard siguen
- * llamando exactamente a estas mismas funciones, sin cambios.
+ * getProductosVendidosEnMercadoLibre). En Demo Mode calculan todo a partir
+ * de LC.demoData.pedidosML (datos de ejemplo, nunca en modo real desde el
+ * 6 de septiembre de 2026 — hallazgo de auditoría comercial: antes se
+ * usaban SIEMPRE, así que una empresa real sin ventas veía cifras
+ * inventadas). En modo real devuelven honestamente "sin ventas todavía"
+ * (no hay ningún job que sincronice pedidos reales de Mercado Libre a la
+ * tabla `orders`/`order_items` todavía) — el día que exista, acá es donde
+ * hay que reemplazar esa rama por la consulta real; las pantallas de
+ * Mercado Libre y el Dashboard siguen llamando exactamente a estas mismas
+ * funciones, sin cambios.
  */
 
 window.LC = window.LC || {};
@@ -94,12 +97,15 @@ window.LC = window.LC || {};
       conStock: data.catalogo.conStock,
       sinStock: data.catalogo.sinStock,
       stockBajo: data.catalogo.stockBajo,
+      productosConImagenes: data.catalogo.productosConImagenes,
       ultimaActualizacion: new Date(data.ultimaActualizacion),
       alertasStockBajo: data.catalogo.alertasStockBajo,
       alertasSinStock: data.catalogo.alertasSinStock,
       rentabilidad: data.rentabilidad,
       ventas: data.ventas,
       mercadoLibre: data.mercadoLibre,
+      publicaciones: data.publicaciones,
+      suscripcion: data.suscripcion,
     };
   }
 
@@ -115,23 +121,32 @@ window.LC = window.LC || {};
   }
 
   async function getEstadoSistema() {
-    const base = { woocommerce: { estado: "no_conectado", detalle: "Pendiente de configuración" } };
+    // 6 de septiembre de 2026 — auditoría comercial pre-cliente: se sacó
+    // WooCommerce de acá (nunca fue una integración real por-empresa, solo
+    // credenciales globales de un único piloto legacy — ver
+    // backend/app/api/routes/productos.py) y se agregó Google Sheets, que
+    // SÍ es una integración real desde el 5 de septiembre de 2026. Nunca
+    // mostrarle a un cliente el estado de una integración que no existe.
     if ((await getModo()) === "real") {
-      const res = await LC.backendApi.fetchMercadoLibreEstado();
-      if (res.ok) {
-        const ml = res.data;
-        return {
-          ...base,
-          mercadoLibre: ml.conectado
-            ? { estado: "conectado", detalle: `Cuenta ${ml.cuentaExternaId}` }
-            : { estado: "no_conectado", detalle: ml.credencialesConfiguradas ? "Credenciales configuradas — falta autorizar la cuenta" : "Pendiente de configuración" },
-          baseDeDatos: { estado: "conectada", detalle: "Backend real conectado" },
-        };
-      }
+      const [resMl, resGs] = await Promise.all([
+        LC.backendApi.fetchMercadoLibreEstado(),
+        LC.backendApi.fetchGoogleSheetsEstado(),
+      ]);
+      const estadoConexion = (res, detalleConectado) =>
+        res.ok
+          ? res.data.conectado
+            ? { estado: "conectado", detalle: detalleConectado(res.data) }
+            : { estado: "no_conectado", detalle: res.data.credencialesConfiguradas ? "Credenciales configuradas — falta autorizar la cuenta" : "Pendiente de configuración" }
+          : { estado: "no_conectado", detalle: "Pendiente de configuración" };
+      return {
+        mercadoLibre: estadoConexion(resMl, (d) => `Cuenta ${d.cuentaExternaId}`),
+        googleSheets: estadoConexion(resGs, (d) => (d.spreadsheetTitulo ? `Catálogo: ${d.spreadsheetTitulo}` : "Conectado")),
+        baseDeDatos: { estado: "conectada", detalle: "Backend real conectado" },
+      };
     }
     return {
-      ...base,
       mercadoLibre: { estado: "no_conectado", detalle: "Pendiente de configuración" },
+      googleSheets: { estado: "no_conectado", detalle: "Pendiente de configuración" },
       baseDeDatos: { estado: "demo", detalle: "Demo / Sin conexión" },
     };
   }
@@ -198,35 +213,55 @@ window.LC = window.LC || {};
 
   // ------------------------------------------------------------------
   // Integraciones — con qué sistemas puede conectarse la empresa. Mercado
-  // Libre usa su estado real (GET /api/mercadolibre/estado); las demás
-  // todavía no tienen conexión real, así que se muestran honestamente como
-  // "no conectado" o "próximamente" — nunca inventado.
+  // Libre usa su estado real (GET /api/mercadolibre/estado); Excel/CSV
+  // siempre está disponible. Solo se listan integraciones que existen de
+  // verdad hoy — nunca una prometida ("próximamente") que todavía no está
+  // construida, ver 6 de septiembre de 2026 más abajo.
   // ------------------------------------------------------------------
 
   async function getIntegraciones() {
     const modo = await getModo();
     let ml = { estado: "no_conectado", detalle: "Pendiente de configuración" };
+    let gs = { estado: "no_conectado", detalle: "Pendiente de configuración" };
     if (modo === "real") {
-      const res = await LC.backendApi.fetchMercadoLibreEstado();
-      if (res.ok) {
-        ml = res.data.conectado
-          ? { estado: "conectado", detalle: `Tu cuenta está conectada correctamente${res.data.nickname ? ` (${res.data.nickname})` : ""}.` }
+      const [resMl, resGs] = await Promise.all([
+        LC.backendApi.fetchMercadoLibreEstado(),
+        LC.backendApi.fetchGoogleSheetsEstado(),
+      ]);
+      if (resMl.ok) {
+        ml = resMl.data.conectado
+          ? { estado: "conectado", detalle: `Tu cuenta está conectada correctamente${resMl.data.nickname ? ` (${resMl.data.nickname})` : ""}.` }
           : {
               estado: "no_conectado",
-              detalle: res.data.credencialesConfiguradas
+              detalle: resMl.data.credencialesConfiguradas
                 ? "Conecta tu cuenta para comenzar."
                 : "Conecta tu cuenta para comenzar — falta configurar las credenciales en el servidor.",
             };
       }
+      if (resGs.ok) {
+        gs = resGs.data.conectado
+          ? { estado: "conectado", detalle: resGs.data.spreadsheetTitulo ? `Usando "${resGs.data.spreadsheetTitulo}" como catálogo.` : "Conectado — todavía no elegiste una hoja de cálculo." }
+          : {
+              estado: "no_conectado",
+              detalle: resGs.data.credencialesConfiguradas
+                ? "Conecta tu cuenta de Google para usar una hoja de cálculo como catálogo."
+                : "Conecta tu cuenta para comenzar — falta configurar las credenciales en el servidor.",
+            };
+      }
     }
+    // 6 de septiembre de 2026 — auditoría comercial: se sacó WooCommerce (no
+    // es una integración real por-empresa hoy, solo credenciales globales de
+    // un único piloto legacy — ver backend/app/api/routes/productos.py) y
+    // Shopify (no existe). Google Sheets SÍ es real desde el 5 de septiembre
+    // de 2026 (ver app/api/routes/google_sheets.py) — no se le promete al
+    // cliente una integración que no puede usar, pero tampoco se le esconde
+    // una que sí puede.
     return {
       modo,
       integraciones: [
         { id: "mercadolibre", nombre: "Mercado Libre", categoria: "Canal de venta", ...ml, ruta: "/mercadolibre" },
-        { id: "woocommerce", nombre: "WooCommerce", categoria: "Canal de venta", estado: "no_conectado", detalle: "Pendiente de configuración", ruta: null },
         { id: "excel", nombre: "Excel / CSV", categoria: "Importación de catálogo", estado: "disponible", detalle: "Siempre disponible — sube un archivo cuando quieras", ruta: "/importar" },
-        { id: "shopify", nombre: "Shopify", categoria: "Canal de venta", estado: "proximamente", detalle: "Todavía no disponible", ruta: null },
-        { id: "sheets", nombre: "Google Sheets", categoria: "Importación de catálogo", estado: "proximamente", detalle: "Todavía no disponible", ruta: null },
+        { id: "google-sheets", nombre: "Google Sheets", categoria: "Importación de catálogo", ...gs, ruta: "/google-sheets" },
       ],
     };
   }
@@ -266,7 +301,27 @@ window.LC = window.LC || {};
     };
   }
 
+  // 6 de septiembre de 2026 — hallazgo de auditoría comercial: estas 5
+  // funciones leían SIEMPRE de LC.demoData.pedidosML, incluso con el
+  // backend real conectado — una empresa real, recién registrada, sin
+  // ninguna venta real, veía cifras de ventas y "más vendidos" inventados
+  // en su propio Dashboard. Nunca hay hoy ningún job que importe pedidos
+  // reales de Mercado Libre a la tabla `orders` (confirmado: ningún
+  // endpoint hace `db.add(Order(...))` todavía) — así que en modo real la
+  // respuesta honesta es "sin ventas todavía", nunca datos de ejemplo.
+  // Mismo criterio que getSincronizacion() de abajo, que ya devuelve
+  // "no_conectado" fijo por la misma razón. El día que exista sincronización
+  // real de ventas, acá es donde hay que reemplazar el bloque `if` de abajo
+  // por la consulta real a `orders`/`order_items`.
+  const RESUMEN_ML_VACIO = {
+    ventasHoy: 0, pedidosHoy: 0, ventasAyer: 0, pedidosAyer: 0,
+    ventasUltimos7Dias: 0, pedidosUltimos7Dias: 0, ventasMes: 0, pedidosMes: 0,
+    productosVendidosMes: 0, ticketPromedioMes: 0,
+    pedidosPendientes: 0, pedidosEnviados: 0, pedidosEntregados: 0, pedidosCancelados: 0,
+  };
+
   async function getResumenMercadoLibre() {
+    if ((await getModo()) === "real") return { ...RESUMEN_ML_VACIO };
     const pedidos = LC.demoData.pedidosML;
     const hoy = new Date();
     const ayer = new Date(hoy);
@@ -329,6 +384,9 @@ window.LC = window.LC || {};
     for (let d = new Date(desde); d <= startOfDay(hoy); d.setDate(d.getDate() + 1)) {
       dias.push(new Date(d));
     }
+    // Real: sin sincronización de ventas todavía, ver comentario de
+    // getResumenMercadoLibre — el gráfico se muestra igual, en cero.
+    if ((await getModo()) === "real") return dias.map((fecha) => ({ fecha, ingresos: 0, pedidos: 0 }));
     const pedidos = LC.demoData.pedidosML.filter((p) => p.estado !== "cancelado" && startOfDay(p.fecha) >= desde);
 
     return dias.map((fecha) => {
@@ -342,6 +400,7 @@ window.LC = window.LC || {};
   }
 
   async function getProductosMasVendidosMercadoLibre(rango, limite) {
+    if ((await getModo()) === "real") return [];
     const hoy = new Date();
     const desde = rangoAFechaInicio(rango || "30d", hoy);
     const pedidos = LC.demoData.pedidosML.filter((p) => p.estado !== "cancelado" && startOfDay(p.fecha) >= desde);
@@ -358,6 +417,7 @@ window.LC = window.LC || {};
 
   async function getPedidosMercadoLibre(opts) {
     const { search = "", estado = "todos", producto = "todos", page = 1, pageSize = 10 } = opts || {};
+    if ((await getModo()) === "real") return { rows: [], total: 0, page: 1, totalPages: 1 };
     let rows = [...LC.demoData.pedidosML].sort((a, b) => b.fecha - a.fecha);
 
     if (estado !== "todos") rows = rows.filter((p) => p.estado === estado);
@@ -378,6 +438,7 @@ window.LC = window.LC || {};
   }
 
   async function getProductosVendidosEnMercadoLibre() {
+    if ((await getModo()) === "real") return [];
     // Lista de nombres de producto distintos que aparecen en pedidos —
     // usada para el filtro "Producto" de la tabla de pedidos.
     const nombres = new Set(LC.demoData.pedidosML.map((p) => p.productoNombre));
@@ -394,10 +455,46 @@ window.LC = window.LC || {};
     };
   }
 
+  // 5 de septiembre de 2026 — "Mi plan" pasa a leer la Subscription real
+  // (GET /api/suscripcion, ver backend) cuando hay backend disponible.
+  // Nunca permite elegir plan por su cuenta (real=true): mientras no exista
+  // un proveedor de pago conectado, cambiar de plan es exclusivo del
+  // administrador de Nexo (ver ADMINISTRADOR.md / admin.py) — la pantalla
+  // se muestra de solo lectura en modo real, con "planes: []".
+  function adaptarSuscripcion(data) {
+    if (!data.plan) {
+      // Empresa vieja, creada antes de que existiera el sistema de planes
+      // (ver app/domain/plans.py) — nunca se inventa un plan acá.
+      return {
+        real: true, sinPlan: true,
+        plan: { nombre: "Sin plan asignado", limite: null, precio: "—", features: [] },
+        productosUtilizados: data.uso.productos, publicacionesUtilizadas: data.uso.publicaciones,
+        fechaRenovacion: null, estado: null, planes: [],
+      };
+    }
+    return {
+      real: true,
+      plan: {
+        id: data.plan.codigo, nombre: data.plan.nombre, limite: data.plan.limiteProductos,
+        limitePublicaciones: data.plan.limitePublicaciones, precio: data.plan.precio, features: data.plan.features,
+      },
+      estado: data.estado,
+      productosUtilizados: data.uso.productos,
+      publicacionesUtilizadas: data.uso.publicaciones,
+      fechaRenovacion: data.fechaRenovacion ? new Date(data.fechaRenovacion) : null,
+      planes: [],
+    };
+  }
+
   async function getSuscripcion() {
+    if ((await getModo()) === "real") {
+      const res = await LC.backendApi.fetchMiSuscripcion();
+      if (res.ok) return adaptarSuscripcion(res.data);
+    }
     const planId = LC.settings.getCurrentPlanId();
     const plan = LC.demoData.plans.find((p) => p.id === planId) || LC.demoData.plans[0];
     return {
+      real: false,
       plan,
       productosUtilizados: LC.demoData.catalogRows.length,
       fechaRenovacion: (() => {

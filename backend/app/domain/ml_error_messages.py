@@ -63,6 +63,13 @@ def mensaje_amigable_error_publicacion(response_body: Optional[dict[str, Any]]) 
         return "La categoría seleccionada no es válida para este producto."
     if any(c.startswith("item.price") for c in codigos):
         return "El precio ingresado no es válido para esta publicación."
+    # 6 de septiembre de 2026 — caso real más específico dentro de
+    # "item.attribute": el identificador del producto (GTIN/EAN/UPC) mal
+    # formado o rechazado — mensaje puntual en vez del genérico de
+    # atributos, mismo código real documentado arriba
+    # (item.attribute.product_identifier.invalid_format).
+    if any("product_identifier" in c for c in codigos):
+        return "El código de barras (GTIN/EAN/UPC) de este producto no es válido para Mercado Libre. Corregilo en la ficha del producto."
     if any(c.startswith("item.attribute") for c in codigos):
         return "Faltan algunos datos obligatorios del producto. Revisá los atributos marcados."
     return MENSAJE_GENERICO

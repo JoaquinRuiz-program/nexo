@@ -22,11 +22,11 @@ window.LC = window.LC || {};
 (function () {
   const DEFAULTS = {
     lowStockThreshold: 5,
-    currentPlanId: "starter",
+    currentPlanId: "basico",
     notifStock: true,
     notifSync: true,
     notifImportant: true,
-    storeName: "La Librería Online",
+    storeName: "",
   };
 
   function readAll() {

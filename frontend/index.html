@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/styles.css?v=4" />
+  <link rel="stylesheet" href="css/styles.css?v=5" />
 </head>
 <body class="min-h-screen w-full bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200">
 
@@ -96,7 +96,7 @@
           </div>
           <div>
             <label class="form-label" for="signup-company">Nombre de tu empresa</label>
-            <input id="signup-company" type="text" required autocomplete="organization" placeholder="Ej: Librería Central" class="form-input" />
+            <input id="signup-company" type="text" required autocomplete="organization" placeholder="Ej: Mi Empresa" class="form-input" />
           </div>
           <div>
             <label class="form-label" for="signup-email">Email</label>
@@ -171,7 +171,10 @@
             <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5.5A6.5 6.5 0 0 0 5 8"/><path d="M4 3v3.5h3.5"/><path d="M4 14.5A6.5 6.5 0 0 0 15 12"/><path d="M16 17v-3.5h-3.5"/></svg></span> Automatizaciones
           </a>
           <a href="#/suscripcion" data-route="suscripcion" class="nav-link">
-            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><path d="M2.5 8.5h15"/></svg></span> Suscripción
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><path d="M2.5 8.5h15"/></svg></span> Mi plan
+          </a>
+          <a href="#/soporte" data-route="soporte" class="nav-link">
+            <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M7.8 7.8a2.2 2.2 0 1 1 3.3 1.9c-.7.4-1.1.9-1.1 1.8v.3"/><circle cx="10" cy="14" r="0.15" fill="currentColor"/></svg></span> Ayuda y soporte
           </a>
           <a href="#/configuracion" data-route="configuracion" class="nav-link">
             <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h4.4M12.6 6H16"/><circle cx="10.5" cy="6" r="1.6" fill="currentColor" stroke="none"/><path d="M4 10.5h2M9 10.5H16"/><circle cx="6.5" cy="10.5" r="1.6" fill="currentColor" stroke="none"/><path d="M4 15h8.4M16 15h.01"/><circle cx="14" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></span> Configuración
@@ -206,7 +209,7 @@
               </button>
               <div id="user-menu-dropdown" class="hidden absolute right-0 mt-2 w-52 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg py-1.5 z-50">
                 <button data-action="account" class="dropdown-item">Mi cuenta</button>
-                <button data-action="subscription" class="dropdown-item">Suscripción</button>
+                <button data-action="subscription" class="dropdown-item">Mi plan</button>
                 <button data-action="settings" class="dropdown-item">Configuración</button>
                 <div class="my-1 border-t border-slate-100 dark:border-slate-700"></div>
                 <button data-action="logout" class="dropdown-item dropdown-item--danger">Cerrar sesión</button>
@@ -223,17 +226,19 @@
   <script src="js/env.js?v=2"></script>
   <script src="js/ui.js?v=6"></script>
   <script src="js/theme.js?v=2"></script>
-  <script src="js/settings.js?v=3"></script>
+  <script src="js/settings.js?v=4"></script>
   <script src="js/chart.js?v=2"></script>
-  <script src="js/demoData.js?v=2"></script>
-  <script src="js/dataSource.js?v=6"></script>
-  <script src="js/backendApi.js?v=13"></script>
+  <script src="js/demoData.js?v=4"></script>
+  <script src="js/dataSource.js?v=11"></script>
+  <script src="js/backendApi.js?v=16"></script>
   <script src="js/demoImportResult.js?v=2"></script>
   <script src="js/importFlow.js?v=4"></script>
-  <script src="js/mercadolibrePublicar.js?v=12"></script>
-  <script src="js/adminPanel.js?v=4"></script>
+  <script src="js/mercadolibrePublicar.js?v=13"></script>
+  <script src="js/googleSheetsFlow.js?v=1"></script>
+  <script src="js/adminPanel.js?v=9"></script>
+  <script src="js/soporte.js?v=1"></script>
   <script src="js/auth.js?v=4"></script>
-  <script src="js/app.js?v=22"></script>
+  <script src="js/app.js?v=32"></script>
   <script src="js/router.js?v=5"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Librería Central — gráfico de barras minimalista, dibujado a mano sobre
+ * Nexo — gráfico de barras minimalista, dibujado a mano sobre
  * <canvas>. A propósito NO se usa ninguna librería externa (Chart.js,
  * etc.): esta pantalla no necesita nada más que barras simples con eje X de
  * fechas, y evitar una dependencia (y una carga desde un CDN externo que

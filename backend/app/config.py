@@ -74,6 +74,24 @@ class Settings(BaseSettings):
     # solo si la cuenta de Mercado Libre es de otro país.
     mercadolibre_auth_domain: str = "auth.mercadolibre.cl"
 
+    # OAuth de Google, SOLO para la integración de Google Sheets como fuente
+    # de catálogo (app/adapters/google_sheets.py) — 5 de septiembre de 2026.
+    # Se generan creando un "OAuth client ID" tipo "Web application" en
+    # https://console.cloud.google.com/apis/credentials (proyecto de NEXO,
+    # NO uno por cliente — mismo criterio que MERCADOLIBRE_CLIENT_ID/SECRET
+    # más abajo). Vacíos por defecto: sin esto, /api/google-sheets/conectar
+    # devuelve un error claro diciendo exactamente qué falta.
+    #
+    # A diferencia de Mercado Libre, Google SÍ permite "http://localhost..."
+    # como Redirect URI registrada (verificado contra la documentación
+    # oficial vigente el 5 de septiembre de 2026) — no hace falta un túnel
+    # HTTPS para probar esto en desarrollo local.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # URL de este backend que Google debe llamar después del login (tiene
+    # que coincidir EXACTO con la registrada en Google Cloud Console).
+    google_redirect_uri: str = ""
+
     # URL del frontend (frontend/index.html) — a dónde redirige
     # /api/mercadolibre/callback después de procesar la autorización (con
     # ?ml=conectado o ?ml=error&razon=..., antes del "#", para que sea un
@@ -107,6 +125,22 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = False
     session_ttl_hours: int = 24  # sesión normal ("Recordarme" desmarcado)
     session_ttl_hours_recordarme: int = 24 * 30  # "Recordarme" marcado
+
+    # 5 de septiembre de 2026 — subida real de imágenes desde el
+    # computador (ver app/domain/image_storage.py): se guardan en disco
+    # local (sin costo/cuenta externa que crear, ver decisión en
+    # DEPLOY.md) y se sirven con StaticFiles (app/main.py, /uploads/...).
+    # `ProductImage.url` necesita una URL ABSOLUTA (Mercado Libre la
+    # consume directo, no conoce a Nexo) — por eso hace falta saber acá la
+    # URL pública de ESTE backend, igual criterio que
+    # mercadolibre_redirect_uri. En dev, localhost:8000 sirve para probar
+    # el flujo completo salvo el último paso real con Mercado Libre (que
+    # exige una URL pública de verdad, ver DEPLOY.md).
+    backend_public_base_url: str = "http://localhost:8000"
+    # Carpeta física donde se guardan los archivos — relativa al proceso
+    # de `uvicorn` si no es absoluta. En producción, conviene que sea un
+    # disco persistente (no se borra al redesplegar).
+    uploads_dir: str = "uploads"
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
@@ -152,5 +186,8 @@ def print_env_diagnostics(settings: Settings) -> None:
     print(f"  MERCADOLIBRE_CLIENT_ID={settings.mercadolibre_client_id or '(no definida)'}")
     print(f"  MERCADOLIBRE_CLIENT_SECRET={mask_secret(settings.mercadolibre_client_secret)}")
     print(f"  MERCADOLIBRE_REDIRECT_URI={settings.mercadolibre_redirect_uri or '(no definida)'}")
+    print(f"  GOOGLE_CLIENT_ID={settings.google_client_id or '(no definida)'}")
+    print(f"  GOOGLE_CLIENT_SECRET={mask_secret(settings.google_client_secret)}")
+    print(f"  GOOGLE_REDIRECT_URI={settings.google_redirect_uri or '(no definida)'}")
     print(f"  FRONTEND_BASE_URL={settings.frontend_base_url}")
     print(f"  TOKEN_ENCRYPTION_KEY={mask_secret(settings.token_encryption_key)}")

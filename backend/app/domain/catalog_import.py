@@ -9,7 +9,8 @@ prototipo original no tenía porque no existía todavía el concepto de
 rentabilidad ni de catálogo universal.
 
 Decisión central (24 de agosto de 2026): el sistema NO debe asumir que
-todos los negocios usan las mismas columnas que la librería. Este módulo
+todos los negocios usan las mismas columnas que el primer cliente piloto.
+Este módulo
 solo reconoce SINÓNIMOS de columna — nunca exige un nombre exacto. Un
 Excel de ferretería, de ropa o "desordenado" (columnas con nombres
 distintos, datos faltantes) tiene que poder mapearse igual que uno hecho a
@@ -276,4 +277,27 @@ def summarize_rows(rows: list[RowResult]) -> dict[str, int]:
         "validos": sum(1 for r in rows if r.estado == "valido"),
         "revision": sum(1 for r in rows if r.estado == "revision"),
         "errores": sum(1 for r in rows if r.estado == "error"),
+    }
+
+
+def row_to_dict(r: RowResult) -> dict:
+    """Forma JSON de una fila validada — la misma para cualquier origen
+    (Excel/CSV subido, Google Sheets), factorizado el 5 de septiembre de
+    2026 al agregar el segundo origen para no duplicar este mapeo entre
+    app/api/routes/catalogo.py y app/api/routes/google_sheets.py."""
+    return {
+        "fila": r.row_index,
+        "sku": r.sku,
+        "nombre": r.nombre,
+        "marca": r.marca,
+        "categoria": r.categoria,
+        "precio": r.precio,
+        "costo": r.costo,
+        "stock": r.stock,
+        "descripcion": r.descripcion,
+        "imagenUrl": r.imagen_url,
+        "codigoBarras": r.codigo_barras,
+        "estado": r.estado,
+        "problemas": r.problemas,
+        "duplicado": r.duplicado,
     }

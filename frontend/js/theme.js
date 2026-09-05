@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Librería Central — modo oscuro.
+ * Nexo — modo oscuro.
  *
  * Guarda la preferencia ("light" | "dark" | "auto") en localStorage y
  * aplica/quita la clase "dark" en <html>, que es lo que Tailwind (con

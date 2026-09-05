@@ -24,10 +24,12 @@ from app.db.base import Base
 from app.db.models import (
     ChannelCostSettings,
     MarketplaceAccount,
+    MarketplaceListing,
     Product,
     ProductVariant,
     Store,
     StoreSettings,
+    SupportTicket,
     User,
 )
 from app.db.session import get_db
@@ -257,3 +259,108 @@ def test_usuario_suspendido_no_puede_iniciar_sesion(client, db_session):
 
     res = client.post("/api/auth/login", json={"email": "bloqueado@empresas.cl", "password": "clave-real-123"})
     assert res.status_code == 403
+
+
+# ------------------------------------------------------------------
+# GET /api/admin/usuarios — vista cruzada de usuarios (todas las empresas)
+# ------------------------------------------------------------------
+
+
+def test_usuario_comun_no_puede_listar_usuarios(client, db_session):
+    usuario, tienda = _crear_empresa(db_session, email="comun@empresas.cl", nombre_empresa="Empresa Común")
+    autenticar(client, db_session, usuario, tienda, ahora=NOW)
+
+    res = client.get("/api/admin/usuarios")
+    assert res.status_code == 404
+
+
+def test_admin_ve_usuarios_de_todas_las_empresas(client, db_session):
+    _crear_empresa(db_session, email="uno@empresas.cl", nombre_empresa="Empresa Uno")
+    _crear_empresa(db_session, email="dos@empresas.cl", nombre_empresa="Empresa Dos")
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    res = client.get("/api/admin/usuarios")
+    assert res.status_code == 200, res.text
+    emails = {u["email"] for u in res.json()}
+    assert {"uno@empresas.cl", "dos@empresas.cl", "admin@nexo.cl"} <= emails
+    fila_admin = next(u for u in res.json() if u["email"] == "admin@nexo.cl")
+    assert fila_admin["esNexoAdmin"] is True
+    assert fila_admin["empresa"] is None
+    fila_cliente = next(u for u in res.json() if u["email"] == "uno@empresas.cl")
+    assert fila_cliente["empresa"]["nombre"] == "Empresa Uno"
+    assert "password" not in res.text.lower()
+
+
+# ------------------------------------------------------------------
+# 6 de septiembre de 2026 — perfil de empresa completo (auditoría
+# comercial): el detalle de cliente ahora trae la lista real de
+# productos/publicaciones/soporte de ESA empresa — nunca mezclada con la
+# de otra.
+# ------------------------------------------------------------------
+
+
+def test_detalle_de_cliente_trae_productos_publicaciones_y_soporte_solo_de_esa_empresa(client, db_session):
+    _usuario_a, tienda_a = _crear_empresa(db_session, email="detalle-a@empresas.cl", nombre_empresa="Empresa Detalle A", con_producto=True, con_ml_conectado=True)
+    usuario_b, tienda_b = _crear_empresa(db_session, email="detalle-b@empresas.cl", nombre_empresa="Empresa Detalle B", con_producto=True)
+
+    cuenta_ml_a = db_session.query(MarketplaceAccount).filter_by(store_id=tienda_a.id).one()
+    producto_a = db_session.query(Product).filter_by(store_id=tienda_a.id).one()
+    db_session.add(MarketplaceListing(account=cuenta_ml_a, product=producto_a, external_listing_id="MLC-A", status="active", price=1000, created_at=NOW))
+    db_session.add(SupportTicket(store=tienda_a, user=_usuario_a, category="otro", subject="Ticket de A", description="x", status="abierto", created_at=NOW, updated_at=NOW))
+    db_session.add(SupportTicket(store=tienda_b, user=usuario_b, category="otro", subject="Ticket de B", description="x", status="abierto", created_at=NOW, updated_at=NOW))
+    db_session.commit()
+
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    detalle_a = client.get(f"/api/admin/clientes/{tienda_a.id}").json()
+    assert detalle_a["productos"]["cantidad"] == 1
+    assert [p["sku"] for p in detalle_a["productos"]["filas"]] == ["SKU-1"]
+    assert detalle_a["publicaciones"]["total"] == 1
+    assert detalle_a["publicaciones"]["filas"][0]["externalListingId"] == "MLC-A"
+    assert detalle_a["soporte"]["ticketsAbiertos"] == 1
+    assert [s["asunto"] for s in detalle_a["soporte"]["solicitudes"]] == ["Ticket de A"]
+    assert detalle_a["cantidadUsuarios"] == 1
+
+    detalle_b = client.get(f"/api/admin/clientes/{tienda_b.id}").json()
+    assert detalle_b["publicaciones"]["total"] == 0
+    assert detalle_b["soporte"]["ticketsAbiertos"] == 1
+    assert [s["asunto"] for s in detalle_b["soporte"]["solicitudes"]] == ["Ticket de B"]
+
+
+# ------------------------------------------------------------------
+# 6 de septiembre de 2026 — registro simple de acciones administrativas
+# (opcional en el pedido original, implementado porque no requirió nada
+# de arquitectura nueva). Nunca acciones de un cliente sobre sus propios
+# datos, solo las 3 acciones reales del admin: suspender/reactivar,
+# cambiar suscripción, responder soporte.
+# ------------------------------------------------------------------
+
+
+def test_suspender_reactivar_y_cambiar_suscripcion_quedan_en_el_registro_administrativo(client, db_session):
+    _usuario, tienda = _crear_empresa(db_session, email="log-a@empresas.cl", nombre_empresa="Empresa Log A")
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+    client.get("/api/admin/planes")  # siembra los planes reales
+
+    client.put(f"/api/admin/clientes/{tienda.id}/estado", json={"suspendido": True})
+    client.put(f"/api/admin/clientes/{tienda.id}/suscripcion", json={"planCode": "basico", "estado": "active"})
+
+    detalle = client.get(f"/api/admin/clientes/{tienda.id}").json()
+    acciones = [a["accion"] for a in detalle["accionesAdministrativas"]]
+    assert "suspender" in acciones
+    assert "asignar_plan_inicial" in acciones
+    assert all(a["admin"] == "admin@nexo.cl" for a in detalle["accionesAdministrativas"])
+
+
+def test_registro_administrativo_de_una_empresa_nunca_mezcla_el_de_otra(client, db_session):
+    _usuario_a, tienda_a = _crear_empresa(db_session, email="log-b@empresas.cl", nombre_empresa="Empresa Log B")
+    _usuario_c, tienda_c = _crear_empresa(db_session, email="log-c@empresas.cl", nombre_empresa="Empresa Log C")
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    client.put(f"/api/admin/clientes/{tienda_a.id}/estado", json={"suspendido": True})
+
+    detalle_c = client.get(f"/api/admin/clientes/{tienda_c.id}").json()
+    assert detalle_c["accionesAdministrativas"] == []

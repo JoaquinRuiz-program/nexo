@@ -65,7 +65,14 @@ No lo compra Claude — lo comprás vos en cualquier registrador (Cloudflare Reg
 Gratis y automático en todas las opciones recomendadas arriba (Let's Encrypt integrado) — no hace falta comprar ni configurar un certificado a mano.
 
 ### Almacenamiento de imágenes
-**No hace falta provisionar nada.** Confirmado en el código (`ProductImage.url`, `source="excel_url"`): Nexo nunca sube ni guarda archivos de imagen — solo guarda la URL que ya viene en el Excel del cliente (imágenes alojadas en su propia tienda WooCommerce o donde sea). Si en el futuro Nexo permite subir imágenes directamente, ahí sí hará falta un bucket (S3, Cloudflare R2) — no es necesario para el primer cliente.
+**Actualizado 6 de septiembre de 2026 — esto ya NO es cierto** (quedó obsoleto desde que existe la subida real de imágenes, `app/domain/image_storage.py`): Nexo SÍ guarda archivos ahora — en disco local, servidos con `StaticFiles` en `/uploads/...` (ver `app/main.py`, variable `UPLOADS_DIR`).
+
+Esto funciona bien para un primer cliente/piloto, pero tiene DOS requisitos reales que hay que resolver antes de desplegar, no después:
+
+1. **Disco persistente**: casi todo hosting moderno (Render, Railway, Fly.io) usa contenedores efímeros por defecto — un redeploy borra `UPLOADS_DIR` si no está montado sobre un volumen persistente. Sin esto, las imágenes de los clientes desaparecen en el próximo deploy. Casi todos estos proveedores ofrecen "persistent disk"/"volume" — hay que activarlo explícitamente y apuntar `UPLOADS_DIR` ahí.
+2. **`BACKEND_PUBLIC_BASE_URL` tiene que ser la URL pública real** (`https://api.tudominio.cl`) — Mercado Libre pide la imagen desde SUS servidores, nunca desde el navegador del dueño: si esta variable queda en `localhost`, la publicación se crea pero Mercado Libre no puede descargar la imagen.
+
+**Limitación real a tener presente, no a resolver ahora**: con disco local, escalar el backend a más de una instancia/réplica requeriría que todas compartan el mismo disco (no es el caso por defecto) — con un solo cliente o unos pocos, un solo proceso de backend alcanza de sobra, así que esto no bloquea nada hoy. Si más adelante hace falta más de una instancia del backend, ahí sí conviene migrar a un bucket (S3, Cloudflare R2, Backblaze B2) — es un cambio acotado a un solo archivo (`image_storage.py`, que ya trabaja en términos de "una URL", nunca de ruta física en el resto del código), no una reescritura. No se hizo ahora porque agregaría una cuenta/credencial externa nueva sin necesidad real todavía.
 
 ### Backups
 Cubierto por el proveedor de Postgres elegido (backup automático diario, ver tabla de arriba) — no hace falta construir nada propio. Confirmar en el panel del proveedor que el backup automático está habilitado ANTES de cargar datos reales.
@@ -86,8 +93,12 @@ commiteado a Git — `.env` ya está en `.gitignore`).
 | `TOKEN_ENCRYPTION_KEY` | Generar de cero, nunca reusar la de desarrollo | `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Guardarla en un gestor de secretos con backup — perderla desconecta Mercado Libre de todos los clientes (ver sección Mercado Libre). |
 | `MERCADOLIBRE_CLIENT_ID` / `MERCADOLIBRE_CLIENT_SECRET` | Los de la app real de Mercado Libre, registrada con la Redirect URI de producción (ver sección Mercado Libre) | Nunca los de una app de prueba. |
 | `MERCADOLIBRE_REDIRECT_URI` | `https://api.tudominio.cl/api/mercadolibre/callback` | Tiene que coincidir EXACTO con lo registrado en developers.mercadolibre.cl. |
-| `FRONTEND_BASE_URL` | `https://app.tudominio.cl` | A dónde redirige el backend después del OAuth de Mercado Libre. |
-| `WOOCOMMERCE_LEGACY_STORE_ID` | El `store_id` real de Librería Central en la base de producción (no el de dev) | Ver `ADMIN_NEXO.md` para cómo consultarlo. Dejar sin definir si no se usa el reporte de WooCommerce todavía. |
+| `FRONTEND_BASE_URL` | `https://app.tudominio.cl` | A dónde redirige el backend después del OAuth de Mercado Libre y de Google. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Los de la app OAuth real creada en console.cloud.google.com (ver `DATABASE.md`, sección "Google Sheets real") | **5 de septiembre de 2026.** Nunca los de un proyecto de prueba. Pendiente de crear — no bloquea el resto del despliegue, la integración queda deshabilitada (con mensaje claro) hasta que existan. |
+| `GOOGLE_REDIRECT_URI` | `https://api.tudominio.cl/api/google-sheets/callback` | Tiene que coincidir EXACTO con la Redirect URI registrada en Google Cloud Console. |
+| `WOOCOMMERCE_LEGACY_STORE_ID` | El `store_id` real del cliente piloto de WooCommerce en la base de producción (no el de dev) | Ver `ADMIN_NEXO.md` para cómo consultarlo. Dejar sin definir si no se usa el reporte de WooCommerce todavía. |
+| `BACKEND_PUBLIC_BASE_URL` | `https://api.tudominio.cl` | **Nuevo** (6 de septiembre de 2026) — URL con la que Nexo arma el link público de cada imagen subida. Si queda en `localhost`, Mercado Libre no puede descargar la imagen y el ítem se crea sin foto real. |
+| `UPLOADS_DIR` | Ruta a un disco/volumen PERSISTENTE del proveedor de hosting | Ver sección "Almacenamiento de imágenes" arriba — sin un volumen persistente, un redeploy borra las imágenes de los clientes. |
 
 `frontend/js/env.js` (el único archivo del frontend que cambia entre entornos):
 ```js
@@ -122,7 +133,7 @@ Con **un solo worker** al principio si es posible (ver nota de `_pending_states`
 **No migrar los datos del SQLite de desarrollo.** El propio `DATABASE.md`
 confirma que el SQLite local está en estado de prueba (catálogo de
 prueba, sin costos ni canales configurados) — no hay datos reales de
-Librería Central que valga la pena preservar. Arrancar producción con una
+ningún cliente que valga la pena preservar. Arrancar producción con una
 base vacía y cargar los datos reales por los flujos normales de la app es
 más simple y más seguro que escribir un migrador ad-hoc.
 
@@ -154,6 +165,7 @@ Pasos exactos:
 | `app.tudominio.cl` (o el que elijas) | Frontend estático | DNS del registrador → proveedor de hosting del frontend |
 | `api.tudominio.cl` | Backend FastAPI | DNS del registrador → proveedor de hosting del backend |
 | Redirect URI de Mercado Libre | `https://api.tudominio.cl/api/mercadolibre/callback` | developers.mercadolibre.cl, en la app real de Mercado Libre — **tiene que coincidir carácter por carácter** con `MERCADOLIBRE_REDIRECT_URI` del `.env` de producción, o el OAuth falla. |
+| Redirect URI de Google | `https://api.tudominio.cl/api/google-sheets/callback` | console.cloud.google.com → credenciales del cliente OAuth — mismo criterio, tiene que coincidir EXACTO con `GOOGLE_REDIRECT_URI`. A diferencia de Mercado Libre, Google no exige HTTPS en desarrollo (sí en producción, como cualquier dominio real). |
 
 Cada proveedor de hosting de la comparación de arriba da instrucciones
 específicas de qué registro DNS (`CNAME`/`A`) apuntar a su plataforma —
@@ -177,7 +189,7 @@ Pasos:
 2. Actualizar `MERCADOLIBRE_REDIRECT_URI` en las variables de entorno de producción.
 3. El `state` firmado de la conexión OAuth (`app/api/routes/mercadolibre.py`) no depende del dominio — sigue siendo igual de seguro, no requiere ningún cambio de código.
 4. **Advertencia de escalado**: `_pending_states` (los estados OAuth pendientes) vive en memoria del proceso — con más de un worker/réplica del backend, un estado creado en un worker puede no encontrarse en el que recibe el callback, y la conexión de Mercado Libre falla de forma intermitente. Arrancar con un solo worker evita esto; si en algún momento hace falta escalar a más, ese estado necesita moverse a algo compartido (Redis, una tabla) antes.
-5. Reconectar la cuenta real de Mercado Libre de Librería Central desde cero (OAuth) — **la cuenta hoy conectada en desarrollo es la personal del dueño de Nexo, no la de Librería Central** (confirmado en la auditoría — hay que resolver esto con el cliente antes de ir a producción, no es una tarea de código).
+5. Reconectar la cuenta real de Mercado Libre del cliente piloto desde cero (OAuth) — **la cuenta hoy conectada en desarrollo es la personal del dueño de Nexo, no la del cliente piloto** (confirmado en la auditoría — hay que resolver esto con el cliente antes de ir a producción, no es una tarea de código).
 
 **Ninguna publicación real se ejecuta automáticamente** — sigue siendo:
 preview → confirmación explícita (checkbox + modal) → un único POST →

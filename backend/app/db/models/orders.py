@@ -13,7 +13,7 @@ recalcula después, aunque el precio del producto cambie — ya decidido en
 ya acordada: recibido → picking → packing → etiquetado → listo_despacho →
 entregado_a_operador → completado, más "cancelado" y "problema" como
 excepciones. Los pedidos Full (`shipping_type="full"`) no pasan por el
-picking/packing interno de la librería.
+picking/packing interno de la empresa.
 """
 
 from __future__ import annotations

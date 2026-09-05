@@ -25,11 +25,13 @@ from app.db.models import (
     MarketplaceListing,
     MarketplaceListingVariant,
     MercadoLibreCategoryFee,
+    Plan,
     Product,
     ProductImage,
     ProductVariant,
     Store,
     StoreSettings,
+    Subscription,
     User,
 )
 from app.db.session import get_db
@@ -1928,7 +1930,7 @@ def test_confirmar_con_ml_rechazando_precio_da_mensaje_especifico_de_precio(clie
 
 
 @respx.mock
-def test_confirmar_con_ml_rechazando_atributos_da_mensaje_especifico_de_atributos(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+def test_confirmar_con_ml_rechazando_product_identifier_da_mensaje_especifico_de_codigo_de_barras(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
     monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
     variant_id = _producto_publicable(db_session, a_store, sku="ML-ATRIBUTO-INVALIDO", barcode="7891234567895")
 
@@ -1948,9 +1950,14 @@ def test_confirmar_con_ml_rechazando_atributos_da_mensaje_especifico_de_atributo
     )
 
     assert res.status_code == 400
-    assert res.json()["detail"] == "Faltan algunos datos obligatorios del producto. Revisá los atributos marcados."
-    assert "GTIN" not in res.json()["detail"]
+    # 6 de septiembre de 2026 — mensaje específico (no el genérico de
+    # atributos) para este código real: "GTIN/EAN/UPC" en mayúsculas es
+    # lenguaje que el propio vendedor de Mercado Libre reconoce (a
+    # diferencia del mensaje crudo de la API, que nunca se muestra) —
+    # nunca el texto/código interno real de Mercado Libre.
+    assert res.json()["detail"] == "El código de barras (GTIN/EAN/UPC) de este producto no es válido para Mercado Libre. Corregilo en la ficha del producto."
     assert "cuaderno" not in res.json()["detail"]
+    assert "invalid_format" not in res.json()["detail"]
 
 
 @respx.mock
@@ -2360,3 +2367,96 @@ def test_confirmar_con_otra_variante_mientras_hay_una_activa_sigue_bloqueado_con
 
     assert res.status_code == 409
     assert db_session.query(MarketplaceListing).count() == 1
+
+
+# ------------------------------------------------------------------
+# 5 de septiembre de 2026 — límite de publicaciones activas del plan (ver
+# app/domain/plans.py). Se evalúa ANTES de llamar a Mercado Libre.
+# ------------------------------------------------------------------
+
+
+def _con_suscripcion(db_session, tienda, *, publication_limit, product_limit=None, status="active"):
+    plan = Plan(code="plan-test", name="Plan de prueba", product_limit=product_limit, publication_limit=publication_limit, price_demo_label="Precio demo: $0")
+    db_session.add(plan)
+    db_session.flush()
+    sub = Subscription(store=tienda, plan=plan, status=status, started_at=NOW, current_period_end=NOW.date())
+    db_session.add(sub)
+    db_session.commit()
+    return sub
+
+
+def test_confirmar_bloquea_con_403_si_el_plan_ya_alcanzo_el_limite_de_publicaciones(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    _con_suscripcion(db_session, a_store, publication_limit=0)
+    variant_id = _producto_publicable(db_session, a_store, sku="LIM-PUB", barcode="7891234567895")
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+
+    assert res.status_code == 403, res.text
+    assert "límite" in res.json()["detail"].lower()
+    assert "publicaciones" in res.json()["detail"].lower()
+    assert db_session.query(MarketplaceListing).count() == 0
+
+
+@respx.mock
+def test_confirmar_permite_publicar_si_esta_dentro_del_limite_del_plan(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    _con_suscripcion(db_session, a_store, publication_limit=10)
+    variant_id = _producto_publicable(db_session, a_store, sku="DENTRO-LIM", barcode="7891234567895")
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(201, json={"id": "MLC999"}))
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+
+    assert res.status_code == 200, res.text
+    assert db_session.query(MarketplaceListing).count() == 1
+
+
+@respx.mock
+def test_confirmar_una_tienda_nunca_se_ve_afectada_por_el_limite_de_otra(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    """Aislamiento: el límite de publicaciones de una empresa se cuenta
+    únicamente sobre SUS propias publicaciones, nunca sobre las de otra."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    _con_suscripcion(db_session, a_store, publication_limit=1)
+
+    otro_usuario = User(email="otra@empresa.cl", password_hash=hash_password("x"), full_name="Otra", created_at=NOW, updated_at=NOW)
+    db_session.add(otro_usuario)
+    otra_tienda = Store(owner=otro_usuario, name="Otra Empresa", created_at=NOW)
+    db_session.add(otra_tienda)
+    db_session.commit()
+    otra_cuenta = MarketplaceAccount(
+        store=otra_tienda, marketplace="mercadolibre", status="connected",
+        external_account_id="777", external_account_nickname="OTRO_VENDEDOR", external_account_site_id="MLC",
+        access_token_encrypted=encrypt_token("token-otro", TEST_ENCRYPTION_KEY),
+        refresh_token_encrypted=encrypt_token("refresh-otro", TEST_ENCRYPTION_KEY),
+        token_expires_at=datetime(2027, 1, 1),
+    )
+    db_session.add(otra_cuenta)
+    otro_producto = Product(store=otra_tienda, internal_sku="OTRA-PUB", name="Producto de otra empresa", product_type="simple", created_at=NOW, updated_at=NOW)
+    db_session.add(otro_producto)
+    db_session.flush()
+    db_session.add(MarketplaceListing(account=otra_cuenta, product=otro_producto, external_listing_id="MLC-OTRA", status="active", price=1000, created_at=NOW))
+    db_session.commit()
+
+    variant_id = _producto_publicable(db_session, a_store, sku="MI-PUB", barcode="7891234567895")
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(201, json={"id": "MLC888"}))
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+
+    assert res.status_code == 200, res.text

@@ -19,16 +19,16 @@ de "Confirmar importación" que pidió el dueño para el flujo de UI):
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_store
-from app.db.models import Product, ProductImage, ProductVariant, Store
+from app.db.models import Store
 from app.db.session import get_db
-from app.domain.catalog_import import IMPORT_FIELDS, ColumnMapping, RowResult, build_rows, detect_columns, summarize_rows
+from app.domain.catalog_import import IMPORT_FIELDS, ColumnMapping, build_rows, detect_columns, row_to_dict, summarize_rows
+from app.domain.catalog_writer import escribir_filas
 from app.domain.spreadsheet_io import UnsupportedSpreadsheetFormat, read_rows
 
 router = APIRouter(prefix="/api/catalogo", tags=["catalogo"])
@@ -52,25 +52,6 @@ def _read_uploaded_rows(file: UploadFile, contenido: bytes) -> tuple[list[str], 
         ) from err
 
 
-def _row_to_dict(r: RowResult) -> dict:
-    return {
-        "fila": r.row_index,
-        "sku": r.sku,
-        "nombre": r.nombre,
-        "marca": r.marca,
-        "categoria": r.categoria,
-        "precio": r.precio,
-        "costo": r.costo,
-        "stock": r.stock,
-        "descripcion": r.descripcion,
-        "imagenUrl": r.imagen_url,
-        "codigoBarras": r.codigo_barras,
-        "estado": r.estado,
-        "problemas": r.problemas,
-        "duplicado": r.duplicado,
-    }
-
-
 @router.post("/importar/analizar")
 async def analizar_archivo(file: UploadFile, store: Store = Depends(get_current_store)) -> dict:
     # No escribe nada en la base (ver docstring del módulo) — igual exige
@@ -87,7 +68,7 @@ async def analizar_archivo(file: UploadFile, store: Store = Depends(get_current_
         "mapeoPropuesto": mapping.mapping,
         "camposReconocidos": list(IMPORT_FIELDS),
         "resumen": summarize_rows(rows),
-        "filas": [_row_to_dict(r) for r in rows],
+        "filas": [row_to_dict(r) for r in rows],
     }
 
 
@@ -108,85 +89,5 @@ async def confirmar_importacion(
     headers, raw_rows = _read_uploaded_rows(file, contenido)
     rows = build_rows(raw_rows, ColumnMapping(mapping=mapping_dict))
 
-    ahora = datetime.now()
     fuente = "excel_upload" if file.filename.lower().endswith((".xlsx", ".xlsm")) else "csv_upload"
-
-    creados: list[str] = []
-    actualizados: list[str] = []
-    omitidos: list[dict] = []
-
-    for row in rows:
-        if row.estado == "error" and omitir_errores:
-            omitidos.append({"fila": row.row_index, "nombre": row.nombre or None, "problemas": row.problemas})
-            continue
-
-        variante_existente = (
-            db.query(ProductVariant).filter_by(store_id=store.id, variant_sku=row.sku).first() if row.sku else None
-        )
-
-        if variante_existente is not None:
-            # Reimportar el mismo SKU actualiza el producto — nunca lo duplica.
-            producto = variante_existente.product
-            producto.name = row.nombre or producto.name
-            producto.brand = row.marca or producto.brand
-            producto.category = row.categoria or producto.category
-            producto.description = row.descripcion or producto.description
-            producto.updated_at = ahora
-            if row.precio is not None:
-                variante_existente.price = row.precio
-            if row.costo is not None:
-                variante_existente.cost_price = row.costo
-            if row.stock is not None:
-                variante_existente.stock_quantity = row.stock
-                variante_existente.manage_stock = True
-                variante_existente.stock_status = "instock" if row.stock > 0 else "outofstock"
-            if row.codigo_barras:
-                variante_existente.barcode = row.codigo_barras
-            variante_existente.updated_at = ahora
-            actualizados.append(row.sku or row.nombre)
-            continue
-
-        producto = Product(
-            store=store,
-            internal_sku=row.sku,
-            name=row.nombre,
-            brand=row.marca,
-            category=row.categoria,
-            description=row.descripcion,
-            product_type="simple",
-            source=fuente,
-            created_at=ahora,
-            updated_at=ahora,
-        )
-        db.add(producto)
-        db.flush()
-
-        db.add(
-            ProductVariant(
-                product=producto,
-                store_id=store.id,
-                variant_sku=row.sku,
-                price=row.precio,
-                cost_price=row.costo,
-                stock_quantity=row.stock,
-                manage_stock=row.stock is not None,
-                stock_status="instock" if (row.stock or 0) > 0 else "outofstock",
-                barcode=row.codigo_barras,
-                created_at=ahora,
-                updated_at=ahora,
-            )
-        )
-
-        if row.imagen_url:
-            db.add(ProductImage(product=producto, url=row.imagen_url, source="excel_url", position=0, created_at=ahora))
-
-        creados.append(row.sku or row.nombre)
-
-    db.commit()
-
-    return {
-        "creados": len(creados),
-        "actualizados": len(actualizados),
-        "omitidos": len(omitidos),
-        "detalleOmitidos": omitidos[:20],
-    }
+    return escribir_filas(db, store, rows, fuente=fuente, omitir_errores=omitir_errores)
