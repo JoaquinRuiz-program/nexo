@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Librería Central — componentes de interfaz reutilizables: toasts, modales
+ * Nexo — componentes de interfaz reutilizables: toasts, modales
  * y helpers de formato. No sabe nada de productos, cuentas ni suscripciones
  * — solo sabe mostrar cosas.
  */
@@ -50,7 +50,7 @@ window.LC = window.LC || {};
 
   // 30 de agosto de 2026 — revertido: la regla de ocultar montos (22 de
   // agosto de 2026) tenía sentido para mostrarle Nexo a un prospecto sin
-  // exponer datos reales de Librería Central. Con un cliente real pagando,
+  // exponer datos reales de un cliente. Con un cliente real pagando,
   // ocultar sus propios montos le rompe el producto (Oportunidades pierde
   // su propósito: "¿qué me conviene vender?" no se puede responder sin
   // ver la ganancia real). Mismo formato que ya usaban formatCLPReal() en

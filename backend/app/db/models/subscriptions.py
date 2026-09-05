@@ -22,6 +22,10 @@ class Plan(Base):
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)  # starter | growth | business | enterprise
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     product_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None = sin límite (Enterprise)
+    # 5 de septiembre de 2026 — límite de publicaciones activas (distinto de
+    # productos: un producto puede existir sin estar publicado en ningún
+    # marketplace). None = sin límite, mismo criterio que product_limit.
+    publication_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     price_demo_label: Mapped[str] = mapped_column(String(50), nullable=False)  # ej. "Precio demo: $19.990"
     features: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     is_active: Mapped[bool] = mapped_column(default=True)

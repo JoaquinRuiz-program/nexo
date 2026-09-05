@@ -151,8 +151,8 @@ explícitamente fuera de alcance por ahora.
 
 ## Mercado Libre real (24 de agosto de 2026 — flujo completo desde el 29 de agosto; arquitectura multiempresa desde el 29 de agosto, segunda ronda)
 
-**Nexo es un SaaS multiempresa — Librería Central es solo el primer
-cliente, no una integración especial.** Dos conceptos que nunca hay que
+**Nexo es un SaaS multiempresa — cada empresa cliente es una más, ninguna
+es una integración especial.** Dos conceptos que nunca hay que
 confundir:
 
 - **Aplicación desarrolladora de Mercado Libre** (`MERCADOLIBRE_CLIENT_ID`/
@@ -262,7 +262,7 @@ y renovar el token de una nunca toca el de la otra.
    corresponda) — esto crea la **aplicación de Nexo** (el paso 1 de
    "Arquitectura multiempresa" de más arriba), no la cuenta de ningún
    cliente. Podés usar cualquier cuenta real de Mercado Libre para crearla
-   (no hace falta que sea la de Librería Central).
+   (no hace falta que sea la de ningún cliente en particular).
 2. "Mis aplicaciones" -> crear una aplicación nueva.
 3. **Redirect URI**: Mercado Libre exige HTTPS siempre, incluso para
    desarrollo — `http://localhost:...` no se puede registrar. La forma más
@@ -307,7 +307,7 @@ crear hasta 10 **usuarios de prueba** por aplicación, que funcionan como
 cuentas reales (conectar, autorizar, comprar/vender entre ellos) pero
 aislados de tu reputación real. Es la forma correcta de probar el flujo de
 conexión — incluido que dos empresas distintas queden separadas — sin
-tocar todavía la cuenta real de Librería Central:
+tocar todavía la cuenta real de ningún cliente:
 
 1. Conectá Nexo una vez con **cualquier** cuenta real de Mercado Libre (la
    misma con la que creaste la aplicación en el paso 1 sirve) para obtener
@@ -374,6 +374,49 @@ escritura en Mercado Libre (no crea/edita publicaciones ni actualiza
 precio/stock allá — sigue siendo de solo lectura, igual que el adaptador de
 WooCommerce cuando se construyó).
 
+## Google Sheets real (5 de septiembre de 2026 — importación de catálogo)
+
+Mismo patrón exacto que "Mercado Libre real" de arriba, reusando el mismo
+modelo (`marketplace_accounts`, ahora con `marketplace="google_sheets"`) y
+el mismo mecanismo de OAuth con `state` — ver `app/adapters/google_sheets.py`
+y `app/api/routes/google_sheets.py`. Diferencias puntuales:
+
+- **Scope mínimo, único**: `https://www.googleapis.com/auth/spreadsheets.readonly`
+  — no se pide ningún permiso de Google Drive. Por eso "elegir una hoja de
+  cálculo" en Nexo es pegar su link (o ID), no un selector visual de
+  archivos de Drive — ese selector exigiría un scope de Drive bastante más
+  amplio (o el Picker API de Google, una pieza aparte) para un beneficio
+  chico en esta primera versión.
+- **Sin PKCE**: la documentación oficial de Google no lo pide para un
+  cliente confidencial tipo "Web application" (a diferencia de Mercado
+  Libre, que lo recibe siempre aunque sea opcional).
+- **Reutiliza el importador universal**: `GoogleSheetsAdapter.get_values`
+  convierte la respuesta de la API de Sheets a la misma forma
+  `(encabezados, filas)` que ya devuelve `app/domain/spreadsheet_io.py` para
+  un Excel/CSV — de ahí en más, `app/domain/catalog_import.py`
+  (detección de columnas, validación) y `app/domain/catalog_writer.py`
+  (crear/actualizar productos, respetando el límite de productos del plan)
+  son el MISMO código que usa `/api/catalogo/importar/*`, sin duplicar nada.
+- **`external_account_site_id` reaprovechado como "pestaña elegida"** — para
+  Mercado Libre es un código corto ("MLC"); para Google Sheets es el nombre
+  de la pestaña de la hoja de cálculo, texto libre. Se amplió esa columna de
+  `String(10)` a `String(100)` (migración `7f1a9c3e5d02`) porque un nombre
+  de pestaña real fácilmente supera 10 caracteres.
+- **Sin sincronización automática**: "volver a sincronizar" es una acción
+  manual (botón en la pantalla de Google Sheets) que vuelve a leer la
+  pestaña y muestra qué va a cambiar ANTES de importar — no hay ningún
+  worker, cron ni webhook corriendo solo.
+
+**Lo único que no se puede generar desde acá** (mismo criterio que
+`MERCADOLIBRE_CLIENT_ID`/`_SECRET`): un Client ID y Client Secret de OAuth
+reales, creados una vez en https://console.cloud.google.com/apis/credentials
+(proyecto de Nexo, con la Google Sheets API habilitada) — ver
+`backend/.env.example` para la guía paso a paso completa de
+`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REDIRECT_URI`. A
+diferencia de Mercado Libre, Google sí acepta `http://localhost...` como
+Redirect URI para desarrollo local — no hace falta un túnel HTTPS para
+probar esto antes de tener un dominio real.
+
 ## Estructura agregada
 
 ```
@@ -385,7 +428,13 @@ backend/
       models/
         users.py            User, UserPreferences, AuthSession, PasswordResetToken
         stores.py           Store, StoreSettings
-        subscriptions.py    Plan, Subscription
+        subscriptions.py    Plan (con publication_limit desde el
+                          5 de septiembre de 2026), Subscription
+        support.py          SupportTicket (Ayuda y soporte, 5 de
+                          septiembre de 2026) — ver app/api/routes/soporte.py
+                          (cliente) y admin.py (vista global)
+        admin_log.py         AdminActionLog (registro simple de acciones
+                          administrativas, 6 de septiembre de 2026)
         products.py         Product, ProductVariant
         woocommerce_link.py WooCommerceProduct, WooCommerceVariation
         marketplace.py      MarketplaceAccount, MarketplaceListing, MarketplaceListingVariant
@@ -400,6 +449,12 @@ backend/
                           una comisión que no esté cargada
       marketplace_stock.py    Tope de stock reservado para ML — nunca
                           inventario físico
+      plans.py             Planes por defecto + límites de productos/
+                          publicaciones (5 de septiembre de 2026)
+      image_storage.py       Subida real de imágenes a disco local,
+                          validada con Pillow (5 de septiembre de 2026)
+                          — servidas por StaticFiles en /uploads/, ver
+                          app/main.py
   alembic/
     env.py                 Configurado para leer DATABASE_URL y ver todos los modelos
     versions/

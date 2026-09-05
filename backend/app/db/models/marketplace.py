@@ -18,7 +18,7 @@ apuntan al mismo `product_id`/`variant_id` interno — no hay ninguna tabla
 que relacione un ID de WooCommerce con un ID de Mercado Libre directamente.
 
 Multiempresa (Nexo es un SaaS: cada `Store` es una empresa cliente
-distinta, Librería Central es solo la primera): `store_id` es lo que hace
+distinta, ninguna es "la" empresa dueña del producto): `store_id` es lo que hace
 que cada empresa tenga su propia conexión, tokens y seller de Mercado
 Libre, completamente aislados de las demás — nunca hay una sola conexión
 "global" de Nexo. A propósito `external_account_id` (el seller_id de
@@ -54,7 +54,15 @@ class MarketplaceAccount(Base):
     # nunca datos personales (nombre real, email, teléfono, dirección
     # también vienen en /users/me pero jamás se guardan acá).
     external_account_nickname: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    external_account_site_id: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # 5 de septiembre de 2026 — ampliado de 10 a 100: para Mercado Libre
+    # sigue siendo un código corto ("MLC", "MLA"), pero la integración de
+    # Google Sheets (app/api/routes/google_sheets.py) reaprovecha este mismo
+    # campo para el nombre de la pestaña/hoja elegida, que es texto libre y
+    # puede ser mucho más largo que 10 caracteres (ver migración
+    # 7f1a9c3e5d02). SQLite nunca hizo cumplir el límite viejo (por eso esto
+    # no se notaba en desarrollo), pero Postgres en producción sí lo habría
+    # truncado o rechazado.
+    external_account_site_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # not_connected | connected | error | token_expired
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="not_connected")
     # Tokens de OAuth real, SIEMPRE cifrados (ver app/domain/token_crypto.py

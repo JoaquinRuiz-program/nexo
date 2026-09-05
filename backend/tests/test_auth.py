@@ -63,7 +63,7 @@ REGISTRO_VALIDO = {
     "email": "dueño@libreria.cl",
     "password": "contraseña-segura-123",
     "full_name": "Joaquín",
-    "company_name": "Librería Central",
+    "company_name": "Empresa Demo",
 }
 
 
@@ -73,11 +73,11 @@ def test_registro_crea_usuario_y_tienda_y_deja_la_sesion_activa(client, db_sessi
     assert res.status_code == 200
     body = res.json()
     assert body["usuario"]["email"] == "dueño@libreria.cl"
-    assert body["empresa"]["nombre"] == "Librería Central"
+    assert body["empresa"]["nombre"] == "Empresa Demo"
 
     usuario = db_session.query(User).filter_by(email="dueño@libreria.cl").one()
     tienda = db_session.query(Store).filter_by(owner_user_id=usuario.id).one()
-    assert tienda.name == "Librería Central"
+    assert tienda.name == "Empresa Demo"
     # La contraseña nunca se guarda en texto plano.
     assert usuario.password_hash != REGISTRO_VALIDO["password"]
 
@@ -88,7 +88,7 @@ def test_registro_crea_usuario_y_tienda_y_deja_la_sesion_activa(client, db_sessi
     # El endpoint /me funciona de inmediato con esa cookie, sin loguear de nuevo.
     me = client.get("/api/auth/me")
     assert me.status_code == 200
-    assert me.json()["empresa"]["nombre"] == "Librería Central"
+    assert me.json()["empresa"]["nombre"] == "Empresa Demo"
 
 
 def test_registro_con_email_duplicado_devuelve_400(client):
@@ -202,6 +202,30 @@ def test_dos_usuarios_registrados_tienen_cada_uno_su_propia_tienda(client, db_se
 
     me = client.get("/api/auth/me").json()
     assert me["empresa"]["nombre"] == "Empresa B"  # el último login/registro activo
+
+
+# ------------------------------------------------------------------
+# 5 de septiembre de 2026 — Nexo es un producto SaaS, no un negocio hecho a
+# medida de un cliente puntual: una empresa nueva tiene que arrancar
+# realmente vacía (sin productos de ejemplo, sin catálogo precargado, sin
+# nada perteneciente a otra empresa) — ver también app/db/seed_demo.py
+# (script manual, jamás corre solo) y frontend/js/demoData.js (Demo Mode,
+# solo cuando no hay backend real disponible, nunca para un usuario
+# logueado de verdad).
+# ------------------------------------------------------------------
+
+
+def test_empresa_recien_registrada_arranca_con_cero_productos(client, db_session):
+    from app.db.models import Product
+
+    res = client.post("/api/auth/registro", json={**REGISTRO_VALIDO, "email": "cuenta-limpia@empresa.cl"})
+    assert res.status_code == 200, res.text
+    store_id = res.json()["empresa"]["id"]
+
+    assert db_session.query(Product).filter_by(store_id=store_id).count() == 0
+    listar = client.get("/api/productos")
+    assert listar.status_code == 200
+    assert listar.json() == []
 
 
 def test_password_hash_usa_bcrypt_nunca_texto_plano_ni_sha256_simple(db_session):

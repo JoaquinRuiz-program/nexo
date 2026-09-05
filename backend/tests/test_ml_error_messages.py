@@ -17,8 +17,17 @@ def test_error_de_precio_da_mensaje_de_precio():
 
 
 def test_error_de_atributo_da_mensaje_de_atributos():
-    body = {"cause": [{"type": "error", "code": "item.attribute.product_identifier.invalid_format", "message": "..."}]}
+    body = {"cause": [{"type": "error", "code": "item.attribute.color.missing", "message": "..."}]}
     assert mensaje_amigable_error_publicacion(body) == "Faltan algunos datos obligatorios del producto. Revisá los atributos marcados."
+
+
+def test_error_de_product_identifier_da_mensaje_especifico_de_codigo_de_barras():
+    """6 de septiembre de 2026 — auditoría comercial: dentro de
+    "item.attribute" hay un caso real específico (GTIN/EAN/UPC mal
+    formado) que merece un mensaje más accionable que el genérico de
+    atributos — mismo código real documentado en el docstring del módulo."""
+    body = {"cause": [{"type": "error", "code": "item.attribute.product_identifier.invalid_format", "message": "..."}]}
+    assert mensaje_amigable_error_publicacion(body) == "El código de barras (GTIN/EAN/UPC) de este producto no es válido para Mercado Libre. Corregilo en la ficha del producto."
 
 
 def test_caso_real_mixto_warning_y_error_prioriza_el_error():
@@ -31,7 +40,7 @@ def test_caso_real_mixto_warning_y_error_prioriza_el_error():
             {"type": "error", "code": "item.attribute.product_identifier.invalid_format", "message": "Product Identifier [GTIN] contains values with invalid format."},
         ],
     }
-    assert mensaje_amigable_error_publicacion(body) == "Faltan algunos datos obligatorios del producto. Revisá los atributos marcados."
+    assert mensaje_amigable_error_publicacion(body) == "El código de barras (GTIN/EAN/UPC) de este producto no es válido para Mercado Libre. Corregilo en la ficha del producto."
 
 
 def test_solo_warnings_sin_ningun_error_igual_da_un_mensaje_especifico():

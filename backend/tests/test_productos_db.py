@@ -7,9 +7,12 @@ toca libreria_central.db, WooCommerce ni Mercado Libre).
 
 from __future__ import annotations
 
+import io
 from datetime import datetime
+from pathlib import Path
 
 import pytest
+from PIL import Image
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -18,7 +21,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.config import Settings
 from app.db.base import Base
-from app.db.models import Product, ProductImage, ProductVariant, Store, StoreSettings, User
+from app.db.models import MarketplaceAccount, MarketplaceListing, Product, ProductImage, ProductVariant, Store, StoreSettings, User
 from app.db.session import get_db
 from app.domain.security import hash_password
 from tests.auth_helpers import autenticar
@@ -154,6 +157,9 @@ def test_producto_simple_devuelve_una_fila(client, db_session, a_store):
     assert filas[0]["precio"] == 12990
     # Sin configurar todavía -> no se está ofreciendo por Mercado Libre.
     assert filas[0]["marketplaceStock"] is None
+    # 6 de septiembre de 2026 — "estado claro de cada producto": nunca se
+    # publicó -> None, nunca se inventa un estado.
+    assert filas[0]["estadoPublicacionMercadoLibre"] is None
 
 
 def test_producto_variable_devuelve_una_fila_por_color(client, db_session, a_store):
@@ -396,9 +402,10 @@ def test_reporte_de_una_tienda_distinta_a_la_legacy_da_404(client, a_store, monk
 
 # ------------------------------------------------------------------
 # 1 de septiembre de 2026 — CRUD real de imágenes (agregar por URL,
-# eliminar, reordenar). Nexo no tiene almacenamiento de archivos todavía
-# (ver docstring de ProductImage) — esto es el CRUD sobre lo que ya existe
-# (URL + orden), no una subida de archivos real.
+# eliminar, reordenar). 5 de septiembre de 2026 — se suma la subida real
+# desde el computador (ver app/domain/image_storage.py y los tests de
+# subir_imagenes más abajo); el CRUD por URL de acá sigue existiendo tal
+# cual (por ejemplo, para pegar la URL de una imagen ya alojada afuera).
 # ------------------------------------------------------------------
 
 
@@ -516,3 +523,228 @@ def test_gestion_de_imagenes_de_producto_de_otra_empresa_da_404(client, db_sessi
     assert client.post(f"/api/productos/{variant_id_b}/imagenes", json={"url": "https://cdn.test/x.png"}).status_code == 404
     assert client.delete(f"/api/productos/{variant_id_b}/imagenes/{img_b.id}").status_code == 404
     assert client.put(f"/api/productos/{variant_id_b}/imagenes/orden", json={"orden": [img_b.id]}).status_code == 404
+
+
+# ------------------------------------------------------------------
+# 5 de septiembre de 2026 — subida real de imágenes desde el computador
+# (click o drag & drop en el frontend, ver app/domain/image_storage.py).
+# Guarda en disco (tmp_path acá, nunca la carpeta real de dev) y sirve la
+# URL absoluta con settings.backend_public_base_url.
+# ------------------------------------------------------------------
+
+
+def _png_valido(color=(255, 0, 0)) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (10, 10), color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+@pytest.fixture()
+def settings_de_upload(monkeypatch, tmp_path):
+    settings = Settings(uploads_dir=str(tmp_path), backend_public_base_url="http://testserver")
+    monkeypatch.setattr("app.api.routes.productos_db.get_settings", lambda: settings)
+    return settings
+
+
+def test_subir_una_imagen_valida_la_guarda_y_la_asocia_al_producto(client, db_session, a_store, settings_de_upload):
+    _producto_simple(db_session, a_store, sku="UP-001", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.post(
+        f"/api/productos/{variant_id}/imagenes/upload",
+        files=[("files", ("foto.png", _png_valido(), "image/png"))],
+    )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["subidas"]["guardadas"] == 1
+    assert body["subidas"]["rechazadas"] == []
+    assert len(body["imagenes"]) == 1
+    url = body["imagenes"][0]["url"]
+    assert url.startswith("http://testserver/uploads/product_images/")
+    nombre_archivo = url.rsplit("/", 1)[-1]
+    assert (Path(settings_de_upload.uploads_dir) / "product_images" / str(a_store.id) / nombre_archivo).exists()
+
+
+def test_subir_varias_imagenes_a_la_vez(client, db_session, a_store, settings_de_upload):
+    _producto_simple(db_session, a_store, sku="UP-002", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.post(
+        f"/api/productos/{variant_id}/imagenes/upload",
+        files=[
+            ("files", ("a.png", _png_valido((255, 0, 0)), "image/png")),
+            ("files", ("b.png", _png_valido((0, 255, 0)), "image/png")),
+        ],
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["subidas"]["guardadas"] == 2
+    assert len(res.json()["imagenes"]) == 2
+
+
+def test_subir_archivo_corrupto_es_rechazado_sin_romper_los_demas(client, db_session, a_store, settings_de_upload):
+    _producto_simple(db_session, a_store, sku="UP-003", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.post(
+        f"/api/productos/{variant_id}/imagenes/upload",
+        files=[
+            ("files", ("bueno.png", _png_valido(), "image/png")),
+            ("files", ("malo.png", b"esto no es una imagen de verdad", "image/png")),
+        ],
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["subidas"]["guardadas"] == 1
+    assert len(body["subidas"]["rechazadas"]) == 1
+    assert body["subidas"]["rechazadas"][0]["archivo"] == "malo.png"
+    # Mensaje simple, nunca técnico (nunca "corrupto"/"UnidentifiedImageError").
+    assert "imagen" in body["subidas"]["rechazadas"][0]["motivo"].lower()
+
+
+def test_subir_formato_no_soportado_es_rechazado(client, db_session, a_store, settings_de_upload):
+    _producto_simple(db_session, a_store, sku="UP-004", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (10, 10)).save(buffer, format="GIF")
+    res = client.post(
+        f"/api/productos/{variant_id}/imagenes/upload",
+        files=[("files", ("animado.gif", buffer.getvalue(), "image/gif"))],
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["subidas"]["guardadas"] == 0
+    # Mismo mensaje simple para formato inválido que para tamaño excedido
+    # (ver domain/image_storage.py::MENSAJE_REQUISITOS) — nunca el nombre
+    # técnico del formato detectado.
+    assert "JPG" in res.json()["subidas"]["rechazadas"][0]["motivo"]
+
+
+def test_subir_imagen_demasiado_grande_es_rechazada(client, db_session, a_store, settings_de_upload, monkeypatch):
+    _producto_simple(db_session, a_store, sku="UP-005", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+    monkeypatch.setattr("app.domain.image_storage.TAMANO_MAXIMO_BYTES", 10)
+
+    res = client.post(
+        f"/api/productos/{variant_id}/imagenes/upload",
+        files=[("files", ("grande.png", _png_valido(), "image/png"))],
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["subidas"]["guardadas"] == 0
+    assert "MB" in res.json()["subidas"]["rechazadas"][0]["motivo"]
+
+
+def test_subir_respeta_el_maximo_de_imagenes_por_producto(client, db_session, a_store, settings_de_upload, monkeypatch):
+    producto = _producto_simple(db_session, a_store, sku="UP-006", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+    monkeypatch.setattr("app.api.routes.productos_db.MAX_IMAGENES_POR_PRODUCTO", 1)
+    db_session.add(ProductImage(product=producto, url="http://cdn.test/ya-existe.png", source="excel_url", position=0, created_at=NOW))
+    db_session.commit()
+
+    res = client.post(
+        f"/api/productos/{variant_id}/imagenes/upload",
+        files=[("files", ("nueva.png", _png_valido(), "image/png"))],
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["subidas"]["guardadas"] == 0
+    assert "máximo" in res.json()["subidas"]["rechazadas"][0]["motivo"].lower()
+
+
+def test_subir_imagen_a_producto_de_otra_empresa_da_404(client, db_session, a_store, settings_de_upload):
+    otro_usuario = User(email="otra-upload@ejemplo.cl", password_hash=hash_password("x"), full_name="Dueño B", created_at=NOW, updated_at=NOW)
+    db_session.add(otro_usuario)
+    tienda_b = Store(owner=otro_usuario, name="Empresa Upload B", created_at=NOW)
+    db_session.add(tienda_b)
+    db_session.add(StoreSettings(store=tienda_b, company_name="Empresa Upload B", store_name="Empresa Upload B"))
+    db_session.commit()
+    producto_b = _producto_simple(db_session, tienda_b, sku="UP-B-001", nombre="Producto de B", precio=5000, stock=10)
+    variant_id_b = db_session.query(ProductVariant).filter_by(product_id=producto_b.id).one().id
+
+    res = client.post(
+        f"/api/productos/{variant_id_b}/imagenes/upload",
+        files=[("files", ("x.png", _png_valido(), "image/png"))],
+    )
+    assert res.status_code == 404
+
+
+def test_eliminar_imagen_subida_borra_tambien_el_archivo_fisico(client, db_session, a_store, settings_de_upload):
+    _producto_simple(db_session, a_store, sku="UP-007", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+    subida = client.post(
+        f"/api/productos/{variant_id}/imagenes/upload",
+        files=[("files", ("borrame.png", _png_valido(), "image/png"))],
+    ).json()
+    image_id = subida["imagenes"][0]["id"]
+    url = subida["imagenes"][0]["url"]
+    nombre_archivo = url.rsplit("/", 1)[-1]
+    ruta_fisica = Path(settings_de_upload.uploads_dir) / "product_images" / str(a_store.id) / nombre_archivo
+    assert ruta_fisica.exists()
+
+    res = client.delete(f"/api/productos/{variant_id}/imagenes/{image_id}")
+    assert res.status_code == 200, res.text
+    assert not ruta_fisica.exists()
+
+
+def test_eliminar_imagen_por_url_externa_nunca_intenta_borrar_nada_en_disco(client, db_session, a_store, settings_de_upload):
+    """Una imagen cargada por URL (no subida desde el computador) no tiene
+    ningún archivo propio en disco -- eliminar_archivo_si_es_local no debe
+    romper ni intentar borrar nada fuera de uploads_dir."""
+    producto = _producto_simple(db_session, a_store, sku="UP-008", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+    img = ProductImage(product=producto, url="https://cdn-externo.test/foto.png", source="excel_url", position=0, created_at=NOW)
+    db_session.add(img)
+    db_session.commit()
+
+    res = client.delete(f"/api/productos/{variant_id}/imagenes/{img.id}")
+    assert res.status_code == 200, res.text
+
+
+# ------------------------------------------------------------------
+# 6 de septiembre de 2026 — "estado claro de cada producto" (automatización
+# comercial): la lista de productos ahora trae el estado real de
+# publicación en Mercado Libre (active/paused/closed/None), sin tener que
+# entrar al detalle de cada uno. Una sola consulta agregada, nunca una por
+# fila — ver _estado_publicacion_por_producto.
+# ------------------------------------------------------------------
+
+
+def _cuenta_ml(db_session, tienda, *, external_account_id="1"):
+    cuenta = MarketplaceAccount(store=tienda, marketplace="mercadolibre", status="connected", external_account_id=external_account_id)
+    db_session.add(cuenta)
+    db_session.commit()
+    return cuenta
+
+
+def test_listar_productos_incluye_el_estado_real_de_publicacion(client, db_session, a_store):
+    producto = _producto_simple(db_session, a_store, sku="ML-PUB-1", nombre="Publicado", precio=5000, stock=5)
+    otro_producto = _producto_simple(db_session, a_store, sku="ML-PUB-2", nombre="Pausado", precio=5000, stock=5)
+    cuenta = _cuenta_ml(db_session, a_store)
+    db_session.add(MarketplaceListing(account=cuenta, product=producto, status="active", price=5000, created_at=NOW))
+    db_session.add(MarketplaceListing(account=cuenta, product=otro_producto, status="paused", price=5000, created_at=NOW))
+    db_session.commit()
+
+    filas = {f["sku"]: f["estadoPublicacionMercadoLibre"] for f in client.get("/api/productos").json()}
+    assert filas["ML-PUB-1"] == "active"
+    assert filas["ML-PUB-2"] == "paused"
+
+
+def test_estado_de_publicacion_de_otra_empresa_nunca_aparece(client, db_session, a_store):
+    """Aislamiento: el estado de publicación se calcula por tienda — el
+    producto de otra empresa nunca debería contaminar esta lista (ni
+    siquiera compartiendo el mismo product_id por coincidencia de IDs)."""
+    otro_usuario = User(email="otra-estado-ml@ejemplo.cl", password_hash=hash_password("x"), full_name="Dueño B", created_at=NOW, updated_at=NOW)
+    db_session.add(otro_usuario)
+    tienda_b = Store(owner=otro_usuario, name="Empresa Estado ML B", created_at=NOW)
+    db_session.add(tienda_b)
+    db_session.add(StoreSettings(store=tienda_b, company_name="Empresa Estado ML B", store_name="Empresa Estado ML B"))
+    db_session.commit()
+    producto_b = _producto_simple(db_session, tienda_b, sku="ML-PUB-B", nombre="De otra empresa", precio=5000, stock=5)
+    cuenta_b = _cuenta_ml(db_session, tienda_b, external_account_id="999")
+    db_session.add(MarketplaceListing(account=cuenta_b, product=producto_b, status="active", price=5000, created_at=NOW))
+    db_session.commit()
+
+    _producto_simple(db_session, a_store, sku="ML-PUB-MIA", nombre="Mi producto", precio=5000, stock=5)
+
+    filas = client.get("/api/productos").json()
+    assert len(filas) == 1
+    assert filas[0]["estadoPublicacionMercadoLibre"] is None

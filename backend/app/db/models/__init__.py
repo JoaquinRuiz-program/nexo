@@ -6,6 +6,7 @@ primero en otro lado del código.
 """
 
 from app.db.base import Base
+from app.db.models.admin_log import AdminActionLog  # noqa: F401
 from app.db.models.channel_costs import ChannelCostSettings  # noqa: F401
 from app.db.models.marketplace import (  # noqa: F401
     MarketplaceAccount,
@@ -18,6 +19,7 @@ from app.db.models.products import Product, ProductImage, ProductVariant  # noqa
 from app.db.models.stock import StockMovement  # noqa: F401
 from app.db.models.stores import Store, StoreSettings  # noqa: F401
 from app.db.models.subscriptions import Plan, Subscription  # noqa: F401
+from app.db.models.support import SupportTicket  # noqa: F401
 from app.db.models.sync import SyncJob, SyncLog  # noqa: F401
 from app.db.models.users import (  # noqa: F401
     AuthSession,
@@ -52,4 +54,6 @@ __all__ = [
     "SyncJob",
     "SyncLog",
     "StockMovement",
+    "SupportTicket",
+    "AdminActionLog",
 ]

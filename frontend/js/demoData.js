@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Librería Central — datos de demostración (Demo Mode).
+ * Nexo — datos de demostración (Demo Mode).
  *
  * Todo lo de este archivo es ficticio, generado en el navegador. Existe
  * únicamente para poder navegar y probar la interfaz completa sin depender
@@ -281,38 +281,25 @@ window.LC = window.LC || {};
   const CATALOG_ROWS = expandForTable(CATALOG_RAW);
   const CATALOG_ROWS_BY_SKU = new Map(CATALOG_ROWS.map((r) => [r.sku, r]));
 
+  // 6 de septiembre de 2026 — alineado a los planes reales (ver
+  // backend/app/domain/plans.py) para no mostrar, ni siquiera en Demo
+  // Mode, un precio o un nombre de plan que no existe de verdad.
   const PLANS = [
     {
-      id: "starter",
-      nombre: "Starter",
-      limite: 100,
-      precio: "Próximamente",
+      id: "basico",
+      nombre: "Nexo Básico",
+      limite: 200,
+      precio: "$80.000 CLP/mes",
       descripcion: "Para partir con lo esencial.",
-      features: ["Hasta 100 productos", "Sincronización básica", "Soporte por email"],
+      features: ["Hasta 200 productos", "Hasta 150 publicaciones activas en Mercado Libre", "Conexión con Mercado Libre", "Soporte por email"],
     },
     {
-      id: "growth",
-      nombre: "Growth",
-      limite: 500,
-      precio: "Próximamente",
+      id: "pro",
+      nombre: "Nexo Pro",
+      limite: 1000,
+      precio: "$200.000 CLP/mes",
       descripcion: "Para catálogos en crecimiento.",
-      features: ["Hasta 500 productos", "Sincronización con Mercado Libre", "Soporte prioritario"],
-    },
-    {
-      id: "business",
-      nombre: "Business",
-      limite: 2000,
-      precio: "Próximamente",
-      descripcion: "Para operaciones más grandes.",
-      features: ["Hasta 2.000 productos", "Múltiples usuarios", "Soporte prioritario"],
-    },
-    {
-      id: "enterprise",
-      nombre: "Enterprise",
-      limite: null,
-      precio: "Personalizado",
-      descripcion: "Para catálogos muy grandes o necesidades a medida.",
-      features: ["Más de 2.000 productos", "Integración a medida", "Soporte dedicado"],
+      features: ["Hasta 1.000 productos", "Hasta 800 publicaciones activas en Mercado Libre", "Soporte prioritario"],
     },
   ];
 
@@ -426,10 +413,10 @@ window.LC = window.LC || {};
 
   LC.demoData = {
     account: {
-      nombre: "Joaquín Ruiz",
-      email: "joaquin@lalibreriaonlineoficial.cl",
-      empresa: "Librería Central",
-      tienda: "La Librería Online",
+      nombre: "Usuario Demo",
+      email: "demo@nexo.local",
+      empresa: "Empresa Demo",
+      tienda: "Empresa Demo",
     },
     catalogRaw: CATALOG_RAW,
     catalogRows: CATALOG_ROWS,

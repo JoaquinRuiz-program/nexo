@@ -1,7 +1,7 @@
 """
 Datos de prueba para la base de datos propia — hace las veces de
 "WooCommerce real" mientras el dueño no tenga acceso definitivo a la API de
-la librería (ver decisión del 22 de agosto de 2026: no depender de esas
+un cliente real (ver decisión del 22 de agosto de 2026: no depender de esas
 credenciales para seguir avanzando). Usa exactamente los mismos modelos
 (`Product`/`ProductVariant`) que va a llenar, más adelante, el job de
 sincronización real de WooCommerce — así que el día que ese job exista, ni
@@ -26,7 +26,7 @@ from app.db.models import Product, ProductVariant, Store, StoreSettings, User
 from app.db.session import SessionLocal
 from app.domain.security import hash_password
 
-DEMO_USER_EMAIL = "demo@libreriacentral.local"
+DEMO_USER_EMAIL = "demo@nexo.local"
 
 # Productos con una sola variante (sin color) — (sku, nombre, categoria, precio, stock)
 PRODUCTOS_SIMPLES = [
@@ -100,13 +100,13 @@ def seed_demo_data(session: Session) -> Store:
     )
     session.add(usuario)
 
-    tienda = Store(owner=usuario, name="Librería Central (datos de prueba)", created_at=now)
+    tienda = Store(owner=usuario, name="Empresa Demo (datos de prueba)", created_at=now)
     session.add(tienda)
     session.add(
         StoreSettings(
             store=tienda,
-            company_name="Librería Central",
-            store_name="Librería Central (datos de prueba)",
+            company_name="Empresa Demo",
+            store_name="Empresa Demo (datos de prueba)",
         )
     )
     session.flush()

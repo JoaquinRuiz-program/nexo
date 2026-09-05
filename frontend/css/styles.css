@@ -1,4 +1,4 @@
-/* Librería Central — estilos propios (además de las utilidades de Tailwind,
+/* Nexo — estilos propios (además de las utilidades de Tailwind,
    que ya trae darkMode:"class" configurado en index.html). Todo lo que no es
    un simple ajuste de espaciado/color vive acá.
 
@@ -668,27 +668,6 @@ body {
 .dark .row-menu {
   background: #1e293b;
   border-color: #334155;
-}
-
-/* Selection bar */
-.selection-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  background: #eef2ff;
-  border: 1px solid #c7d2fe;
-  border-radius: 0.85rem;
-  padding: 0.8rem 1.15rem;
-  font-size: 0.95rem;
-  font-weight: 500;
-  color: #3730a3;
-  margin-bottom: 1.1rem;
-}
-.dark .selection-bar {
-  background: #1e1b4b;
-  border-color: #3730a3;
-  color: #c7d2fe;
 }
 
 /* ================= Empty states ================= */

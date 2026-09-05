@@ -91,10 +91,19 @@ def _producto(db_session, tienda, *, sku, nombre, precio=None, costo=None, stock
 def test_dashboard_vacio_sin_productos_ni_ventas(client, a_store):
     body = client.get("/api/dashboard/resumen").json()
 
-    assert body["catalogo"] == {"total": 0, "conStock": 0, "sinStock": 0, "stockBajo": 0, "alertasStockBajo": [], "alertasSinStock": []}
+    assert body["catalogo"] == {
+        "total": 0, "conStock": 0, "sinStock": 0, "stockBajo": 0, "productosConImagenes": 0,
+        "alertasStockBajo": [], "alertasSinStock": [],
+    }
     assert body["rentabilidad"] == {"totalProductos": 0, "productosConCosto": 0, "productosRentables": None, "canalesConfigurados": []}
     assert body["ventas"] == {"pedidosImportados": 0, "pedidosUltimos30Dias": 0, "ultimaVentaImportada": None}
     assert body["mercadoLibre"]["conectado"] is False
+    assert body["publicaciones"] == {"total": 0, "activas": 0, "pausadas": 0, "cerradas": 0}
+    # a_store se crea acá directo en la base (no vía /api/auth/registro) —
+    # nunca tiene una Subscription real, mismo caso que una tienda vieja
+    # previa al sistema de planes (ver test_suscripcion_endpoint.py para el
+    # caso de una empresa que sí se registra por el endpoint real).
+    assert body["suscripcion"]["plan"] is None
 
 
 def test_catalogo_cuenta_stock_bajo_y_agotado_segun_el_umbral_de_la_tienda(client, db_session, a_store):
@@ -164,6 +173,35 @@ def test_mercado_libre_refleja_la_cuenta_conectada_de_verdad(client, db_session,
     body = client.get("/api/dashboard/resumen").json()
     assert body["mercadoLibre"]["conectado"] is True
     assert body["mercadoLibre"]["cuentaExternaId"] == "999"
+
+
+def test_publicaciones_cuenta_por_estado(client, db_session, a_store):
+    from app.db.models import MarketplaceListing
+
+    cuenta = MarketplaceAccount(store=a_store, marketplace="mercadolibre", status="connected", external_account_id="1")
+    db_session.add(cuenta)
+    p1 = _producto(db_session, a_store, sku="PUB-1", nombre="Activo").product
+    p2 = _producto(db_session, a_store, sku="PUB-2", nombre="Pausado").product
+    p3 = _producto(db_session, a_store, sku="PUB-3", nombre="Cerrado").product
+    db_session.add(MarketplaceListing(account=cuenta, product=p1, status="active", created_at=NOW))
+    db_session.add(MarketplaceListing(account=cuenta, product=p2, status="paused", created_at=NOW))
+    db_session.add(MarketplaceListing(account=cuenta, product=p3, status="closed", created_at=NOW))
+    db_session.commit()
+
+    body = client.get("/api/dashboard/resumen").json()
+    assert body["publicaciones"] == {"total": 3, "activas": 1, "pausadas": 1, "cerradas": 1}
+
+
+def test_productos_con_imagenes_cuenta_productos_no_variantes(client, db_session, a_store):
+    from app.db.models import ProductImage
+
+    variante = _producto(db_session, a_store, sku="IMG-1", nombre="Con imagen")
+    db_session.add(ProductImage(product=variante.product, url="http://cdn.test/a.png", source="excel_url", position=0, created_at=NOW))
+    _producto(db_session, a_store, sku="IMG-2", nombre="Sin imagen")
+    db_session.commit()
+
+    body = client.get("/api/dashboard/resumen").json()
+    assert body["catalogo"]["productosConImagenes"] == 1
 
 
 def test_dashboard_de_un_usuario_recien_registrado_sin_catalogo_no_revienta(client, a_store):

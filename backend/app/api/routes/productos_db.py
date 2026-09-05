@@ -21,13 +21,22 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_store
-from app.db.models import Product, ProductImage, ProductVariant, Store
+from app.config import get_settings
+from app.db.models import MarketplaceAccount, MarketplaceListing, Product, ProductImage, ProductVariant, Store
 from app.db.session import get_db
+from app.domain.image_storage import (
+    MAX_IMAGENES_POR_PRODUCTO,
+    ImagenInvalida,
+    eliminar_archivo_si_es_local,
+    guardar_imagen,
+)
 from app.domain.listing_validation import gtin_checksum_valido
 from app.domain.marketplace_stock import set_manual_stock
 
@@ -99,10 +108,6 @@ def build_producto_fila(producto: Product, variante: ProductVariant) -> dict:
             {"id": img.id, "url": img.url, "principal": img.position == 0}
             for img in sorted(producto.images, key=lambda i: i.position)
         ],
-        # Todavía no hay vínculo con WooCommerce para datos de prueba —
-        # nunca se inventa un ID que no existe (ver app/domain/analysis.py).
-        "woocommerceParentId": None,
-        "woocommerceVariationId": None,
     }
 
 
@@ -116,10 +121,32 @@ def _variante_de_la_tienda(db: Session, store: Store, variant_id: int) -> Produc
     return variante
 
 
+def _estado_publicacion_por_producto(db: Session, store: Store) -> dict[int, str]:
+    """6 de septiembre de 2026 — "estado claro de cada producto" (auditoría
+    comercial): una sola consulta agregada, nunca una por producto —
+    devuelve {product_id: status} de MarketplaceListing (active/paused/
+    closed) solo para las publicaciones de ESTA tienda. Un producto sin
+    entrada acá nunca se publicó todavía."""
+    filas = (
+        db.query(MarketplaceListing.product_id, MarketplaceListing.status)
+        .join(MarketplaceAccount, MarketplaceListing.account_id == MarketplaceAccount.id)
+        .filter(MarketplaceAccount.store_id == store.id)
+        .all()
+    )
+    return {product_id: status for product_id, status in filas}
+
+
 @router.get("")
 def listar_productos(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> list[dict]:
     productos = db.query(Product).filter_by(store_id=store.id).order_by(Product.name).all()
-    return [build_producto_fila(producto, variante) for producto in productos for variante in producto.variants]
+    estado_publicacion = _estado_publicacion_por_producto(db, store)
+    filas = []
+    for producto in productos:
+        for variante in producto.variants:
+            fila = build_producto_fila(producto, variante)
+            fila["estadoPublicacionMercadoLibre"] = estado_publicacion.get(producto.id)
+            filas.append(fila)
+    return filas
 
 
 @router.get("/{variant_id}")
@@ -246,6 +273,50 @@ def agregar_imagen(
     return build_producto_fila(variante.product, variante)
 
 
+@router.post("/{variant_id}/imagenes/upload")
+async def subir_imagenes(
+    variant_id: int,
+    files: list[UploadFile],
+    db: Session = Depends(get_db),
+    store: Store = Depends(get_current_store),
+) -> dict:
+    """Subida real desde el computador (click o drag & drop, ver
+    frontend) — a diferencia de agregar_imagen (por URL), acá Nexo sí
+    guarda el archivo (ver app/domain/image_storage.py). Valida cada
+    archivo de a uno: uno inválido no aborta los demás, se informa cuál
+    falló y por qué."""
+    variante = _variante_de_la_tienda(db, store, variant_id)
+    producto = variante.product
+    settings = get_settings()
+    uploads_dir = Path(settings.uploads_dir)
+
+    cantidad_actual = len(producto.images)
+    guardadas: list[str] = []
+    rechazadas: list[dict] = []
+    siguiente_posicion = max((img.position for img in producto.images), default=-1) + 1
+
+    for file in files:
+        if cantidad_actual + len(guardadas) >= MAX_IMAGENES_POR_PRODUCTO:
+            rechazadas.append({"archivo": file.filename, "motivo": f"Este producto ya tiene el máximo de {MAX_IMAGENES_POR_PRODUCTO} imágenes."})
+            continue
+        contenido = await file.read()
+        try:
+            ruta_relativa, _nombre = guardar_imagen(contenido, uploads_dir=uploads_dir, store_id=store.id)
+        except ImagenInvalida as err:
+            rechazadas.append({"archivo": file.filename, "motivo": str(err)})
+            continue
+        url = f"{settings.backend_public_base_url}/uploads/{ruta_relativa}"
+        db.add(ProductImage(product=producto, url=url, source="manual_upload", position=siguiente_posicion, created_at=datetime.now()))
+        siguiente_posicion += 1
+        guardadas.append(file.filename or "")
+
+    db.commit()
+    db.refresh(variante)
+    resultado = build_producto_fila(variante.product, variante)
+    resultado["subidas"] = {"guardadas": len(guardadas), "rechazadas": rechazadas}
+    return resultado
+
+
 @router.delete("/{variant_id}/imagenes/{image_id}")
 def eliminar_imagen(
     variant_id: int, image_id: int, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
@@ -256,6 +327,8 @@ def eliminar_imagen(
     if imagen is None:
         raise HTTPException(status_code=404, detail="Esa imagen no existe para este producto.")
 
+    settings = get_settings()
+    eliminar_archivo_si_es_local(imagen.url, uploads_dir=Path(settings.uploads_dir), backend_public_base_url=settings.backend_public_base_url)
     db.delete(imagen)
     db.flush()
     _reordenar_posiciones([img for img in producto.images if img.id != image_id])

@@ -28,7 +28,7 @@ cada request; esto alcanza sin ese costo.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -36,17 +36,25 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_nexo_admin
+from app.api.routes.productos_db import build_producto_fila
 from app.db.models import (
+    AdminActionLog,
     AuthSession,
     ChannelCostSettings,
     MarketplaceAccount,
     MarketplaceListing,
+    Plan,
     Product,
+    ProductVariant,
     Store,
     StoreSettings,
+    Subscription,
+    SupportTicket,
     User,
 )
+from app.db.models.support import ESTADOS_VALIDOS as ESTADOS_SOPORTE_VALIDOS
 from app.db.session import get_db
+from app.domain.plans import ESTADOS_VALIDOS, ensure_default_plans
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -77,6 +85,14 @@ def _cuenta_ml_de(store: Store) -> MarketplaceAccount | None:
     return next((c for c in store.marketplace_accounts if c.marketplace == "mercadolibre"), None)
 
 
+def _registrar_accion_admin(db: Session, admin: User, action: str, *, store_id: int | None = None, detail: str | None = None) -> None:
+    """Registro simple de auditoría (6 de septiembre de 2026) — no hace
+    commit acá: cuelga del mismo commit que ya hace el endpoint que llama,
+    para que la acción y su registro sean atómicos (si uno falla, el otro
+    tampoco queda guardado)."""
+    db.add(AdminActionLog(admin_user_id=admin.id, store_id=store_id, action=action, detail=detail, created_at=datetime.now()))
+
+
 @router.get("/clientes")
 def listar_clientes(db: Session = Depends(get_db), _admin: User = Depends(require_nexo_admin)) -> list[dict]:
     tiendas = db.query(Store).order_by(Store.created_at.desc()).all()
@@ -99,6 +115,29 @@ def listar_clientes(db: Session = Depends(get_db), _admin: User = Depends(requir
     return filas
 
 
+@router.get("/usuarios")
+def listar_usuarios(db: Session = Depends(get_db), _admin: User = Depends(require_nexo_admin)) -> list[dict]:
+    """Vista cruzada de usuarios (segunda pestaña del panel, pedida aparte
+    de "Clientes" — hoy son casi la misma información porque cada tienda
+    tiene un único dueño, pero se arma como su propia consulta para no
+    tener que cambiar de forma el día que exista "varios usuarios por
+    tienda"). Nunca incluye password_hash."""
+    usuarios = db.query(User).order_by(User.created_at.desc()).all()
+    filas = []
+    for u in usuarios:
+        tienda = u.stores[0] if u.stores else None
+        filas.append({
+            "id": u.id,
+            "email": u.email,
+            "nombre": u.full_name,
+            "esNexoAdmin": u.is_nexo_admin,
+            "estadoCuenta": u.status,
+            "creadoEn": u.created_at.isoformat(),
+            "empresa": None if tienda is None else {"storeId": tienda.id, "nombre": tienda.name},
+        })
+    return filas
+
+
 @router.get("/clientes/{store_id}")
 def detalle_cliente(store_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_nexo_admin)) -> dict:
     tienda = db.get(Store, store_id)
@@ -116,6 +155,34 @@ def detalle_cliente(store_id: int, db: Session = Depends(get_db), _admin: User =
 
     canales_costos = db.query(ChannelCostSettings).filter_by(store_id=tienda.id).all()
 
+    # 6 de septiembre de 2026 — perfil de empresa completo para el admin
+    # (auditoría comercial): antes solo había un conteo de productos y de
+    # publicaciones por estado, sin la lista real de ninguno de los dos, y
+    # sin ningún dato de soporte acá. Reutiliza build_producto_fila
+    # (mismo que ve el propio cliente en /api/productos) y
+    # _fila_soporte_admin (mismo que la vista global de Soporte) — nunca
+    # se duplica la lógica de armar esas filas.
+    pares_producto_variante = (
+        db.query(Product, ProductVariant)
+        .join(ProductVariant, ProductVariant.product_id == Product.id)
+        .filter(Product.store_id == tienda.id)
+        .order_by(Product.name)
+        .limit(200)
+        .all()
+    )
+    filas_productos = [build_producto_fila(p, v) for p, v in pares_producto_variante]
+
+    filas_publicaciones = [{
+        "id": pub.id,
+        "producto": pub.product.name if pub.product else None,
+        "externalListingId": pub.external_listing_id,
+        "status": pub.status,
+        "precio": float(pub.price) if pub.price is not None else None,
+    } for pub in publicaciones]
+
+    tickets_soporte = db.query(SupportTicket).filter_by(store_id=tienda.id).order_by(SupportTicket.created_at.desc()).all()
+    tickets_abiertos = sum(1 for t in tickets_soporte if t.status in ("abierto", "en_revision"))
+
     ultimas_sesiones = (
         db.query(AuthSession)
         .filter(AuthSession.user_id == tienda.owner_user_id)
@@ -125,6 +192,14 @@ def detalle_cliente(store_id: int, db: Session = Depends(get_db), _admin: User =
     )
 
     settings_tienda = db.query(StoreSettings).filter_by(store_id=tienda.id).first()
+
+    acciones_admin = (
+        db.query(AdminActionLog)
+        .filter_by(store_id=tienda.id)
+        .order_by(AdminActionLog.created_at.desc())
+        .limit(20)
+        .all()
+    )
 
     return {
         "storeId": tienda.id,
@@ -144,8 +219,13 @@ def detalle_cliente(store_id: int, db: Session = Depends(get_db), _admin: User =
             "nombreEmpresa": settings_tienda.company_name if settings_tienda else None,
             "nombreTienda": settings_tienda.store_name if settings_tienda else None,
         },
-        "productos": {"cantidad": cantidad_productos},
-        "publicaciones": {"total": len(publicaciones), "porEstado": publicaciones_por_estado},
+        "productos": {"cantidad": cantidad_productos, "filas": filas_productos},
+        "publicaciones": {"total": len(publicaciones), "porEstado": publicaciones_por_estado, "filas": filas_publicaciones},
+        "soporte": {
+            "ticketsAbiertos": tickets_abiertos,
+            "solicitudes": [_fila_soporte_admin(t) for t in tickets_soporte],
+        },
+        "cantidadUsuarios": 1,  # ver comentario de "usuarios" más arriba
         "mercadoLibre": None if cuenta_ml is None else {
             # Nunca access_token_encrypted/refresh_token_encrypted — ni
             # siquiera el hecho de que existan como campo en la respuesta.
@@ -162,10 +242,13 @@ def detalle_cliente(store_id: int, db: Session = Depends(get_db), _admin: User =
             "margenMinimoPct": float(c.min_margin_pct) if c.min_margin_pct is not None else None,
         } for c in canales_costos],
         "plan": (
-            {"nombre": tienda.subscription.plan.name, "estado": tienda.subscription.status}
+            {"codigo": tienda.subscription.plan.code, "nombre": tienda.subscription.plan.name, "estado": tienda.subscription.status}
             if (tienda.subscription and tienda.subscription.plan) else None
         ),
         "actividadReciente": [{"fecha": s.created_at.isoformat()} for s in ultimas_sesiones],
+        "accionesAdministrativas": [{
+            "admin": a.admin_user.email, "accion": a.action, "detalle": a.detail, "fecha": a.created_at.isoformat(),
+        } for a in acciones_admin],
         # No existe todavía ningún mecanismo de log de errores por tienda
         # (los errores de publicación/ML solo llegan a los logs del
         # servidor) — nunca se inventa un valor acá, se deja explícito.
@@ -179,7 +262,7 @@ class ActualizarEstadoClienteRequest(BaseModel):
 
 @router.put("/clientes/{store_id}/estado")
 def actualizar_estado_cliente(
-    store_id: int, body: ActualizarEstadoClienteRequest, db: Session = Depends(get_db), _admin: User = Depends(require_nexo_admin)
+    store_id: int, body: ActualizarEstadoClienteRequest, db: Session = Depends(get_db), admin: User = Depends(require_nexo_admin)
 ) -> dict:
     """Suspender/reactivar una cuenta — el único cambio que este panel
     puede hacer sobre un cliente (nada de precios/stock/productos/
@@ -190,8 +273,162 @@ def actualizar_estado_cliente(
         raise HTTPException(status_code=404, detail="Cliente no encontrado.")
     tienda.owner.status = "suspended" if body.suspendido else "active"
     tienda.owner.updated_at = datetime.now()
+    _registrar_accion_admin(db, admin, "suspender" if body.suspendido else "reactivar", store_id=tienda.id)
     db.commit()
     cantidad_productos = db.query(func.count(Product.id)).filter(Product.store_id == tienda.id).scalar() or 0
     cuenta_ml = _cuenta_ml_de(tienda)
     ml_conectado = cuenta_ml is not None and cuenta_ml.status == "connected"
     return {"storeId": tienda.id, "estado": _estado_cliente(tienda, cantidad_productos, ml_conectado)}
+
+
+@router.get("/planes")
+def listar_planes(db: Session = Depends(get_db), _admin: User = Depends(require_nexo_admin)) -> list[dict]:
+    """Planes disponibles para asignar manualmente — siembra los 3 planes
+    por defecto la primera vez que no existe ninguno (ver app/domain/plans.py)."""
+    planes = list(ensure_default_plans(db).values())
+    db.commit()
+    return [{
+        "codigo": p.code, "nombre": p.name, "limiteProductos": p.product_limit,
+        "limitePublicaciones": p.publication_limit, "precio": p.price_demo_label, "activo": p.is_active,
+    } for p in sorted(planes, key=lambda p: p.id)]
+
+
+class ActualizarSuscripcionRequest(BaseModel):
+    planCode: str | None = None
+    estado: str | None = None
+
+
+@router.put("/clientes/{store_id}/suscripcion")
+def actualizar_suscripcion_cliente(
+    store_id: int, body: ActualizarSuscripcionRequest, db: Session = Depends(get_db), admin: User = Depends(require_nexo_admin)
+) -> dict:
+    """Cambio manual de plan/estado — mientras no exista un proveedor de
+    pago real conectado, ÚNICO lugar de todo el backend que puede modificar
+    una Subscription (nunca el propio cliente, ver app/api/routes/suscripcion.py).
+
+    6 de septiembre de 2026 — hallazgo de la auditoría comercial: una
+    empresa creada ANTES de que existiera el sistema de planes (dato viejo,
+    ver app/domain/plans.py) no tenía ninguna Subscription, y este endpoint
+    devolvía 404 sin dejarle al admin asignarle una — un callejón sin
+    salida real para incorporar a Nexo a un cliente ya existente. Ahora, si
+    no tiene ninguna, se le CREA una acá mismo (requiere indicar planCode
+    la primera vez — nunca se inventa un plan por default en un alta
+    manual del admin)."""
+    tienda = db.get(Store, store_id)
+    if tienda is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+    if tienda.subscription is None:
+        if body.planCode is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Esta empresa todavía no tiene ninguna suscripción — elegí un plan para crearle la primera.",
+            )
+        plan_inicial = db.query(Plan).filter_by(code=body.planCode).first()
+        if plan_inicial is None:
+            raise HTTPException(status_code=404, detail="Ese plan no existe.")
+        ahora = datetime.now()
+        nueva_suscripcion = Subscription(
+            store=tienda, plan=plan_inicial, status=body.estado or "active",
+            started_at=ahora, current_period_end=(ahora + timedelta(days=30)).date(),
+        )
+        db.add(nueva_suscripcion)
+        _registrar_accion_admin(db, admin, "asignar_plan_inicial", store_id=tienda.id, detail=f"plan={plan_inicial.code}")
+        db.commit()
+        # Nunca releer tienda.subscription después del commit acá: el
+        # commit expira los atributos del ORM y el reload por relación
+        # (Store -> Subscription) puede no resolver a tiempo dentro de la
+        # misma respuesta — se devuelve directo desde el objeto recién
+        # creado, que sí sigue siendo válido.
+        return {"storeId": tienda.id, "plan": plan_inicial.code, "estado": nueva_suscripcion.status}
+
+    if body.estado is not None:
+        if body.estado not in ESTADOS_VALIDOS:
+            raise HTTPException(status_code=400, detail=f"Estado inválido. Tiene que ser uno de: {', '.join(ESTADOS_VALIDOS)}.")
+        tienda.subscription.status = body.estado
+        if body.estado == "canceled":
+            tienda.subscription.canceled_at = datetime.now()
+    if body.planCode is not None:
+        plan = db.query(Plan).filter_by(code=body.planCode).first()
+        if plan is None:
+            raise HTTPException(status_code=404, detail="Ese plan no existe.")
+        tienda.subscription.plan = plan
+    _registrar_accion_admin(
+        db, admin, "cambiar_suscripcion", store_id=tienda.id,
+        detail=f"plan={body.planCode or '(sin cambio)'} estado={body.estado or '(sin cambio)'}",
+    )
+    db.commit()
+
+    return {
+        "storeId": tienda.id,
+        "plan": tienda.subscription.plan.code if tienda.subscription.plan else None,
+        "estado": tienda.subscription.status,
+    }
+
+
+# ------------------------------------------------------------------
+# Soporte — vista global de solicitudes de todas las empresas (el cliente
+# solo ve las suyas, ver app/api/routes/soporte.py).
+# ------------------------------------------------------------------
+
+
+def _fila_soporte_admin(t: SupportTicket) -> dict:
+    return {
+        "id": t.id,
+        "empresa": {"storeId": t.store_id, "nombre": t.store.name},
+        "usuario": {"id": t.user_id, "email": t.user.email, "nombre": t.user.full_name},
+        "categoria": t.category,
+        "asunto": t.subject,
+        "descripcion": t.description,
+        "referencia": t.reference,
+        "estado": t.status,
+        "respuestaAdmin": t.admin_response,
+        "respuestaAdminEn": t.admin_response_at.isoformat() if t.admin_response_at else None,
+        "creadoEn": t.created_at.isoformat(),
+        "actualizadoEn": t.updated_at.isoformat(),
+    }
+
+
+@router.get("/soporte/solicitudes")
+def listar_solicitudes_soporte(db: Session = Depends(get_db), _admin: User = Depends(require_nexo_admin)) -> list[dict]:
+    tickets = db.query(SupportTicket).order_by(SupportTicket.created_at.desc()).all()
+    return [_fila_soporte_admin(t) for t in tickets]
+
+
+@router.get("/soporte/solicitudes/{ticket_id}")
+def detalle_solicitud_soporte(ticket_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_nexo_admin)) -> dict:
+    ticket = db.get(SupportTicket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada.")
+    return _fila_soporte_admin(ticket)
+
+
+class ResponderSolicitudRequest(BaseModel):
+    respuesta: str | None = None
+    estado: str | None = None
+
+
+@router.put("/soporte/solicitudes/{ticket_id}")
+def responder_solicitud_soporte(
+    ticket_id: int, body: ResponderSolicitudRequest, db: Session = Depends(get_db), admin: User = Depends(require_nexo_admin)
+) -> dict:
+    ticket = db.get(SupportTicket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada.")
+    if body.estado is not None and body.estado not in ESTADOS_SOPORTE_VALIDOS:
+        raise HTTPException(status_code=400, detail=f"Estado inválido. Tiene que ser uno de: {', '.join(ESTADOS_SOPORTE_VALIDOS)}.")
+
+    ahora = datetime.now()
+    if body.respuesta is not None and body.respuesta.strip():
+        ticket.admin_response = body.respuesta.strip()
+        ticket.admin_response_at = ahora
+        # Responder sin indicar estado explícito mueve la solicitud a "en
+        # revisión" si seguía "abierta" — nunca la deja como si nadie la
+        # hubiera visto todavía.
+        if body.estado is None and ticket.status == "abierto":
+            ticket.status = "en_revision"
+    if body.estado is not None:
+        ticket.status = body.estado
+    ticket.updated_at = ahora
+    _registrar_accion_admin(db, admin, "responder_ticket", store_id=ticket.store_id, detail=f"ticket_id={ticket.id} estado={ticket.status}")
+    db.commit()
+    return _fila_soporte_admin(ticket)

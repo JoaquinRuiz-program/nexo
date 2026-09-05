@@ -6,10 +6,10 @@ frontend React) y de `scripts/woocommerce-audit/` (el script de auditoría)
 
 ## Pivote (24 de agosto de 2026): de "una librería" a plataforma universal
 
-El dueño decidió que el sistema no es exclusivo de Librería Central — es
+El dueño decidió que el sistema no es exclusivo de un solo rubro — es
 una plataforma para cualquier vendedor de Mercado Libre que empieza
-subiendo su catálogo en Excel/CSV. Librería Central es el primer caso de
-uso, no un límite de arquitectura. Esto ya estaba mayormente resuelto por
+subiendo su catálogo en Excel/CSV. El producto es Nexo, ningún cliente
+en particular define el límite de la arquitectura. Esto ya estaba mayormente resuelto por
 decisiones previas (`store_id` en todo el catálogo, `category` como texto
 libre, comisión de canal siempre configurable — nunca hardcodeada) — lo
 nuevo de esta fase:
@@ -150,7 +150,7 @@ probar de punta a punta hasta que el dueño las genere.
 
 El OAuth funcionaba, pero había que confirmar que la arquitectura no
 asumía en ningún lado "una única cuenta de Mercado Libre" — Nexo es un
-SaaS que va a tener muchas empresas cliente, no solo Librería Central.
+SaaS que va a tener muchas empresas cliente, ninguna con trato especial.
 Auditoría completa (modelos, `MarketplaceAccount`, `store_id`, tokens,
 OAuth, callback, endpoints, frontend, tests) antes de tocar nada: la base
 ya estaba bien encaminada (`store_id` scopea todo desde el modelo

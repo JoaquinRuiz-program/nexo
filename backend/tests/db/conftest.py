@@ -73,9 +73,9 @@ def a_user(db_session, now):
 
 @pytest.fixture()
 def a_store(db_session, a_user, now):
-    store = Store(owner=a_user, name="La Librería Online", created_at=now)
+    store = Store(owner=a_user, name="Empresa Demo", created_at=now)
     db_session.add(store)
-    db_session.add(StoreSettings(store=store, company_name="Librería Central", store_name="La Librería Online"))
+    db_session.add(StoreSettings(store=store, company_name="Empresa Demo", store_name="Empresa Demo"))
     db_session.commit()
     return store
 

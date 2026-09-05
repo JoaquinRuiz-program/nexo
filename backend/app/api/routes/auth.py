@@ -25,6 +25,7 @@ from app.api.deps import clear_session_cookie, get_current_session, get_current_
 from app.config import get_settings
 from app.db.models import AuthSession, Store, StoreSettings, User
 from app.db.session import get_db
+from app.domain.plans import crear_suscripcion_inicial
 from app.domain.security import generate_session_token, hash_password, hash_session_token, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -136,6 +137,9 @@ def registro(body: RegistroRequest, response: Response, db: Session = Depends(ge
             store_name=body.store_name or body.company_name,
         )
     )
+    # Toda empresa nueva arranca con una suscripción trial al plan básico —
+    # nunca queda sin plan asignado (ver app/domain/plans.py).
+    crear_suscripcion_inicial(db, tienda, ahora=ahora)
     db.commit()
 
     _crear_sesion(db, response, usuario, body.remember_me)

@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
-from app.db.models import Product, ProductImage, ProductVariant, Store, StoreSettings, User
+from app.db.models import Plan, Product, ProductImage, ProductVariant, Store, StoreSettings, Subscription, User
 from app.db.session import get_db
 from app.domain.security import hash_password
 from tests.auth_helpers import autenticar
@@ -228,3 +228,47 @@ def test_xlsx_corrupto_devuelve_400_no_500(client, a_store):
     res = client.post("/api/catalogo/importar/analizar", files={"file": ("catalogo.xlsx", archivo, "application/octet-stream")})
     assert res.status_code == 400
     assert "no pudimos leer el archivo" in res.json()["detail"].lower()
+
+
+# ------------------------------------------------------------------
+# 5 de septiembre de 2026 — límite de productos del plan (ver
+# app/domain/plans.py). Nunca se puede manipular desde el frontend: se
+# evalúa siempre server-side, contando lo que YA existe en la base.
+# ------------------------------------------------------------------
+
+
+def test_importar_omite_productos_nuevos_que_excedan_el_limite_del_plan(client, db_session, a_store):
+    plan = Plan(code="plan-chico", name="Plan chico", product_limit=1, price_demo_label="Precio demo: $0")
+    db_session.add(plan)
+    db_session.flush()
+    db_session.add(Subscription(store=a_store, plan=plan, status="active", started_at=NOW, current_period_end=NOW.date()))
+    db_session.commit()
+
+    archivo = io.BytesIO(CSV_LIBRERIA.encode("utf-8"))  # 2 productos nuevos, límite = 1
+    mapeo = {"sku": "SKU", "nombre": "Nombre", "marca": "Marca", "categoria": "Categoría", "precio": "Precio", "costo": "Costo", "stock": "Stock"}
+    res = client.post(
+        "/api/catalogo/importar/confirmar",
+        files={"file": ("libreria.csv", archivo, "text/csv")},
+        data={"mapeo": json.dumps(mapeo)},
+    )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["creados"] == 1
+    assert body["omitidos"] == 1
+    assert "límite" in body["detalleOmitidos"][0]["problemas"][0].lower()
+    assert db_session.query(Product).filter_by(store_id=a_store.id).count() == 1
+
+
+def test_importar_sin_suscripcion_no_tiene_ningun_limite(client, db_session, a_store):
+    """Dato viejo (tienda sin Subscription, previa a este sistema de
+    planes) — nunca se bloquea una importación por falta de suscripción."""
+    archivo = io.BytesIO(CSV_LIBRERIA.encode("utf-8"))
+    mapeo = {"sku": "SKU", "nombre": "Nombre", "marca": "Marca", "categoria": "Categoría", "precio": "Precio", "costo": "Costo", "stock": "Stock"}
+    res = client.post(
+        "/api/catalogo/importar/confirmar",
+        files={"file": ("libreria.csv", archivo, "text/csv")},
+        data={"mapeo": json.dumps(mapeo)},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["creados"] == 2

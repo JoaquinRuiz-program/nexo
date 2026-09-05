@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Librería Central — cliente del backend real (FastAPI).
+ * Nexo — cliente del backend real (FastAPI).
  *
  * 24 de agosto de 2026: este archivo empieza a usarse de verdad — antes
  * solo `fetchReporte()` existía, sin usar. `js/importFlow.js` fue el primer
@@ -213,6 +213,15 @@ window.LC = window.LC || {};
     return request(`/api/productos/${id}/imagenes/orden`, { method: "PUT", body: { orden } });
   }
 
+  // 5 de septiembre de 2026 — subida real desde el computador (click o
+  // drag & drop, ver frontend/js/app.js). `files` es un FileList o array
+  // de File — se mandan todos en un solo request multipart.
+  async function subirImagenesProducto(id, files) {
+    const form = new FormData();
+    Array.from(files).forEach((file) => form.append("files", file));
+    return request(`/api/productos/${id}/imagenes/upload`, { method: "POST", body: form, isFormData: true, timeoutMs: UPLOAD_TIMEOUT_MS });
+  }
+
   // Devuelve la URL real de autorización de Mercado Libre — el navegador
   // tiene que navegar ahí de verdad (window.location.href), no un fetch:
   // es el usuario quien inicia sesión y autoriza en el sitio de ML.
@@ -233,6 +242,35 @@ window.LC = window.LC || {};
   // precio), nunca instantáneo: puede tardar según el tamaño del catálogo.
   async function recalcularComisionesMercadoLibre() {
     return request("/api/mercadolibre/comisiones/recalcular", { method: "POST", timeoutMs: UPLOAD_TIMEOUT_MS });
+  }
+
+  // Google Sheets como fuente de catálogo (5 de septiembre de 2026) — mismo
+  // patrón que Mercado Libre arriba: /conectar devuelve una URL real a la
+  // que hay que navegar de página completa, nunca un fetch.
+  async function fetchGoogleSheetsEstado() {
+    return request("/api/google-sheets/estado");
+  }
+
+  async function conectarGoogleSheets() {
+    return request("/api/google-sheets/conectar");
+  }
+
+  async function desconectarGoogleSheets() {
+    return request("/api/google-sheets/desconectar", { method: "POST" });
+  }
+
+  async function vincularHojaGoogleSheets(url) {
+    return request("/api/google-sheets/hoja", { method: "POST", body: { url } });
+  }
+
+  async function analizarHojaGoogleSheets(hoja) {
+    return request("/api/google-sheets/importar/analizar", { method: "POST", body: hoja ? { hoja } : {}, timeoutMs: UPLOAD_TIMEOUT_MS });
+  }
+
+  async function confirmarHojaGoogleSheets(hoja, mapeo, omitirErrores) {
+    const body = { mapeo, omitirErrores: omitirErrores !== false };
+    if (hoja) body.hoja = hoja;
+    return request("/api/google-sheets/importar/confirmar", { method: "POST", body, timeoutMs: UPLOAD_TIMEOUT_MS });
   }
 
   // Chequeo rápido y silencioso — usado por importFlow.js para decidir si
@@ -367,6 +405,50 @@ window.LC = window.LC || {};
     return request(`/api/admin/clientes/${storeId}/estado`, { method: "PUT", body: { suspendido } });
   }
 
+  async function listarUsuariosAdmin() {
+    return request("/api/admin/usuarios");
+  }
+
+  async function listarPlanesAdmin() {
+    return request("/api/admin/planes");
+  }
+
+  async function actualizarSuscripcionAdmin(storeId, { planCode, estado } = {}) {
+    return request(`/api/admin/clientes/${storeId}/suscripcion`, { method: "PUT", body: { planCode, estado } });
+  }
+
+  async function listarSolicitudesSoporteAdmin() {
+    return request("/api/admin/soporte/solicitudes");
+  }
+
+  async function detalleSolicitudSoporteAdmin(ticketId) {
+    return request(`/api/admin/soporte/solicitudes/${ticketId}`);
+  }
+
+  async function responderSolicitudSoporteAdmin(ticketId, { respuesta, estado } = {}) {
+    return request(`/api/admin/soporte/solicitudes/${ticketId}`, { method: "PUT", body: { respuesta, estado } });
+  }
+
+  // ------------------------------------------------------------------
+  // Mi plan (suscripción real de la empresa) y Ayuda y soporte.
+  // ------------------------------------------------------------------
+
+  async function fetchMiSuscripcion() {
+    return request("/api/suscripcion");
+  }
+
+  async function listarMisSolicitudesSoporte() {
+    return request("/api/soporte/solicitudes");
+  }
+
+  async function crearSolicitudSoporte({ category, subject, description, reference }) {
+    return request("/api/soporte/solicitudes", { method: "POST", body: { category, subject, description, reference } });
+  }
+
+  async function obtenerMiSolicitudSoporte(ticketId) {
+    return request(`/api/soporte/solicitudes/${ticketId}`);
+  }
+
   async function obtenerConfiguracionCanales() {
     return request("/api/configuracion/canales");
   }
@@ -392,11 +474,18 @@ window.LC = window.LC || {};
     agregarImagenProducto,
     eliminarImagenProducto,
     reordenarImagenesProducto,
+    subirImagenesProducto,
     fetchMercadoLibreEstado,
     conectarMercadoLibre,
     desconectarMercadoLibre,
     importarVentasMercadoLibre,
     recalcularComisionesMercadoLibre,
+    fetchGoogleSheetsEstado,
+    conectarGoogleSheets,
+    desconectarGoogleSheets,
+    vincularHojaGoogleSheets,
+    analizarHojaGoogleSheets,
+    confirmarHojaGoogleSheets,
     analizarCatalogo,
     confirmarImportacion,
     obtenerSeleccion,
@@ -419,5 +508,15 @@ window.LC = window.LC || {};
     listarClientesAdmin,
     detalleClienteAdmin,
     actualizarEstadoClienteAdmin,
+    listarUsuariosAdmin,
+    listarPlanesAdmin,
+    actualizarSuscripcionAdmin,
+    listarSolicitudesSoporteAdmin,
+    detalleSolicitudSoporteAdmin,
+    responderSolicitudSoporteAdmin,
+    fetchMiSuscripcion,
+    listarMisSolicitudesSoporte,
+    crearSolicitudSoporte,
+    obtenerMiSolicitudSoporte,
   };
 })();

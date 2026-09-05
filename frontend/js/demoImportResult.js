@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Librería Central — resultado de ejemplo para el asistente "Importar
+ * Nexo — resultado de ejemplo para el asistente "Importar
  * catálogo" (js/importFlow.js), usado SOLO cuando el backend real no está
  * disponible (ver LC.backendApi.checkHealth).
  *

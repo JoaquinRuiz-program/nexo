@@ -1,7 +1,7 @@
 """
 Pruebas de app/domain/catalog_import.py — en particular, que la detección
-de columnas funciona con nombres distintos a los que usa Librería Central
-(el pedido central de "catálogo universal", 24 de agosto de 2026).
+de columnas funciona con nombres distintos a los de cualquier cliente en
+particular (el pedido central de "catálogo universal", 24 de agosto de 2026).
 """
 
 from __future__ import annotations
