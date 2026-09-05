@@ -218,6 +218,14 @@
           </div>
         </header>
 
+        <!-- "Modo soporte" (6 de septiembre de 2026): visible SIEMPRE que un
+             administrador de Nexo esté operando la sesión de un cliente —
+             nunca silencioso, ver js/app.js::updateUserHeader. -->
+        <div id="soporte-banner" class="hidden bg-amber-500 dark:bg-amber-600 text-amber-950 dark:text-amber-50 text-sm font-medium px-4 py-2 flex items-center justify-between gap-3 shrink-0">
+          <span id="soporte-banner-texto">Estás operando en modo soporte.</span>
+          <button id="soporte-banner-salir" class="underline font-semibold shrink-0">Salir del modo soporte</button>
+        </div>
+
         <main id="main-content" class="flex-1 overflow-y-auto"></main>
       </div>
     </div>
@@ -230,15 +238,15 @@
   <script src="js/chart.js?v=2"></script>
   <script src="js/demoData.js?v=4"></script>
   <script src="js/dataSource.js?v=11"></script>
-  <script src="js/backendApi.js?v=16"></script>
+  <script src="js/backendApi.js?v=17"></script>
   <script src="js/demoImportResult.js?v=2"></script>
   <script src="js/importFlow.js?v=4"></script>
   <script src="js/mercadolibrePublicar.js?v=13"></script>
   <script src="js/googleSheetsFlow.js?v=1"></script>
-  <script src="js/adminPanel.js?v=9"></script>
+  <script src="js/adminPanel.js?v=10"></script>
   <script src="js/soporte.js?v=1"></script>
-  <script src="js/auth.js?v=4"></script>
-  <script src="js/app.js?v=32"></script>
+  <script src="js/auth.js?v=5"></script>
+  <script src="js/app.js?v=33"></script>
   <script src="js/router.js?v=5"></script>
 </body>
 </html>

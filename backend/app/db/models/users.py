@@ -46,7 +46,7 @@ class User(Base):
 
     stores: Mapped[list["Store"]] = relationship(back_populates="owner")  # noqa: F821
     preferences: Mapped["UserPreferences | None"] = relationship(back_populates="user", uselist=False)
-    sessions: Mapped[list["AuthSession"]] = relationship(back_populates="user")
+    sessions: Mapped[list["AuthSession"]] = relationship(foreign_keys="AuthSession.user_id", back_populates="user")
     password_reset_tokens: Mapped[list["PasswordResetToken"]] = relationship(back_populates="user")
 
 
@@ -85,9 +85,20 @@ class AuthSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # "Modo soporte" (6 de septiembre de 2026) — NULL en cualquier sesión
+    # normal (login/registro). Si un administrador de Nexo "entró como
+    # soporte" a esta empresa (ver app/api/routes/admin.py::entrar_como_soporte),
+    # acá queda registrado QUÉ admin fue — nunca silencioso: GET /api/auth/me
+    # lo expone (el propio cliente vería, si mirara su sesión, que hay un
+    # admin operando) y queda además en AdminActionLog. `foreign_keys`
+    # explícito en ambas relaciones de acá abajo porque ahora hay DOS
+    # columnas de esta tabla apuntando a `users.id` — sin esto, SQLAlchemy
+    # no puede saber sola cuál es cuál.
+    impersonated_by_admin_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
-    user: Mapped["User"] = relationship(back_populates="sessions")
+    user: Mapped["User"] = relationship(foreign_keys=[user_id], back_populates="sessions")
     active_store: Mapped["Store | None"] = relationship()  # noqa: F821
+    impersonated_by_admin: Mapped["User | None"] = relationship(foreign_keys=[impersonated_by_admin_id])
 
 
 class PasswordResetToken(Base):

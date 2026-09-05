@@ -30,13 +30,14 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_nexo_admin
+from app.api.deps import require_nexo_admin, set_session_cookie
 from app.api.routes.productos_db import build_producto_fila
+from app.config import get_settings
 from app.db.models import (
     AdminActionLog,
     AuthSession,
@@ -55,6 +56,7 @@ from app.db.models import (
 from app.db.models.support import ESTADOS_VALIDOS as ESTADOS_SOPORTE_VALIDOS
 from app.db.session import get_db
 from app.domain.plans import ESTADOS_VALIDOS, ensure_default_plans
+from app.domain.security import generate_session_token, hash_session_token
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -279,6 +281,66 @@ def actualizar_estado_cliente(
     cuenta_ml = _cuenta_ml_de(tienda)
     ml_conectado = cuenta_ml is not None and cuenta_ml.status == "connected"
     return {"storeId": tienda.id, "estado": _estado_cliente(tienda, cantidad_productos, ml_conectado)}
+
+
+SOPORTE_SESSION_TTL_HORAS = 1
+
+
+@router.post("/clientes/{store_id}/entrar")
+def entrar_como_soporte(
+    store_id: int, response: Response, db: Session = Depends(get_db), admin: User = Depends(require_nexo_admin)
+) -> dict:
+    """"Entrar como soporte" a la cuenta de un cliente — para que un
+    administrador de Nexo pueda ver/operar la aplicación EXACTAMENTE como
+    la ve ese cliente (necesario para dar soporte real, ej. reproducir un
+    error puntual) sin pedirle la contraseña ni que el cliente comparta su
+    sesión.
+
+    Nunca es silenciosa: queda registrada en AdminActionLog (quién, cuándo,
+    a qué empresa — mismo mecanismo que suspender/cambiar plan) y la sesión
+    resultante lleva `impersonated_by_admin_id` marcado — GET /api/auth/me
+    se lo informa al frontend, que mientras dure muestra un aviso
+    persistente ("Estás como soporte en la cuenta de <empresa> — Salir").
+
+    Reemplaza la cookie de sesión del NAVEGADOR DEL ADMIN por esta sesión
+    nueva (scopeada a la empresa del cliente, igual que cualquier sesión
+    normal — reutiliza get_current_store/get_current_user sin cambiar nada
+    de esos endpoints) — por eso, a diferencia de cualquier otro endpoint
+    de este router, esto SÍ escribe en la cookie del navegador que llama.
+    Vida corta a propósito (1 hora, nunca "recordarme"): terminarla
+    (POST /api/auth/logout, el mismo de siempre) siempre devuelve al admin
+    a /login — no existe forma de "volver" a la sesión de admin anterior
+    porque su token nunca vivió en el servidor en texto plano (solo el
+    hash), así que no hay nada que restaurar; es una decisión de diseño,
+    no una limitación olvidada."""
+    tienda = db.get(Store, store_id)
+    if tienda is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+    if tienda.owner.is_nexo_admin:
+        # Nunca se puede "entrar como soporte" a la cuenta de OTRO
+        # administrador de Nexo — este atajo es para dar soporte a
+        # clientes, no para que un admin tome la identidad de otro.
+        raise HTTPException(status_code=400, detail="No se puede entrar como soporte a una cuenta de administrador.")
+
+    settings = get_settings()
+    ahora = datetime.now()
+    expira = ahora + timedelta(hours=SOPORTE_SESSION_TTL_HORAS)
+    token = generate_session_token()
+    db.add(
+        AuthSession(
+            user_id=tienda.owner_user_id,
+            token_hash=hash_session_token(token),
+            active_store_id=tienda.id,
+            impersonated_by_admin_id=admin.id,
+            created_at=ahora,
+            expires_at=expira,
+        )
+    )
+    _registrar_accion_admin(db, admin, "entrar_como_soporte", store_id=tienda.id, detail=f"Entró como soporte a la cuenta de {tienda.owner.email}")
+    db.commit()
+
+    set_session_cookie(response, token, expires_at=expira, settings=settings)
+    return {"ok": True, "empresa": {"id": tienda.id, "nombre": tienda.name}, "expiraEn": expira.isoformat()}
 
 
 @router.get("/planes")

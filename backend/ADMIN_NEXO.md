@@ -74,13 +74,17 @@ nunca serializa un modelo completo.
 |---|---|
 | `GET /api/admin/clientes` | Lista todas las empresas con su estado, Mercado Libre conectado, cantidad de productos, última actividad y plan. |
 | `GET /api/admin/clientes/{store_id}` | Detalle: usuario, tienda, productos, publicaciones por estado, Mercado Libre (sin tokens), costos configurados, actividad reciente. `erroresRecientes` es siempre `null` — no existe todavía un registro de errores por cliente (se ve en los logs del servidor). |
-| `PUT /api/admin/clientes/{store_id}/estado` | Suspender/reactivar (`{"suspendido": true/false}`) — el único cambio que este panel puede hacer sobre un cliente. |
+| `PUT /api/admin/clientes/{store_id}/estado` | Suspender/reactivar (`{"suspendido": true/false}`). |
+| `PUT /api/admin/clientes/{store_id}/suscripcion` | Cambiar plan/estado de la suscripción — crea la primera si la tienda no tenía ninguna. |
+| `POST /api/admin/clientes/{store_id}/entrar` | **6 de septiembre de 2026 — "entrar como soporte".** Crea una sesión real (misma cookie de siempre) scopeada a esa empresa, con `impersonated_by_admin_id` marcado — el admin pasa a operar Nexo exactamente como lo ve ese cliente, sin pedirle la contraseña. Vida corta (1 hora, nunca "recordarme"), nunca silenciosa: queda en `AdminActionLog` y `GET /api/auth/me` expone `modoSoporte` (el frontend muestra un aviso persistente mientras dure). Prohibido contra otra cuenta de admin (400). Terminarla es el `POST /api/auth/logout` de siempre — no existe forma de "volver" a la sesión de admin anterior en la misma pestaña, porque su token nunca vivió en el servidor sin cifrar (solo el hash); hay que volver a loguearse. |
 
 ## Qué NO hace este panel
 
 No modifica precios, stock, productos ni publicaciones de ningún
 cliente — eso sigue siendo responsabilidad exclusiva del dueño de esa
-empresa. Suspender/reactivar es la única acción de escritura.
+empresa, incluso operando en modo soporte (el admin ve/actúa como el
+dueño, pero cada acción que haga en ese modo queda igual sujeta a las
+reglas normales de esa cuenta — sin atajos adicionales).
 
 ## Hallazgos de seguridad corregidos en la misma ronda (no son del panel admin en sí, pero se auditaron juntos)
 

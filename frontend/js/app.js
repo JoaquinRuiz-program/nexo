@@ -194,6 +194,21 @@ window.LC = window.LC || {};
       if (link) link.classList.toggle("hidden", !!session.esNexoAdmin);
     });
     actualizarPillModoDemo();
+    actualizarBannerModoSoporte(session);
+  }
+
+  // 6 de septiembre de 2026 — aviso persistente mientras un administrador
+  // de Nexo está operando como un cliente (ver
+  // app/api/routes/admin.py::entrar_como_soporte) — nunca silencioso.
+  function actualizarBannerModoSoporte(session) {
+    const banner = document.getElementById("soporte-banner");
+    if (!banner) return;
+    const modoSoporte = session && session.modoSoporte;
+    banner.classList.toggle("hidden", !modoSoporte);
+    if (modoSoporte) {
+      document.getElementById("soporte-banner-texto").textContent =
+        `Estás operando como soporte de Nexo en la cuenta de ${nombreEmpresaActiva(session) || "esta empresa"} (${modoSoporte.adminEmail || "admin"}).`;
+    }
   }
 
   // 30 de agosto de 2026 — hallazgo de frontend-ux-engineer: este pill
@@ -229,6 +244,15 @@ window.LC = window.LC || {};
 
     document.getElementById("hamburger-btn").addEventListener("click", openMobileSidebar);
     document.getElementById("sidebar-close-btn").addEventListener("click", closeMobileSidebar);
+
+    document.getElementById("soporte-banner-salir").addEventListener("click", async () => {
+      // Termina la sesión de soporte (mismo logout de siempre) y vuelve a
+      // /login — nunca hay una forma de "volver" a la sesión de admin
+      // anterior en la misma pestaña (ver docstring de entrar_como_soporte).
+      await LC.auth.logout();
+      toast("info", "Saliste del modo soporte.");
+      LC.router.navigate("/login");
+    });
     document.getElementById("sidebar-overlay").addEventListener("click", closeMobileSidebar);
 
     document.getElementById("theme-toggle-btn").addEventListener("click", () => {
