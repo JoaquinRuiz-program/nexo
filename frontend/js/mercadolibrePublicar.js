@@ -63,6 +63,14 @@ window.LC = window.LC || {};
       aceptoPublicar: false,
       publicando: false,
       publicado: null, // respuesta de /confirmar
+      // 1 de septiembre de 2026 — gestión de una publicación ya creada:
+      // si el producto YA tiene una publicación real, esta pantalla NO
+      // entra al wizard de decisión/preparar (no tiene sentido volver a
+      // decidir si conviene algo que ya está publicado) — muestra en
+      // cambio el estado real y las acciones (pausar/reactivar/eliminar).
+      modoGestion: false,
+      gestion: null, // respuesta de GET .../mercadolibre/publicacion
+      gestionAccionEnCurso: false,
     };
   }
 
@@ -85,9 +93,9 @@ window.LC = window.LC || {};
     // tardía de ESTE producto pise el estado si el dueño ya navegó a otro.
     {
       main.innerHTML = skeleton();
-      const [detalle, decisionRes] = await Promise.all([
+      const [detalle, estadoRes] = await Promise.all([
         LC.dataSource.getProductoDetalle(miState.variantId),
-        LC.backendApi.decisionMercadoLibre(miState.variantId),
+        LC.backendApi.estadoPublicacionMercadoLibre(miState.variantId),
       ]);
       if (!esVigente(miState)) return;
       if (!detalle) {
@@ -96,6 +104,19 @@ window.LC = window.LC || {};
         return;
       }
       miState.producto = detalle.row;
+
+      // Ya tiene una publicación real -- se gestiona (pausar/reactivar/
+      // eliminar), nunca se vuelve a preguntar "¿conviene publicarlo?".
+      if (estadoRes.ok) {
+        miState.modoGestion = true;
+        miState.gestion = estadoRes.data;
+        miState.cargando = false;
+        renderGestion(main);
+        return;
+      }
+
+      const decisionRes = await LC.backendApi.decisionMercadoLibre(miState.variantId);
+      if (!esVigente(miState)) return;
       if (decisionRes.ok) {
         miState.decision = decisionRes.data;
       } else {
@@ -510,6 +531,7 @@ window.LC = window.LC || {};
         <p class="text-sm text-slate-500 dark:text-slate-400 mt-1 font-mono">item_id: ${escapeHtml(r.itemId)}</p>
         <div class="flex justify-center gap-3 mt-6">
           ${r.permalink && /^https:\/\//i.test(r.permalink) ? `<a href="${escapeHtml(r.permalink)}" target="_blank" rel="noopener" class="btn-primary">Ver en Mercado Libre</a>` : ""}
+          <button id="ml-ir-gestion" class="btn-secondary">Gestionar publicación</button>
           <button id="ml-volver-producto" class="btn-secondary">Volver al producto</button>
         </div>
       </div>
@@ -760,6 +782,112 @@ window.LC = window.LC || {};
   function wirePublicado(main) {
     const btn = document.getElementById("ml-volver-producto");
     if (btn) btn.addEventListener("click", () => LC.router.navigate(`/productos/${state.variantId}`));
+    const btnGestion = document.getElementById("ml-ir-gestion");
+    if (btnGestion) btnGestion.addEventListener("click", async () => {
+      const miState = state;
+      main.innerHTML = skeleton();
+      const res = await LC.backendApi.estadoPublicacionMercadoLibre(miState.variantId);
+      if (!esVigente(miState)) return;
+      miState.modoGestion = true;
+      miState.gestion = res.ok ? res.data : null;
+      renderGestion(main);
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Gestión de una publicación ya creada — pausar/reactivar/eliminar
+  // (1 de septiembre de 2026). No es un paso del wizard (no tiene sentido
+  // volver a preguntar "¿conviene publicarlo?" de algo que ya está
+  // publicado) — pantalla propia, se entra directo desde render() cuando
+  // el producto YA tiene una publicación real.
+  // ------------------------------------------------------------------
+
+  const ESTADO_GESTION_LABEL = { activa: "Activa", pausada: "Pausada", eliminada: "Eliminada", desconocido: "Estado desconocido" };
+  const ESTADO_GESTION_BADGE = { activa: "reco-conviene", pausada: "reco-revisar", eliminada: "reco-no_conviene", desconocido: "reco-datos_insuficientes" };
+  const ACCION_LABEL = { pausar: "Pausar publicación", reactivar: "Reactivar publicación", eliminar: "Eliminar publicación" };
+
+  function renderGestion(main) {
+    const g = state.gestion;
+    main.innerHTML = `
+      <div class="page-wrap app-fade max-w-2xl">
+        <button id="ml-back" class="text-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 mb-4 inline-flex items-center gap-1">← Volver al producto</button>
+        <h2 class="text-xl font-semibold mb-1">${escapeHtml(state.producto.nombre)}</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400 font-mono mb-5">${escapeHtml(state.producto.sku) || "Sin SKU"}</p>
+        <div class="panel-card">
+          <h3 class="panel-title mb-3">Publicación en Mercado Libre</h3>
+          ${!g ? `
+            <p class="text-sm text-red-600 dark:text-red-400 mb-3">No pudimos consultar el estado de esta publicación en este momento.</p>
+            <button id="ml-gestion-reintentar" class="btn-secondary">Reintentar</button>
+          ` : `
+            <div class="flex items-center gap-3 mb-4">
+              <span class="reco-badge ${ESTADO_GESTION_BADGE[g.estado] || "reco-datos_insuficientes"}">${escapeHtml(ESTADO_GESTION_LABEL[g.estado] || g.estado)}</span>
+              ${g.estado === "desconocido" ? `<span class="text-xs text-slate-400">Mercado Libre no nos dejó confirmar el estado real — puede haber sido pausada o restringida directamente ahí.</span>` : ""}
+            </div>
+            ${g.permalink ? `<a href="${escapeHtml(g.permalink)}" target="_blank" rel="noopener" class="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Ver en Mercado Libre ↗</a>` : ""}
+            <div class="flex flex-wrap gap-3 mt-5">
+              ${(g.accionesDisponibles || []).map((accion) => `
+                <button data-gestion-accion="${accion}" class="${accion === "eliminar" ? "btn-secondary btn-secondary--danger" : "btn-secondary"}" ${state.gestionAccionEnCurso ? "disabled" : ""}>
+                  ${state.gestionAccionEnCurso ? "Procesando…" : ACCION_LABEL[accion]}
+                </button>
+              `).join("")}
+              ${(g.accionesDisponibles || []).length === 0 && g.estado === "eliminada" ? `<p class="text-sm text-slate-400">Esta publicación está cerrada de forma definitiva — Mercado Libre no permite reabrirla.</p>` : ""}
+            </div>
+          `}
+        </div>
+      </div>`;
+    document.getElementById("ml-back").addEventListener("click", () => LC.router.navigate(`/productos/${state.variantId}`));
+    wireGestion(main);
+  }
+
+  function wireGestion(main) {
+    const btnReintentar = document.getElementById("ml-gestion-reintentar");
+    if (btnReintentar) btnReintentar.addEventListener("click", async () => {
+      const miState = state;
+      const res = await LC.backendApi.estadoPublicacionMercadoLibre(miState.variantId);
+      if (!esVigente(miState)) return;
+      miState.gestion = res.ok ? res.data : null;
+      renderGestion(main);
+    });
+    main.querySelectorAll("[data-gestion-accion]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const accion = btn.dataset.gestionAccion;
+        if (accion === "eliminar") {
+          openModal({
+            title: "¿Eliminar esta publicación?",
+            body: `<p>Mercado Libre va a cerrar esta publicación de forma <strong>definitiva</strong> — no se puede volver a activar después. Si querés dejar de venderla por ahora sin perder la publicación, usá "Pausar" en su lugar.</p>`,
+            primaryLabel: "Sí, eliminar",
+            secondaryLabel: "Cancelar",
+            onPrimary: () => ejecutarAccionGestion(main, "eliminar"),
+          });
+        } else {
+          ejecutarAccionGestion(main, accion);
+        }
+      });
+    });
+  }
+
+  const ACCION_METODO = {
+    pausar: "pausarPublicacionMercadoLibre",
+    reactivar: "reactivarPublicacionMercadoLibre",
+    eliminar: "eliminarPublicacionMercadoLibre",
+  };
+
+  async function ejecutarAccionGestion(main, accion) {
+    const miState = state;
+    miState.gestionAccionEnCurso = true;
+    renderGestion(main);
+    const res = await LC.backendApi[ACCION_METODO[accion]](miState.variantId);
+    if (!esVigente(miState)) return;
+    miState.gestionAccionEnCurso = false;
+    if (!res.ok) {
+      toast("error", res.error.mensaje);
+      renderGestion(main);
+      return;
+    }
+    miState.gestion = res.data;
+    const MENSAJE_EXITO = { pausar: "Publicación pausada.", reactivar: "Publicación reactivada.", eliminar: "Publicación eliminada." };
+    toast("success", MENSAJE_EXITO[accion]);
+    renderGestion(main);
   }
 
   LC.mlPublicar = { render };

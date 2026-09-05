@@ -19,12 +19,14 @@ otra en la respuesta.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_store
-from app.db.models import Product, ProductVariant, Store
+from app.db.models import Product, ProductImage, ProductVariant, Store
 from app.db.session import get_db
 from app.domain.listing_validation import gtin_checksum_valido
 from app.domain.marketplace_stock import set_manual_stock
@@ -40,6 +42,14 @@ class MarketplaceStockUpdate(BaseModel):
 class CostoUpdate(BaseModel):
     # None = borrar el costo cargado (vuelve a "sin costo", nunca $0).
     costo: float | None = None
+
+
+class ImagenUrlCreate(BaseModel):
+    url: str
+
+
+class ImagenesOrdenUpdate(BaseModel):
+    orden: list[int]  # ids de ProductImage, en el orden final deseado
 
 
 class CodigoBarrasUpdate(BaseModel):
@@ -81,6 +91,14 @@ def build_producto_fila(producto: Product, variante: ProductVariant) -> dict:
         "parentId": producto.id,
         "codigoBarras": variante.barcode,
         "estadoGtin": _estado_gtin(variante),
+        # 1 de septiembre de 2026 — gestión de imágenes: `position == 0` es
+        # la imagen principal (ver ProductImage.position en el modelo,
+        # "0 = imagen principal"), acá ya resuelto como `principal` para
+        # que el frontend no tenga que conocer esa convención.
+        "imagenes": [
+            {"id": img.id, "url": img.url, "principal": img.position == 0}
+            for img in sorted(producto.images, key=lambda i: i.position)
+        ],
         # Todavía no hay vínculo con WooCommerce para datos de prueba —
         # nunca se inventa un ID que no existe (ver app/domain/analysis.py).
         "woocommerceParentId": None,
@@ -175,6 +193,92 @@ def configurar_codigo_barras(
         variante.barcode = None
         variante.gtin_confirmado_ausente = body.confirmarSinCodigo
 
+    db.commit()
+    db.refresh(variante)
+    return build_producto_fila(variante.product, variante)
+
+
+# ------------------------------------------------------------------
+# Gestión de imágenes (1 de septiembre de 2026, ronda de pulido). Hoy
+# Nexo NO tiene almacenamiento real de archivos (ni local ni en la nube,
+# ver docstring de ProductImage) — estos tres endpoints son el CRUD real
+# que faltaba sobre lo que ya existe (URL + orden), para que el dueño
+# pueda agregar/quitar/reordenar imágenes sin volver a subir el Excel.
+# Cargar un archivo real desde la computadora sigue sin poder hacerse
+# hasta que se elija un proveedor de almacenamiento — decisión de
+# arquitectura que no se toma acá.
+#
+# `position` reasignada siempre de forma contigua (0..N-1) después de
+# cualquier cambio: es la única forma de que "position == 0 == imagen
+# principal" (ver build_producto_fila) sea siempre verdad, nunca deje un
+# hueco si se borra justo la principal.
+# ------------------------------------------------------------------
+
+
+def _reordenar_posiciones(imagenes: list[ProductImage]) -> None:
+    for indice, imagen in enumerate(sorted(imagenes, key=lambda i: i.position)):
+        imagen.position = indice
+
+
+@router.post("/{variant_id}/imagenes")
+def agregar_imagen(
+    variant_id: int, body: ImagenUrlCreate, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    """Agrega una imagen por URL — nunca se descarga ni se valida que la
+    URL cargue de verdad (eso lo confirma el propio dueño viendo la
+    previsualización en el frontend antes de confirmar; Nexo no tiene
+    almacenamiento propio para copiarla). Solo se rechaza lo que no puede
+    ser una URL real."""
+    variante = _variante_de_la_tienda(db, store, variant_id)
+    url = (body.url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Falta la URL de la imagen.")
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(status_code=400, detail="La URL de la imagen tiene que empezar con http:// o https://.")
+    if len(url) > 1000:
+        raise HTTPException(status_code=400, detail="Esa URL es demasiado larga.")
+
+    producto = variante.product
+    siguiente_posicion = max((img.position for img in producto.images), default=-1) + 1
+    db.add(ProductImage(product=producto, url=url, source="manual_upload", position=siguiente_posicion, created_at=datetime.now()))
+    db.commit()
+    db.refresh(variante)
+    return build_producto_fila(variante.product, variante)
+
+
+@router.delete("/{variant_id}/imagenes/{image_id}")
+def eliminar_imagen(
+    variant_id: int, image_id: int, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    variante = _variante_de_la_tienda(db, store, variant_id)
+    producto = variante.product
+    imagen = next((img for img in producto.images if img.id == image_id), None)
+    if imagen is None:
+        raise HTTPException(status_code=404, detail="Esa imagen no existe para este producto.")
+
+    db.delete(imagen)
+    db.flush()
+    _reordenar_posiciones([img for img in producto.images if img.id != image_id])
+    db.commit()
+    db.refresh(variante)
+    return build_producto_fila(variante.product, variante)
+
+
+@router.put("/{variant_id}/imagenes/orden")
+def reordenar_imagenes(
+    variant_id: int, body: ImagenesOrdenUpdate, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    """`body.orden` tiene que incluir EXACTAMENTE los ids de imágenes que
+    ya tiene este producto, ni más ni menos — nunca se asume un orden
+    parcial (dejaría posiciones ambiguas)."""
+    variante = _variante_de_la_tienda(db, store, variant_id)
+    producto = variante.product
+    imagenes_por_id = {img.id: img for img in producto.images}
+    if set(body.orden) != set(imagenes_por_id.keys()):
+        raise HTTPException(status_code=400, detail="El orden enviado no coincide con las imágenes actuales de este producto.")
+
+    for indice, image_id in enumerate(body.orden):
+        imagenes_por_id[image_id].position = indice
     db.commit()
     db.refresh(variante)
     return build_producto_fila(variante.product, variante)

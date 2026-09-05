@@ -197,6 +197,22 @@ window.LC = window.LC || {};
     return request("/api/mercadolibre/estado");
   }
 
+  // 1 de septiembre de 2026 — gestión de imágenes por URL (agregar/quitar/
+  // reordenar). Las tres devuelven la ficha completa del producto ya
+  // actualizada (mismo patrón que actualizarCostoProducto), para no tener
+  // que volver a pedirla aparte.
+  async function agregarImagenProducto(id, url) {
+    return request(`/api/productos/${id}/imagenes`, { method: "POST", body: { url } });
+  }
+
+  async function eliminarImagenProducto(id, imageId) {
+    return request(`/api/productos/${id}/imagenes/${imageId}`, { method: "DELETE" });
+  }
+
+  async function reordenarImagenesProducto(id, orden) {
+    return request(`/api/productos/${id}/imagenes/orden`, { method: "PUT", body: { orden } });
+  }
+
   // Devuelve la URL real de autorización de Mercado Libre — el navegador
   // tiene que navegar ahí de verdad (window.location.href), no un fetch:
   // es el usuario quien inicia sesión y autoriza en el sitio de ML.
@@ -312,6 +328,26 @@ window.LC = window.LC || {};
     });
   }
 
+  // 1 de septiembre de 2026 — gestión de una publicación ya creada
+  // (estado real/pausar/reactivar/eliminar). estadoPublicacionMercadoLibre
+  // siempre reconsulta Mercado Libre (nunca un valor cacheado del
+  // frontend) — timeout normal, no es una llamada lenta como confirmar.
+  async function estadoPublicacionMercadoLibre(variantId) {
+    return request(`/api/publicaciones/${variantId}/mercadolibre/publicacion`);
+  }
+
+  async function pausarPublicacionMercadoLibre(variantId) {
+    return request(`/api/publicaciones/${variantId}/mercadolibre/pausar`, { method: "POST" });
+  }
+
+  async function reactivarPublicacionMercadoLibre(variantId) {
+    return request(`/api/publicaciones/${variantId}/mercadolibre/reactivar`, { method: "POST" });
+  }
+
+  async function eliminarPublicacionMercadoLibre(variantId) {
+    return request(`/api/publicaciones/${variantId}/mercadolibre/eliminar`, { method: "POST" });
+  }
+
   // ------------------------------------------------------------------
   // 30 de agosto de 2026 — panel de administrador de Nexo (dueño de la
   // plataforma). Solo responde si la sesión tiene is_nexo_admin — para
@@ -353,6 +389,9 @@ window.LC = window.LC || {};
     fetchProductos,
     fetchProductoDetalle,
     actualizarCostoProducto,
+    agregarImagenProducto,
+    eliminarImagenProducto,
+    reordenarImagenesProducto,
     fetchMercadoLibreEstado,
     conectarMercadoLibre,
     desconectarMercadoLibre,
@@ -371,6 +410,10 @@ window.LC = window.LC || {};
     previewPublicacionMercadoLibre,
     confirmarPublicacionMercadoLibre,
     actualizarCodigoBarras,
+    estadoPublicacionMercadoLibre,
+    pausarPublicacionMercadoLibre,
+    reactivarPublicacionMercadoLibre,
+    eliminarPublicacionMercadoLibre,
     obtenerConfiguracionCanales,
     configurarCanal,
     listarClientesAdmin,

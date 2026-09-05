@@ -52,6 +52,7 @@ from app.domain.listing_validation import (
     evaluar_atributos,
     gtin_checksum_valido,
 )
+from app.domain.ml_error_messages import mensaje_amigable_error_publicacion
 from app.domain.ml_listing_payload import PayloadPublicacion, construir_payload_publicacion
 from app.domain.ml_fees import resolver_listing_type
 from app.domain.ml_seller_capabilities import es_user_product_seller
@@ -773,15 +774,21 @@ async def _resolver_publicacion(
     account = _cuenta_ml_conectada(db, store)
     category_id = body.category_id.strip()
 
-    # Duplicados: bloquea si esta variante ya tiene una publicación previa
-    # (cualquier estado salvo not_published) para ESTA cuenta de ML.
+    # Duplicados: bloquea si esta variante ya tiene una publicación VIVA
+    # (active/paused) para ESTA cuenta de ML. 1 de septiembre de 2026 —
+    # antes bloqueaba con CUALQUIER estado salvo "not_published", incluido
+    # "closed" ("eliminada" desde Nexo, ver pausar/reactivar/eliminar más
+    # abajo) — un vendedor real SÍ puede volver a publicar un producto
+    # después de cerrar su publicación anterior en Mercado Libre; que Nexo
+    # lo bloqueara para siempre habría sido un callejón sin salida real
+    # creado por la propia función de "eliminar".
     ya_publicada = (
         db.query(MarketplaceListingVariant)
         .join(MarketplaceListing, MarketplaceListingVariant.listing_id == MarketplaceListing.id)
         .filter(
             MarketplaceListingVariant.variant_id == variante.id,
             MarketplaceListing.account_id == account.id,
-            MarketplaceListing.status != "not_published",
+            MarketplaceListing.status.in_(["active", "paused"]),
         )
         .first()
     )
@@ -1105,9 +1112,16 @@ async def confirmar_publicacion_mercadolibre(
                     "Mercado Libre rechazó POST /items para variant_id=%s (store_id=%s): %s",
                     variante.id, store.id, err,
                 )
+                # 1 de septiembre de 2026 — antes siempre el mismo mensaje
+                # genérico ("categoría, atributos o precio inválidos") sin
+                # decirle al dueño cuál de los tres fue. Mercado Libre
+                # manda la causa real estructurada (err.response_body) —
+                # se traduce a texto simple, nunca el JSON crudo (ver
+                # domain/ml_error_messages.py, el detalle completo ya
+                # quedó en el log de arriba).
                 raise HTTPException(
                     status_code=400,
-                    detail="Mercado Libre rechazó los datos de la publicación (categoría, atributos o precio inválidos).",
+                    detail=mensaje_amigable_error_publicacion(err.response_body),
                 ) from err
             # 5xx o timeout/conexión perdida DESPUÉS de mandar el POST: no
             # hay forma de saber con certeza si Mercado Libre llegó a crear
@@ -1148,23 +1162,52 @@ async def confirmar_publicacion_mercadolibre(
     # excepción más abajo): es la única forma honesta de manejar que no
     # existe una transacción que una el POST externo con este commit local.
     try:
-        listing = MarketplaceListing(
-            account=account,
-            product=producto,
-            external_listing_id=str(item_id),
-            user_product_id=str(user_product_id) if user_product_id else None,
-            status="active",
-            # El título real: bajo el modelo User Products, Mercado Libre
-            # lo genera y lo devuelve en la RESPUESTA (nunca en `payload`,
-            # que en esa rama no tiene la clave "title" — ver
-            # domain/ml_listing_payload.py). Se usa el de la respuesta
-            # cuando viene; si no, el que Nexo calculó localmente.
-            title=respuesta.get("title") or resolucion.resultado_payload.titulo_local,
-            family_name=payload.get("family_name"),
-            price=variante.price,
-            created_at=datetime.now(),
-        )
-        db.add(listing)
+        # 1 de septiembre de 2026 — UniqueConstraint(account_id, product_id)
+        # permite como máximo UNA fila de MarketplaceListing por (cuenta,
+        # producto): si ya existe una "closed" (el producto se publicó,
+        # se eliminó, y ahora se vuelve a publicar de verdad — el gate de
+        # duplicados de arriba ya solo bloquea active/paused), se
+        # actualiza esa misma fila en vez de intentar un INSERT que
+        # violaría la constraint. `created_at` de una fila reusada NO se
+        # toca (sigue reflejando la primera vez que este producto se
+        # publicó para esta cuenta).
+        listing_existente = db.query(MarketplaceListing).filter_by(account_id=account.id, product_id=producto.id).first()
+        # Solo se reusa si está REALMENTE muerta (closed/not_published) —
+        # si sigue viva (active/paused) esto es el caso real de "otra
+        # variante del mismo producto ya publicada" (el gate de arriba
+        # está scopeado por variant_id, nunca lo detecta): se deja seguir
+        # al INSERT de abajo para que la UniqueConstraint lo rechace con
+        # el 409 ya manejado más abajo, en vez de pisar una publicación
+        # viva de otra variante.
+        listing = listing_existente if listing_existente is not None and listing_existente.status not in ("active", "paused") else None
+        titulo_real = respuesta.get("title") or resolucion.resultado_payload.titulo_local
+        if listing is not None:
+            listing.external_listing_id = str(item_id)
+            listing.user_product_id = str(user_product_id) if user_product_id else None
+            listing.status = "active"
+            listing.title = titulo_real
+            listing.family_name = payload.get("family_name")
+            listing.price = variante.price
+            db.query(MarketplaceListingVariant).filter_by(listing_id=listing.id).delete()
+        else:
+            listing = MarketplaceListing(
+                account=account,
+                product=producto,
+                external_listing_id=str(item_id),
+                user_product_id=str(user_product_id) if user_product_id else None,
+                status="active",
+                # El título real: bajo el modelo User Products, Mercado
+                # Libre lo genera y lo devuelve en la RESPUESTA (nunca en
+                # `payload`, que en esa rama no tiene la clave "title" —
+                # ver domain/ml_listing_payload.py). Se usa el de la
+                # respuesta cuando viene; si no, el que Nexo calculó
+                # localmente.
+                title=titulo_real,
+                family_name=payload.get("family_name"),
+                price=variante.price,
+                created_at=datetime.now(),
+            )
+            db.add(listing)
         db.flush()
         db.add(
             MarketplaceListingVariant(
@@ -1224,3 +1267,231 @@ async def confirmar_publicacion_mercadolibre(
         "status": listing.status,
         "listingId": listing.id,
     }
+
+
+# ------------------------------------------------------------------
+# Gestión de una publicación YA creada — pausar / reactivar / eliminar
+# (1 de septiembre de 2026, ronda de pulido pre-clientes: hasta acá Nexo
+# solo podía CREAR una publicación, nunca gestionarla después). Reusa
+# exactamente la misma arquitectura que /confirmar: MercadoLibreAdapter
+# (adapters/mercadolibre.py, ahora con get_item/update_item_status),
+# _variante_de_la_empresa para el aislamiento por tenant, y el mismo
+# criterio de nunca exponer JSON/detalle crudo de Mercado Libre.
+#
+# "Eliminar" en Mercado Libre real es cerrar la publicación
+# (status="closed") — la API no borra publicaciones, las cierra de forma
+# terminal (no se puede volver a "active" después). Nunca se le miente al
+# dueño sobre esto: el frontend lo pide con una confirmación explícita
+# ("esta acción no se puede deshacer"), nunca como un simple "eliminar".
+# ------------------------------------------------------------------
+
+# Estado real de Mercado Libre -> lo que ve el dueño. Cualquier valor que
+# no esté acá (under_review, payment_required, inactive, etc. — estados
+# reales pero poco frecuentes) cae a "desconocido": nunca se inventa una
+# traducción para un estado que no se confirmó en la documentación oficial.
+_ESTADO_ML_A_NEXO = {"active": "activa", "paused": "pausada", "closed": "eliminada"}
+
+# Qué acciones tienen sentido ofrecer según el estado real — decidido acá
+# (backend, única fuente de verdad), nunca en el frontend, mismo criterio
+# que el resto de Nexo.
+_ACCIONES_POR_ESTADO = {
+    "activa": ["pausar", "eliminar"],
+    "pausada": ["reactivar", "eliminar"],
+    "eliminada": [],  # terminal — Mercado Libre no permite reabrir un ítem cerrado
+    "desconocido": [],
+}
+
+
+def _listing_de_la_variante(db: Session, store: Store, variant_id: int) -> tuple[ProductVariant, MarketplaceListing]:
+    """Resuelve la publicación real (si existe) de esta variante para ESTA
+    tienda — reusa _variante_de_la_empresa para el 404 de siempre si la
+    variante no es de esta empresa, y filtra el listing por
+    MarketplaceAccount.store_id como segunda verificación explícita de
+    tenant (nunca confiar en que un listing_id encontrado por variant_id
+    ya está scopeado, aunque en la práctica siempre lo esté)."""
+    variante, _fila = _variante_de_la_empresa(db, store, variant_id)
+    listing = (
+        db.query(MarketplaceListing)
+        .join(MarketplaceListingVariant, MarketplaceListingVariant.listing_id == MarketplaceListing.id)
+        .join(MarketplaceAccount, MarketplaceAccount.id == MarketplaceListing.account_id)
+        .filter(MarketplaceListingVariant.variant_id == variant_id, MarketplaceAccount.store_id == store.id)
+        .order_by(MarketplaceListing.id.desc())
+        .first()
+    )
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Este producto todavía no tiene ninguna publicación de Mercado Libre.")
+    return variante, listing
+
+
+async def _consultar_estado_real_y_sincronizar(db: Session, store: Store, listing: MarketplaceListing) -> dict:
+    """GET /items/{id} en vivo — el estado que Nexo tiene guardado
+    (`listing.status`) puede haber quedado desactualizado si Mercado Libre
+    pausó/cerró la publicación por su cuenta (ver caso real: revisión de
+    fotos, políticas, etc. — confirmado en la primera publicación real de
+    Nexo). Nunca se muestra el estado local a ciegas: siempre se
+    reconsulta y se sincroniza la base con la realidad."""
+    account = db.get(MarketplaceAccount, listing.account_id)
+    settings = get_settings()
+    cfg = _build_ml_config(settings)
+    _require_configured(cfg, settings)
+    try:
+        access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
+    except HTTPException as err:
+        if err.status_code == 401:
+            raise HTTPException(
+                status_code=401,
+                detail="El token de Mercado Libre venció y no se pudo renovar. Hay que reconectar la cuenta.",
+            ) from err
+        raise HTTPException(
+            status_code=502,
+            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
+        ) from err
+
+    adapter = MercadoLibreAdapter(cfg)
+    try:
+        item_real = await adapter.get_item(access_token, listing.external_listing_id)
+    except MercadoLibreAuthError as err:
+        # 1 de septiembre de 2026 — hallazgo real (primera publicación real
+        # de Nexo): el adaptador trata TODO 401/403 como fallo de
+        # autenticación, pero un 403 al consultar UN ÍTEM puntual puede
+        # significar simplemente que esa publicación dejó de ser accesible
+        # (cuenta sin habilitación completa para vender, revisión de
+        # políticas, etc.) — no que el token de la cuenta esté mal. Un 401
+        # sigue siendo un problema de token real; un 403 acá se trata como
+        # "no se pudo determinar el estado", nunca como "reconectá la
+        # cuenta" (sería un diagnóstico equivocado que no resuelve nada).
+        if err.status == 403:
+            logger.error(
+                "Mercado Libre devolvió 403 al consultar listing_id=%s (store_id=%s, external_id=%s) -- probablemente el ítem ya no es accesible: %s",
+                listing.id, store.id, listing.external_listing_id, err,
+            )
+            return {"estado": "desconocido", "accionesDisponibles": [], "permalink": None}
+        raise HTTPException(
+            status_code=502, detail="Mercado Libre rechazó la autenticación al consultar la publicación. Reconectá la cuenta e intentá de nuevo."
+        ) from err
+    except MercadoLibreRequestError as err:
+        if err.status == 404:
+            # El ítem ya no existe para Mercado Libre — no se inventa un
+            # estado, se marca explícito.
+            logger.error(
+                "No se pudo consultar el estado real de listing_id=%s (store_id=%s, external_id=%s): %s",
+                listing.id, store.id, listing.external_listing_id, err,
+            )
+            return {"estado": "desconocido", "accionesDisponibles": [], "permalink": None}
+        raise HTTPException(
+            status_code=502, detail="No pudimos consultar el estado de la publicación en Mercado Libre en este momento. Intentá de nuevo más tarde.",
+        ) from err
+    finally:
+        await adapter.aclose()
+
+    estado_ml = item_real.get("status")
+    estado_nexo = _ESTADO_ML_A_NEXO.get(estado_ml, "desconocido")
+    if listing.status != estado_ml:
+        listing.status = estado_ml
+        db.commit()
+    return {
+        "estado": estado_nexo,
+        "accionesDisponibles": _ACCIONES_POR_ESTADO[estado_nexo],
+        "permalink": item_real.get("permalink"),
+    }
+
+
+@router.get("/{variant_id}/mercadolibre/publicacion")
+async def estado_publicacion_mercadolibre(
+    variant_id: int, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    """Estado REAL actual de la publicación de este producto — nunca el
+    último estado que Nexo recuerda sin confirmar, siempre se vuelve a
+    consultar Mercado Libre (ver _consultar_estado_real_y_sincronizar)."""
+    _variante, listing = _listing_de_la_variante(db, store, variant_id)
+    if not listing.external_listing_id:
+        # No debería pasar nunca en la práctica (todo listing se crea con
+        # el id real que devuelve POST /items), pero nunca se asume.
+        raise HTTPException(status_code=404, detail="Este producto todavía no tiene ninguna publicación de Mercado Libre.")
+    resultado = await _consultar_estado_real_y_sincronizar(db, store, listing)
+    resultado["listingId"] = listing.id
+    return resultado
+
+
+async def _cambiar_estado_publicacion(
+    db: Session, store: Store, variant_id: int, *, estado_ml_nuevo: str, accion: str
+) -> dict:
+    """Compartido por pausar/reactivar/eliminar — las tres son la MISMA
+    operación real (PUT /items/{id} con un status distinto), nunca tres
+    implementaciones separadas."""
+    _variante, listing = _listing_de_la_variante(db, store, variant_id)
+    if not listing.external_listing_id:
+        raise HTTPException(status_code=404, detail="Este producto todavía no tiene ninguna publicación de Mercado Libre.")
+
+    account = db.get(MarketplaceAccount, listing.account_id)
+    settings = get_settings()
+    cfg = _build_ml_config(settings)
+    _require_configured(cfg, settings)
+    try:
+        access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
+    except HTTPException as err:
+        if err.status_code == 401:
+            raise HTTPException(
+                status_code=401,
+                detail="El token de Mercado Libre venció y no se pudo renovar. Hay que reconectar la cuenta.",
+            ) from err
+        raise HTTPException(
+            status_code=502,
+            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
+        ) from err
+
+    adapter = MercadoLibreAdapter(cfg)
+    try:
+        respuesta = await adapter.update_item_status(access_token, listing.external_listing_id, estado_ml_nuevo)
+    except MercadoLibreAuthError as err:
+        raise HTTPException(
+            status_code=502, detail="Mercado Libre rechazó la autenticación al actualizar la publicación. Reconectá la cuenta e intentá de nuevo."
+        ) from err
+    except MercadoLibreRequestError as err:
+        logger.error(
+            "No se pudo %s listing_id=%s (store_id=%s, external_id=%s): %s",
+            accion, listing.id, store.id, listing.external_listing_id, err,
+        )
+        if err.status is not None and err.status < 500:
+            raise HTTPException(status_code=400, detail=mensaje_amigable_error_publicacion(err.response_body)) from err
+        raise HTTPException(
+            status_code=502,
+            detail="No pudimos confirmar el cambio en Mercado Libre en este momento. Verificá el estado antes de reintentar.",
+        ) from err
+    finally:
+        await adapter.aclose()
+
+    estado_ml_confirmado = respuesta.get("status", estado_ml_nuevo)
+    listing.status = estado_ml_confirmado
+    db.commit()
+    estado_nexo = _ESTADO_ML_A_NEXO.get(estado_ml_confirmado, "desconocido")
+    return {
+        "estado": estado_nexo,
+        "accionesDisponibles": _ACCIONES_POR_ESTADO[estado_nexo],
+        "listingId": listing.id,
+    }
+
+
+@router.post("/{variant_id}/mercadolibre/pausar")
+async def pausar_publicacion_mercadolibre(
+    variant_id: int, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    return await _cambiar_estado_publicacion(db, store, variant_id, estado_ml_nuevo="paused", accion="pausar")
+
+
+@router.post("/{variant_id}/mercadolibre/reactivar")
+async def reactivar_publicacion_mercadolibre(
+    variant_id: int, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    return await _cambiar_estado_publicacion(db, store, variant_id, estado_ml_nuevo="active", accion="reactivar")
+
+
+@router.post("/{variant_id}/mercadolibre/eliminar")
+async def eliminar_publicacion_mercadolibre(
+    variant_id: int, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    """"Eliminar" = cerrar la publicación en Mercado Libre (status=
+    "closed") — la API real no borra publicaciones, y una vez cerrada no
+    se puede volver a activar. El frontend pide confirmación explícita
+    antes de llamar a este endpoint (acción destructiva/irreversible)."""
+    return await _cambiar_estado_publicacion(db, store, variant_id, estado_ml_nuevo="closed", accion="eliminar")

@@ -63,10 +63,12 @@ _frontend_origins = (
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_frontend_origins,
-    # GET para consultas; PUT (configurar costos de canal) y POST (subir
-    # el archivo de costos) desde que existen esos endpoints — ninguno
-    # borra nada, así que no hace falta DELETE.
-    allow_methods=["GET", "PUT", "POST"],
+    # GET para consultas; PUT/POST para las escrituras de siempre.
+    # DELETE agregado el 1 de septiembre de 2026 (eliminar una imagen de
+    # producto, app/api/routes/productos_db.py) — hallazgo real en vivo:
+    # sin este método en la lista, el navegador bloquea el preflight
+    # OPTIONS y el fetch nunca sale, aunque el backend en sí funcione bien.
+    allow_methods=["GET", "PUT", "POST", "DELETE"],
     allow_headers=["*"],
     # 29 de agosto de 2026 — autenticación real por cookie de sesión
     # (app/api/deps.py): sin esto, el navegador nunca manda la cookie en un

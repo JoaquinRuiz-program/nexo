@@ -1135,6 +1135,119 @@ window.LC = window.LC || {};
     });
   }
 
+  // ------------------------------------------------------------------
+  // Imágenes (1 de septiembre de 2026) — Nexo todavía no tiene
+  // almacenamiento real de archivos (ver backend/app/db/models/products.py,
+  // ProductImage), así que esto es agregar por URL con previsualización
+  // inmediata, arrastrar para reordenar, quitar y ver cuál es la
+  // principal — no una subida de archivo real desde la computadora.
+  // ------------------------------------------------------------------
+
+  function renderImagenesDetalle(row) {
+    const imagenes = row.imagenes || [];
+    return `
+      <div class="panel-card mb-5">
+        <h3 class="panel-title mb-1">Imágenes</h3>
+        <p class="text-xs text-slate-400 dark:text-slate-500 mb-4">Arrastrá una miniatura para cambiar el orden — la primera es la que se usa como principal al publicar.</p>
+        <div id="img-grid" class="flex flex-wrap gap-3 mb-4">
+          ${imagenes.length === 0 ? `<p class="text-sm text-slate-500 dark:text-slate-400">Sin imágenes cargadas todavía.</p>` : ""}
+          ${imagenes.map((img) => `
+            <div class="img-thumb-wrap relative" draggable="true" data-image-id="${img.id}">
+              <img src="${escapeHtml(img.url)}" class="w-24 h-24 object-cover rounded-lg border border-slate-200 dark:border-slate-700" />
+              ${img.principal ? `<span class="absolute top-1 left-1 text-[10px] font-medium bg-indigo-600 text-white rounded px-1.5 py-0.5">Principal</span>` : ""}
+              <button data-quitar-imagen="${img.id}" title="Quitar imagen" class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-slate-700 text-white text-xs flex items-center justify-center hover:bg-red-600">✕</button>
+            </div>
+          `).join("")}
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <input id="img-nueva-url" type="text" class="form-input flex-1 min-w-[220px]" placeholder="Pegá la URL de una imagen (https://...)" />
+          <button id="img-agregar" class="btn-secondary">Agregar imagen</button>
+        </div>
+        <div id="img-preview-nueva" class="mt-2"></div>
+      </div>
+    `;
+  }
+
+  function wireImagenesDetalle(main, row, onCambio) {
+    const input = document.getElementById("img-nueva-url");
+    const preview = document.getElementById("img-preview-nueva");
+    const btnAgregar = document.getElementById("img-agregar");
+
+    // Previsualización inmediata (nunca sube nada al escribir) — si la
+    // imagen no carga, se avisa antes de que el dueño intente agregarla.
+    input.addEventListener("input", () => {
+      const url = input.value.trim();
+      preview.innerHTML = "";
+      if (!url) return;
+      const img = document.createElement("img");
+      img.src = url;
+      img.className = "w-16 h-16 object-cover rounded-lg border border-slate-200 dark:border-slate-700";
+      img.onerror = () => {
+        const aviso = document.createElement("p");
+        aviso.className = "text-xs text-red-600 dark:text-red-400";
+        aviso.textContent = "Esa URL no cargó como imagen — revisala.";
+        img.replaceWith(aviso);
+      };
+      preview.appendChild(img);
+    });
+
+    btnAgregar.addEventListener("click", async () => {
+      const url = input.value.trim();
+      if (!url) { toast("error", "Pegá la URL de una imagen primero."); return; }
+      btnAgregar.disabled = true;
+      btnAgregar.textContent = "Agregando…";
+      const res = await LC.backendApi.agregarImagenProducto(row.id, url);
+      if (!res.ok) {
+        toast("error", res.error.mensaje);
+        btnAgregar.disabled = false;
+        btnAgregar.textContent = "Agregar imagen";
+        return;
+      }
+      toast("success", "Imagen agregada.");
+      onCambio();
+    });
+
+    main.querySelectorAll("[data-quitar-imagen]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const imageId = Number(btn.dataset.quitarImagen);
+        btn.disabled = true;
+        const res = await LC.backendApi.eliminarImagenProducto(row.id, imageId);
+        if (!res.ok) {
+          toast("error", res.error.mensaje);
+          btn.disabled = false;
+          return;
+        }
+        toast("success", "Imagen eliminada.");
+        onCambio();
+      });
+    });
+
+    // Reordenar arrastrando — drag & drop nativo, sin librería. El drop
+    // arma el orden final completo (todos los ids, en el orden visual
+    // resultante) y se lo manda al backend de una sola vez.
+    let arrastrandoId = null;
+    main.querySelectorAll("[data-image-id]").forEach((el) => {
+      el.addEventListener("dragstart", () => { arrastrandoId = Number(el.dataset.imageId); el.classList.add("opacity-40"); });
+      el.addEventListener("dragend", () => el.classList.remove("opacity-40"));
+      el.addEventListener("dragover", (e) => e.preventDefault());
+      el.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        const destinoId = Number(el.dataset.imageId);
+        if (arrastrandoId === null || arrastrandoId === destinoId) return;
+        const idsActuales = (row.imagenes || []).map((img) => img.id);
+        const sinArrastrada = idsActuales.filter((id) => id !== arrastrandoId);
+        const indiceDestino = sinArrastrada.indexOf(destinoId);
+        sinArrastrada.splice(indiceDestino, 0, arrastrandoId);
+        const res = await LC.backendApi.reordenarImagenesProducto(row.id, sinArrastrada);
+        if (!res.ok) {
+          toast("error", res.error.mensaje);
+          return;
+        }
+        onCambio();
+      });
+    });
+  }
+
   async function renderProductDetail(main, id) {
     const detalle = await LC.dataSource.getProductoDetalle(id);
     if (!detalle) {
@@ -1170,6 +1283,8 @@ window.LC = window.LC || {};
         </div>
 
         ${renderRentabilidadDetalle(row, rentabilidad)}
+
+        ${renderImagenesDetalle(row)}
 
         ${variantes && variantes.length ? `
         <div class="panel-card mb-5">
@@ -1223,6 +1338,7 @@ window.LC = window.LC || {};
         abrirEditorCosto({ id: row.id, nombre: row.nombre, costo: rentabilidad ? rentabilidad.costo : null }, () => renderProductDetail(main, id));
       });
     }
+    wireImagenesDetalle(main, row, () => renderProductDetail(main, id));
   }
 
   // Miniatura de decisión "¿conviene vender en Mercado Libre?" (30 de

@@ -1899,6 +1899,61 @@ def test_confirmar_con_ml_rechazando_400_no_crea_ningun_registro(client, db_sess
 
 
 @respx.mock
+def test_confirmar_con_ml_rechazando_precio_da_mensaje_especifico_de_precio(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    """1 de septiembre de 2026 — antes siempre el mismo mensaje genérico;
+    ahora distingue precio/categoría/atributos usando la causa real que
+    manda Mercado Libre (domain/ml_error_messages.py), sin exponer el
+    código interno ni el JSON crudo."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id = _producto_publicable(db_session, a_store, sku="ML-PRECIO-INVALIDO", barcode="7891234567895")
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(400, json={
+        "cause": [{"department": "items", "cause_id": 111, "type": "error", "code": "item.price.invalid",
+                    "references": ["item.price"], "message": "Currency Peso Chileno (CLP) does not support decimal precision."}],
+        "message": "Validation error",
+    }))
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+
+    assert res.status_code == 400
+    assert res.json()["detail"] == "El precio ingresado no es válido para esta publicación."
+    assert "CLP" not in res.json()["detail"]  # nunca el mensaje crudo de Mercado Libre
+    assert db_session.query(MarketplaceListing).count() == 0
+
+
+@respx.mock
+def test_confirmar_con_ml_rechazando_atributos_da_mensaje_especifico_de_atributos(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id = _producto_publicable(db_session, a_store, sku="ML-ATRIBUTO-INVALIDO", barcode="7891234567895")
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(400, json={
+        "cause": [{"department": "supply", "cause_id": 7711, "type": "error",
+                    "code": "item.attribute.product_identifier.invalid_format",
+                    "references": ["item.attributes[2].values"], "message": "Product Identifier [GTIN] contains values with invalid format: [cuaderno]."}],
+        "message": "Validation error",
+    }))
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Faltan algunos datos obligatorios del producto. Revisá los atributos marcados."
+    assert "GTIN" not in res.json()["detail"]
+    assert "cuaderno" not in res.json()["detail"]
+
+
+@respx.mock
 def test_confirmar_con_ml_rechazando_autenticacion_no_crea_ningun_registro(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
     monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
     variant_id = _producto_publicable(db_session, a_store, sku="ML-403", barcode="7891234567895")
@@ -2064,3 +2119,244 @@ def test_flujo_completo_un_producto_da_los_mismos_numeros_en_cada_pantalla(clien
     assert confirmar.status_code == 200, confirmar.text
     payload_enviado = json.loads(ruta_items.calls[0].request.content)
     assert payload_enviado["price"] == 20000  # el precio actual, coherente con todas las pantallas de arriba
+
+
+# ------------------------------------------------------------------
+# 1 de septiembre de 2026 — gestión de una publicación ya creada: estado
+# real / pausar / reactivar / eliminar. Mismo criterio de siempre: se
+# consulta/actualiza Mercado Libre de verdad (mockeado acá), nunca se
+# inventa un estado local.
+# ------------------------------------------------------------------
+
+
+def _publicar_variante_de_prueba(db_session, tienda, cuenta, *, sku, external_listing_id="MLC0000TEST", status="active"):
+    variant_id = _producto_publicable(db_session, tienda, sku=sku)
+    variante = db_session.query(ProductVariant).filter_by(id=variant_id).one()
+    listing = MarketplaceListing(
+        account=cuenta, product=variante.product, external_listing_id=external_listing_id, status=status, created_at=NOW
+    )
+    db_session.add(listing)
+    db_session.flush()
+    db_session.add(MarketplaceListingVariant(listing=listing, variant=variante, price=5000, stock_quantity=5))
+    db_session.commit()
+    return variant_id, listing.id
+
+
+def test_estado_publicacion_sin_publicacion_previa_da_404(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id = _producto_publicable(db_session, a_store, sku="SIN-PUBLICAR")
+
+    res = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/publicacion")
+    assert res.status_code == 404
+
+
+@respx.mock
+def test_estado_publicacion_consulta_en_vivo_y_sincroniza_estado_local(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    """El estado guardado en Nexo puede haber quedado desactualizado
+    (Mercado Libre pausó la publicación por su cuenta, ej. revisión de
+    fotos) -- /publicacion siempre reconsulta y sincroniza, nunca confía
+    ciegamente en `listing.status`."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id, listing_id = _publicar_variante_de_prueba(db_session, a_store, cuenta_ml_conectada, sku="ESTADO-VIVO", status="active")
+
+    respx.get("https://api.mercadolibre.com/items/MLC0000TEST").mock(
+        return_value=httpx.Response(200, json={"id": "MLC0000TEST", "status": "paused", "permalink": "https://articulo.mercadolibre.cl/x"})
+    )
+
+    res = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/publicacion")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["estado"] == "pausada"
+    assert body["accionesDisponibles"] == ["reactivar", "eliminar"]
+    assert body["permalink"] == "https://articulo.mercadolibre.cl/x"
+    listing = db_session.get(MarketplaceListing, listing_id)
+    assert listing.status == "paused"  # se sincronizó, ya no dice "active"
+
+
+@respx.mock
+def test_estado_publicacion_cuando_ml_ya_no_la_encuentra_da_desconocido(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    """Caso real confirmado en la primera publicación real de Nexo: una
+    cuenta sin "Listo para vender" completado puede terminar con un ítem
+    que ya no es accesible (403/404) -- nunca se inventa que sigue activa."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id, _listing_id = _publicar_variante_de_prueba(db_session, a_store, cuenta_ml_conectada, sku="ESTADO-403", status="active")
+
+    respx.get("https://api.mercadolibre.com/items/MLC0000TEST").mock(return_value=httpx.Response(403, json={"message": "forbidden"}))
+
+    res = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/publicacion")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["estado"] == "desconocido"
+    assert body["accionesDisponibles"] == []
+
+
+@respx.mock
+def test_pausar_publicacion_activa_la_pausa_en_mercado_libre(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id, listing_id = _publicar_variante_de_prueba(db_session, a_store, cuenta_ml_conectada, sku="PAUSAR-OK", status="active")
+
+    ruta_put = respx.put("https://api.mercadolibre.com/items/MLC0000TEST").mock(
+        return_value=httpx.Response(200, json={"id": "MLC0000TEST", "status": "paused"})
+    )
+
+    res = client.post(f"/api/publicaciones/{variant_id}/mercadolibre/pausar")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["estado"] == "pausada"
+    assert res.json()["accionesDisponibles"] == ["reactivar", "eliminar"]
+    assert json.loads(ruta_put.calls[0].request.content) == {"status": "paused"}
+    assert db_session.get(MarketplaceListing, listing_id).status == "paused"
+
+
+@respx.mock
+def test_reactivar_publicacion_pausada_la_vuelve_a_activar(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id, listing_id = _publicar_variante_de_prueba(db_session, a_store, cuenta_ml_conectada, sku="REACTIVAR-OK", status="paused")
+
+    ruta_put = respx.put("https://api.mercadolibre.com/items/MLC0000TEST").mock(
+        return_value=httpx.Response(200, json={"id": "MLC0000TEST", "status": "active"})
+    )
+
+    res = client.post(f"/api/publicaciones/{variant_id}/mercadolibre/reactivar")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["estado"] == "activa"
+    assert res.json()["accionesDisponibles"] == ["pausar", "eliminar"]
+    assert json.loads(ruta_put.calls[0].request.content) == {"status": "active"}
+    assert db_session.get(MarketplaceListing, listing_id).status == "active"
+
+
+@respx.mock
+def test_eliminar_publicacion_la_cierra_de_forma_terminal(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id, listing_id = _publicar_variante_de_prueba(db_session, a_store, cuenta_ml_conectada, sku="ELIMINAR-OK", status="active")
+
+    ruta_put = respx.put("https://api.mercadolibre.com/items/MLC0000TEST").mock(
+        return_value=httpx.Response(200, json={"id": "MLC0000TEST", "status": "closed"})
+    )
+
+    res = client.post(f"/api/publicaciones/{variant_id}/mercadolibre/eliminar")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["estado"] == "eliminada"
+    assert res.json()["accionesDisponibles"] == []  # terminal, ninguna acción más tiene sentido
+    assert json.loads(ruta_put.calls[0].request.content) == {"status": "closed"}
+    assert db_session.get(MarketplaceListing, listing_id).status == "closed"
+
+
+@respx.mock
+def test_pausar_publicacion_rechazada_por_ml_da_mensaje_amigable(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id, listing_id = _publicar_variante_de_prueba(db_session, a_store, cuenta_ml_conectada, sku="PAUSAR-RECHAZADO", status="active")
+
+    respx.put("https://api.mercadolibre.com/items/MLC0000TEST").mock(return_value=httpx.Response(400, json={
+        "cause": [{"type": "error", "code": "item.status.invalid_transition", "message": "cannot pause a closed item"}],
+    }))
+
+    res = client.post(f"/api/publicaciones/{variant_id}/mercadolibre/pausar")
+
+    assert res.status_code == 400
+    assert "cannot pause" not in res.json()["detail"]  # nunca el mensaje crudo de Mercado Libre
+    # No se actualizó el estado local con algo que Mercado Libre rechazó.
+    assert db_session.get(MarketplaceListing, listing_id).status == "active"
+
+
+def test_pausar_publicacion_de_otra_empresa_da_404(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    otro_usuario = User(email="otra-empresa-listing@ejemplo.cl", password_hash=hash_password("x"), full_name="Dueño B", created_at=NOW, updated_at=NOW)
+    db_session.add(otro_usuario)
+    tienda_b = Store(owner=otro_usuario, name="Empresa B", created_at=NOW)
+    db_session.add(tienda_b)
+    db_session.add(StoreSettings(store=tienda_b, company_name="Empresa B", store_name="Empresa B"))
+    db_session.commit()
+    cuenta_b = MarketplaceAccount(
+        store=tienda_b, marketplace="mercadolibre", status="connected", external_account_id="999",
+        external_account_site_id="MLC", connected_at=NOW,
+        access_token_encrypted=encrypt_token("token-b", TEST_ENCRYPTION_KEY), refresh_token_encrypted=encrypt_token("refresh-b", TEST_ENCRYPTION_KEY),
+        token_expires_at=datetime(2027, 1, 1),
+    )
+    db_session.add(cuenta_b)
+    db_session.commit()
+    variant_id_b, _listing_id = _publicar_variante_de_prueba(db_session, tienda_b, cuenta_b, sku="AISLADO-LISTING-B")
+
+    with respx.mock:  # ningún request a ML debería salir: se bloquea antes por tenant
+        res_estado = client.get(f"/api/publicaciones/{variant_id_b}/mercadolibre/publicacion")
+        res_pausar = client.post(f"/api/publicaciones/{variant_id_b}/mercadolibre/pausar")
+
+    assert res_estado.status_code == 404
+    assert res_pausar.status_code == 404
+
+
+@respx.mock
+def test_confirmar_de_nuevo_despues_de_eliminada_reusa_la_fila_en_vez_de_bloquear_para_siempre(
+    client, db_session, a_store, cuenta_ml_conectada, monkeypatch
+):
+    """1 de septiembre de 2026 — hallazgo propio al construir "eliminar
+    publicación": la UniqueConstraint(account_id, product_id) permite como
+    máximo UNA fila por producto/cuenta, y el gate de duplicados de arriba
+    bloqueaba con CUALQUIER estado salvo "not_published" -- una vez
+    "closed" (eliminada desde Nexo), el dueño nunca podría volver a
+    publicar este producto, aunque un vendedor real SÍ puede hacerlo en
+    Mercado Libre después de cerrar una publicación."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id, listing_id = _publicar_variante_de_prueba(db_session, a_store, cuenta_ml_conectada, sku="REPUBLICAR", external_listing_id="MLC0000TEST", status="closed")
+    db_session.get(ProductVariant, variant_id).gtin_confirmado_ausente = True
+    db_session.commit()
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(201, json={"id": "MLC0000NUEVO", "user_product_id": "MLCU0000NUEVO"}))
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={
+            "category_id": "MLC180937", "condition": "new", "listing_type": "classic",
+            "attributes": {"COLOR": "Azul", "EMPTY_GTIN_REASON": "El producto no tiene código registrado"},
+        },
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["itemId"] == "MLC0000NUEVO"
+    assert res.json()["status"] == "active"
+    # Misma fila reusada (mismo listingId), nunca una segunda -- respeta
+    # la UniqueConstraint(account_id, product_id) sin bloquear al dueño.
+    assert res.json()["listingId"] == listing_id
+    assert db_session.query(MarketplaceListing).count() == 1
+    listing_actualizado = db_session.get(MarketplaceListing, listing_id)
+    assert listing_actualizado.external_listing_id == "MLC0000NUEVO"
+    assert listing_actualizado.status == "active"
+
+
+@respx.mock
+def test_confirmar_con_otra_variante_mientras_hay_una_activa_sigue_bloqueado_con_409(
+    client, db_session, a_store, cuenta_ml_conectada, monkeypatch
+):
+    """Contraparte del test anterior: si la publicación existente sigue
+    VIVA (no eliminada), publicar otra variante del mismo producto para la
+    misma cuenta debe seguir bloqueado -- nunca se pisa una publicación
+    real todavía activa."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id, _listing_id = _publicar_variante_de_prueba(db_session, a_store, cuenta_ml_conectada, sku="YA-ACTIVA", external_listing_id="MLC0000TEST", status="active")
+    variante = db_session.get(ProductVariant, variant_id)
+    variante_b = ProductVariant(
+        product=variante.product, store_id=a_store.id, variant_sku="YA-ACTIVA-B", price=5000, cost_price=3000,
+        marketplace_stock=5, barcode="7891234567895", created_at=NOW, updated_at=NOW,
+    )
+    db_session.add(variante_b)
+    db_session.commit()
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(201, json={"id": "MLC0000OTRA"}))
+
+    res = client.post(
+        f"/api/publicaciones/{variante_b.id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+
+    assert res.status_code == 409
+    assert db_session.query(MarketplaceListing).count() == 1

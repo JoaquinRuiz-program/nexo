@@ -62,9 +62,17 @@ class MercadoLibreAuthError(Exception):
 
 
 class MercadoLibreRequestError(Exception):
-    def __init__(self, message: str, status: Optional[int] = None):
+    def __init__(self, message: str, status: Optional[int] = None, response_body: Optional[dict[str, Any]] = None):
         super().__init__(message)
         self.status = status
+        # 1 de septiembre de 2026 — el body de error de Mercado Libre YA
+        # PARSEADO como dict, cuando la respuesta fue JSON válido (siempre
+        # que status >= 400, ver _request_with_retry). `message` sigue
+        # llevando el texto crudo truncado a 500 caracteres SOLO para logs
+        # de servidor — quien atrapa esta excepción y necesita mostrarle
+        # algo al dueño usa `response_body["cause"]` (domain/ml_error_messages.py)
+        # en vez de parsear el string de `message` a mano.
+        self.response_body = response_body
 
 
 @dataclass
@@ -315,6 +323,29 @@ class MercadoLibreAdapter:
         response = await self._request_with_retry("POST", url, access_token, json_body=payload, retry_on_failure=False)
         return response.json()
 
+    async def get_item(self, access_token: str, item_id: str) -> dict[str, Any]:
+        """GET /items/{id} — estado REAL actual de una publicación ya
+        creada (1 de septiembre de 2026, gestión de publicaciones). Se
+        manda siempre con access_token: un ítem pausado/cerrado deja de
+        ser público (confirmado en vivo — sin token da 403), y esto puede
+        pedirse en cualquier estado. Nunca inventa ni cachea el estado acá
+        — cada llamada refleja lo que Mercado Libre tiene en este momento;
+        quien llama decide si sincroniza la base local con esto."""
+        return await self._get_with_retry(f"/items/{item_id}", access_token)
+
+    async def update_item_status(self, access_token: str, item_id: str, status: str) -> dict[str, Any]:
+        """PUT /items/{id} con {"status": ...} — pausar ("paused"),
+        reactivar ("active") o cerrar ("closed", el equivalente real de
+        "eliminar": Mercado Libre no borra publicaciones vía API, las
+        cierra de forma terminal — una vez "closed" no se puede volver a
+        "active"). Nunca toca precio/atributos/categoría/stock, solo el
+        campo status — quien llama (publicaciones.py) es responsable de
+        validar que la transición pedida tenga sentido antes de llamar
+        esto; el adaptador solo manda lo que le piden."""
+        url = f"{API_BASE_URL}/items/{item_id}"
+        response = await self._request_with_retry("PUT", url, access_token, json_body={"status": status})
+        return response.json()
+
     async def _get_with_retry(self, path: str, access_token: str) -> dict[str, Any]:
         url = f"{API_BASE_URL}{path}"
         response = await self._request_with_retry("GET", url, access_token)
@@ -347,6 +378,12 @@ class MercadoLibreAdapter:
             try:
                 if method == "GET":
                     response = await self._client.get(url, headers=headers, timeout=self._cfg.timeout_s)
+                elif method == "PUT":
+                    # 1 de septiembre de 2026 — update_item_status (pausar/
+                    # reactivar/cerrar una publicación YA creada), único uso
+                    # de PUT en este adaptador. Igual que create_item: JSON
+                    # real, nunca form-urlencoded.
+                    response = await self._client.put(url, json=json_body, headers=headers, timeout=self._cfg.timeout_s)
                 elif json_body is not None:
                     # POST con cuerpo JSON real (ej. crear una publicación,
                     # ver create_item) — distinto de form_data, que es
@@ -379,9 +416,20 @@ class MercadoLibreAdapter:
                 continue
 
             if response.status_code >= 400:
+                # 1 de septiembre de 2026 — se intenta parsear el body real
+                # como JSON (la API de Mercado Libre siempre devuelve JSON
+                # en sus errores) para que quien atrapa esto pueda armar un
+                # mensaje amigable sin tener que parsear el string de
+                # `message` a mano — si no es JSON válido, response_body
+                # queda None, nunca se inventa una estructura.
+                try:
+                    response_body = response.json()
+                except Exception:
+                    response_body = None
                 raise MercadoLibreRequestError(
                     f"Mercado Libre respondió HTTP {response.status_code} en {url}: {response.text[:500]}",
                     status=response.status_code,
+                    response_body=response_body,
                 )
 
             return response

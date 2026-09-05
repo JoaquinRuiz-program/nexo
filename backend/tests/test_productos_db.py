@@ -18,7 +18,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.config import Settings
 from app.db.base import Base
-from app.db.models import Product, ProductVariant, Store, StoreSettings, User
+from app.db.models import Product, ProductImage, ProductVariant, Store, StoreSettings, User
 from app.db.session import get_db
 from app.domain.security import hash_password
 from tests.auth_helpers import autenticar
@@ -392,3 +392,127 @@ def test_reporte_de_una_tienda_distinta_a_la_legacy_da_404(client, a_store, monk
     )
     res = client.get("/api/productos/reporte")
     assert res.status_code == 404
+
+
+# ------------------------------------------------------------------
+# 1 de septiembre de 2026 — CRUD real de imágenes (agregar por URL,
+# eliminar, reordenar). Nexo no tiene almacenamiento de archivos todavía
+# (ver docstring de ProductImage) — esto es el CRUD sobre lo que ya existe
+# (URL + orden), no una subida de archivos real.
+# ------------------------------------------------------------------
+
+
+def test_obtener_producto_incluye_imagenes_en_orden_con_la_principal_marcada(client, db_session, a_store):
+    producto = _producto_simple(db_session, a_store, sku="IMG-001", nombre="Producto con imágenes", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+    db_session.add(ProductImage(product=producto, url="http://cdn.test/a.png", source="excel_url", position=0, created_at=NOW))
+    db_session.add(ProductImage(product=producto, url="http://cdn.test/b.png", source="excel_url", position=1, created_at=NOW))
+    db_session.commit()
+
+    body = client.get(f"/api/productos/{variant_id}").json()
+
+    assert [img["url"] for img in body["imagenes"]] == ["http://cdn.test/a.png", "http://cdn.test/b.png"]
+    assert body["imagenes"][0]["principal"] is True
+    assert body["imagenes"][1]["principal"] is False
+
+
+def test_agregar_imagen_la_suma_al_final_y_no_toca_las_anteriores(client, db_session, a_store):
+    producto = _producto_simple(db_session, a_store, sku="IMG-002", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+    db_session.add(ProductImage(product=producto, url="http://cdn.test/a.png", source="excel_url", position=0, created_at=NOW))
+    db_session.commit()
+
+    res = client.post(f"/api/productos/{variant_id}/imagenes", json={"url": "https://cdn.test/b.png"})
+
+    assert res.status_code == 200, res.text
+    urls = [img["url"] for img in res.json()["imagenes"]]
+    assert urls == ["http://cdn.test/a.png", "https://cdn.test/b.png"]
+    assert res.json()["imagenes"][0]["principal"] is True  # la primera nunca se movió
+
+
+def test_agregar_imagen_a_producto_sin_ninguna_queda_como_principal(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="IMG-003", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.post(f"/api/productos/{variant_id}/imagenes", json={"url": "https://cdn.test/unica.png"})
+
+    assert res.status_code == 200, res.text
+    assert res.json()["imagenes"] == [{"id": res.json()["imagenes"][0]["id"], "url": "https://cdn.test/unica.png", "principal": True}]
+
+
+@pytest.mark.parametrize("url_invalida", ["", "   ", "ftp://cdn.test/a.png", "cdn.test/a.png"])
+def test_agregar_imagen_con_url_invalida_da_400(client, db_session, a_store, url_invalida):
+    _producto_simple(db_session, a_store, sku="IMG-004", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.post(f"/api/productos/{variant_id}/imagenes", json={"url": url_invalida})
+
+    assert res.status_code == 400
+
+
+def test_eliminar_imagen_reordena_y_la_siguiente_pasa_a_ser_principal(client, db_session, a_store):
+    producto = _producto_simple(db_session, a_store, sku="IMG-005", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+    img_a = ProductImage(product=producto, url="http://cdn.test/a.png", source="excel_url", position=0, created_at=NOW)
+    img_b = ProductImage(product=producto, url="http://cdn.test/b.png", source="excel_url", position=1, created_at=NOW)
+    db_session.add_all([img_a, img_b])
+    db_session.commit()
+
+    res = client.delete(f"/api/productos/{variant_id}/imagenes/{img_a.id}")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["imagenes"] == [{"id": img_b.id, "url": "http://cdn.test/b.png", "principal": True}]
+
+
+def test_eliminar_imagen_inexistente_da_404(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="IMG-006", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.delete(f"/api/productos/{variant_id}/imagenes/999999")
+    assert res.status_code == 404
+
+
+def test_reordenar_imagenes_cambia_cual_es_la_principal(client, db_session, a_store):
+    producto = _producto_simple(db_session, a_store, sku="IMG-007", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+    img_a = ProductImage(product=producto, url="http://cdn.test/a.png", source="excel_url", position=0, created_at=NOW)
+    img_b = ProductImage(product=producto, url="http://cdn.test/b.png", source="excel_url", position=1, created_at=NOW)
+    db_session.add_all([img_a, img_b])
+    db_session.commit()
+
+    res = client.put(f"/api/productos/{variant_id}/imagenes/orden", json={"orden": [img_b.id, img_a.id]})
+
+    assert res.status_code == 200, res.text
+    assert [img["url"] for img in res.json()["imagenes"]] == ["http://cdn.test/b.png", "http://cdn.test/a.png"]
+    assert res.json()["imagenes"][0]["principal"] is True
+
+
+def test_reordenar_imagenes_con_ids_que_no_coinciden_da_400(client, db_session, a_store):
+    producto = _producto_simple(db_session, a_store, sku="IMG-008", nombre="Producto", precio=5000, stock=10)
+    variant_id = db_session.query(ProductVariant).one().id
+    img_a = ProductImage(product=producto, url="http://cdn.test/a.png", source="excel_url", position=0, created_at=NOW)
+    db_session.add(img_a)
+    db_session.commit()
+
+    res = client.put(f"/api/productos/{variant_id}/imagenes/orden", json={"orden": [img_a.id, 999999]})
+    assert res.status_code == 400
+
+
+def test_gestion_de_imagenes_de_producto_de_otra_empresa_da_404(client, db_session, a_store):
+    otro_usuario = User(email="otra-empresa-img@ejemplo.cl", password_hash=hash_password("x"), full_name="Dueño B", created_at=NOW, updated_at=NOW)
+    db_session.add(otro_usuario)
+    tienda_b = Store(owner=otro_usuario, name="Empresa B", created_at=NOW)
+    db_session.add(tienda_b)
+    db_session.add(StoreSettings(store=tienda_b, company_name="Empresa B", store_name="Empresa B"))
+    db_session.commit()
+    producto_b = _producto_simple(db_session, tienda_b, sku="IMG-B-001", nombre="Producto de B", precio=5000, stock=10)
+    img_b = ProductImage(product=producto_b, url="http://cdn.test/b.png", source="excel_url", position=0, created_at=NOW)
+    db_session.add(img_b)
+    db_session.commit()
+    variant_id_b = db_session.query(ProductVariant).filter_by(product_id=producto_b.id).one().id
+
+    # a_store sigue siendo la sesión autenticada acá (el fixture autentica
+    # al crearse) -- nunca ve ni puede tocar las imágenes de la empresa B.
+    assert client.post(f"/api/productos/{variant_id_b}/imagenes", json={"url": "https://cdn.test/x.png"}).status_code == 404
+    assert client.delete(f"/api/productos/{variant_id_b}/imagenes/{img_b.id}").status_code == 404
+    assert client.put(f"/api/productos/{variant_id_b}/imagenes/orden", json={"orden": [img_b.id]}).status_code == 404
