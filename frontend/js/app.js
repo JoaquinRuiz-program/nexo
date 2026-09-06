@@ -2163,18 +2163,65 @@ window.LC = window.LC || {};
   // ------------------------------------------------------------------
 
   const ESTADO_SUSCRIPCION_LABEL = { trialing: "Prueba gratuita", active: "Activa", past_due: "Pago pendiente", canceled: "Cancelada", expired: "Vencida" };
+  const CICLO_LABEL = { mensual: "mensual", anual: "anual" };
+
+  // Motivo corto que manda /api/pagos/callback (?pago=...) -> texto humano
+  // — mismo criterio que RAZON_ERROR_ML: nunca un detalle técnico acá.
+  const MENSAJE_PAGO = {
+    procesando: { tono: "info", texto: "Estamos confirmando tu pago con Mercado Pago — puede tardar unos segundos. Esta pantalla se actualiza sola." },
+    rechazado: { tono: "error", texto: "El pago no se completó. Podés intentar de nuevo cuando quieras." },
+  };
+
+  let cicloElegido = "mensual";
+
+  function renderTarjetaPlanPago(p, sus, ciclo) {
+    const esActual = sus.plan.id === p.codigo && sus.cicloFacturacion === ciclo && sus.estado && sus.estado !== "canceled";
+    const precio = ciclo === "mensual" ? p.precioMensualClp : p.precioAnualClp;
+    const sinPrecio = precio == null;
+    return `
+      <div class="plan-card ${esActual ? "plan-current" : ""}">
+        <div>
+          <div class="flex items-center justify-between">
+            <h4 class="text-base font-semibold">${escapeHtml(p.nombre)}</h4>
+            ${esActual ? '<span class="badge badge-variable">Plan actual</span>' : ""}
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">${p.limiteProductos ? `Hasta ${p.limiteProductos.toLocaleString("es-CL")} productos` : "Sin límite fijo"}</p>
+        </div>
+        <p class="text-2xl font-bold">${sinPrecio ? "Precio a coordinar" : formatCLP(precio)}${sinPrecio ? "" : `<span class="text-sm font-normal text-slate-400"> / ${ciclo === "mensual" ? "mes" : "año"}</span>`}</p>
+        ${ciclo === "anual" && !sinPrecio ? `<p class="text-xs text-emerald-600 dark:text-emerald-400">${p.descuentoAnualPct}% de descuento pagando el año</p>` : ""}
+        <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-1.5 flex-1">
+          ${p.features.map((f) => `<li class="flex items-start gap-1.5"><span class="text-emerald-500">✓</span>${escapeHtml(f)}</li>`).join("")}
+        </ul>
+        ${esActual
+          ? '<span class="btn-disabled justify-center">Plan actual</span>'
+          : sinPrecio
+            ? '<span class="btn-disabled justify-center">Escribinos para cotizar</span>'
+            : `<button data-plan="${escapeHtml(p.codigo)}" data-ciclo="${ciclo}" class="btn-primary justify-center pagar-plan-btn">Elegir y pagar</button>`}
+      </div>
+    `;
+  }
 
   async function renderSuscripcion(main) {
+    const url = new URL(window.location.href);
+    const pagoParam = url.searchParams.get("pago");
+    if (pagoParam) {
+      const m = MENSAJE_PAGO[pagoParam];
+      if (m) toast(m.tono, m.texto);
+      url.searchParams.delete("pago");
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    }
+
     const sus = await LC.dataSource.getSuscripcion();
+    const planesPago = sus.real ? await (async () => {
+      const res = await LC.backendApi.fetchPlanesPago();
+      return res.ok ? res.data : null;
+    })() : null;
     const pct = sus.plan.limite ? Math.min(100, Math.round((sus.productosUtilizados / sus.plan.limite) * 100)) : 0;
     const barClass = pct >= 90 ? "progress-danger" : pct >= 70 ? "progress-warn" : "";
-    // 5 de septiembre de 2026 — en modo real, cambiar de plan es exclusivo
-    // del administrador de Nexo (todavía no hay proveedor de pagos
-    // conectado, ver backend/app/api/routes/suscripcion.py) — la pantalla
-    // es de solo lectura, nunca ofrece "Elegir plan" con datos reales.
     const pctPub = sus.real && sus.plan.limitePublicaciones
       ? Math.min(100, Math.round((sus.publicacionesUtilizadas / sus.plan.limitePublicaciones) * 100)) : 0;
     const barClassPub = pctPub >= 90 ? "progress-danger" : pctPub >= 70 ? "progress-warn" : "";
+    const esPagoReal = sus.real && !!sus.cicloFacturacion; // hay al menos un pago real confirmado alguna vez
 
     main.innerHTML = `
       <div class="page-wrap app-fade">
@@ -2186,10 +2233,13 @@ window.LC = window.LC || {};
               <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 ${escapeHtml(sus.plan.precio)}${sus.real ? "" : " / mes"}
                 ${sus.real && sus.estado ? ` · ${escapeHtml(ESTADO_SUSCRIPCION_LABEL[sus.estado] || sus.estado)}` : ""}
+                ${sus.real && sus.cicloFacturacion ? ` · Facturación ${CICLO_LABEL[sus.cicloFacturacion] || sus.cicloFacturacion}` : ""}
                 ${sus.fechaRenovacion ? ` · Próxima renovación: ${formatDate(sus.fechaRenovacion)}` : ""}
               </p>
             </div>
-            ${sus.real ? "" : '<button id="manage-sub-btn" class="btn-secondary">Administrar suscripción</button>'}
+            ${sus.real
+              ? (esPagoReal && sus.estado !== "canceled" ? '<button id="cancelar-suscripcion-btn" class="btn-secondary btn-secondary--danger">Cancelar suscripción</button>' : "")
+              : '<button id="manage-sub-btn" class="btn-secondary">Administrar suscripción</button>'}
           </div>
 
           <div>
@@ -2210,7 +2260,22 @@ window.LC = window.LC || {};
         </div>
 
         ${sus.real ? `
-          <p class="text-xs text-slate-400 dark:text-slate-500">¿Necesitás más productos o publicaciones? Escribinos desde <a href="#/soporte" class="text-indigo-600 dark:text-indigo-400 hover:underline">Ayuda y soporte</a> para actualizar tu plan.</p>
+        <div class="panel-card">
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-1">
+            <h3 class="panel-title">Cambiar de plan</h3>
+            ${planesPago && planesPago.length ? `
+            <div class="chart-tabs" id="ciclo-facturacion-tabs">
+              <button data-ciclo="mensual" class="chart-tab ${cicloElegido === "mensual" ? "is-active" : ""}">Mensual</button>
+              <button data-ciclo="anual" class="chart-tab ${cicloElegido === "anual" ? "is-active" : ""}">Anual (${planesPago[0] ? planesPago[0].descuentoAnualPct : 15}% off)</button>
+            </div>` : ""}
+          </div>
+          <p class="panel-subtitle mb-4">El pago se hace en el checkout real de Mercado Pago — Nexo nunca ve el número de tu tarjeta.</p>
+          ${planesPago && planesPago.length ? `
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4" id="planes-pago-grid">
+            ${planesPago.map((p) => renderTarjetaPlanPago(p, sus, cicloElegido)).join("")}
+          </div>
+          ` : `<p class="text-sm text-slate-500 dark:text-slate-400">No pudimos cargar los planes disponibles ahora mismo.</p>`}
+        </div>
         ` : `
         <h3 class="panel-title mb-3">Planes disponibles</h3>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2246,6 +2311,59 @@ window.LC = window.LC || {};
     if (manageBtn) {
       manageBtn.addEventListener("click", () => {
         infoModal("Administrar suscripción", "La gestión de suscripciones y pagos estará disponible cuando conectemos Stripe u otro proveedor de pagos.");
+      });
+    }
+
+    main.querySelectorAll("#ciclo-facturacion-tabs [data-ciclo]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        cicloElegido = btn.dataset.ciclo;
+        renderSuscripcion(main);
+      });
+    });
+
+    main.querySelectorAll(".pagar-plan-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const planCode = btn.dataset.plan;
+        const ciclo = btn.dataset.ciclo;
+        const plan = planesPago.find((p) => p.codigo === planCode);
+        const precio = ciclo === "mensual" ? plan.precioMensualClp : plan.precioAnualClp;
+        openModal({
+          title: "Confirmar plan",
+          body: `<p>Vas a pagar <strong>${formatCLP(precio)}</strong> (${CICLO_LABEL[ciclo]}) por <strong>${escapeHtml(plan.nombre)}</strong>. Vas a completar el pago en el checkout real de Mercado Pago — Nexo nunca ve tu tarjeta.</p>`,
+          primaryLabel: "Ir a pagar",
+          secondaryLabel: "Cancelar",
+          onPrimary: async () => {
+            const res = await LC.backendApi.iniciarPago(planCode, ciclo);
+            if (!res.ok) {
+              toast("error", res.error.mensaje);
+              return;
+            }
+            // Navegación real de página completa — es Mercado Pago quien
+            // tiene que mostrar su propio checkout, nunca algo con fetch().
+            window.location.href = res.data.checkoutUrl;
+          },
+        });
+      });
+    });
+
+    const cancelarBtn = document.getElementById("cancelar-suscripcion-btn");
+    if (cancelarBtn) {
+      cancelarBtn.addEventListener("click", () => {
+        openModal({
+          title: "¿Cancelar tu suscripción?",
+          body: `<p>${sus.cicloFacturacion === "mensual" ? "Mercado Pago va a dejar de cobrar tu tarjeta automáticamente cada mes." : "No se te va a volver a cobrar cuando termine el período ya pagado."} Vas a poder volver a activar un plan cuando quieras.</p>`,
+          primaryLabel: "Sí, cancelar",
+          secondaryLabel: "Volver",
+          onPrimary: async () => {
+            const res = await LC.backendApi.cancelarSuscripcionPago();
+            if (!res.ok) {
+              toast("error", res.error.mensaje);
+              return;
+            }
+            toast("info", "Suscripción cancelada.");
+            renderSuscripcion(main);
+          },
+        });
       });
     }
 
@@ -2354,6 +2472,7 @@ window.LC = window.LC || {};
             <div>
               <label class="form-label">Comisión de Mercado Libre (%)</label>
               <input id="cfg-ml-comision" type="number" min="0" step="0.1" class="form-input" value="${canalMl.commissionPct ?? ""}" />
+              <p class="text-xs text-slate-400 mt-1">Valor de respaldo — se usa solo si abajo elegís "Comparar ambas" o si un producto todavía no tiene su comisión real consultada.</p>
             </div>
             <div>
               <label class="form-label">Costo de envío ($)</label>
@@ -2370,6 +2489,15 @@ window.LC = window.LC || {};
             <div>
               <label class="form-label">Margen mínimo aceptable (%)</label>
               <input id="cfg-ml-margen-minimo" type="number" min="0" step="0.1" class="form-input" value="${canalMl.minMarginPct ?? ""}" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="form-label">Comisión real por producto</label>
+              <select id="cfg-ml-listing-pref" class="form-input">
+                <option value="" ${!canalMl.listingTypePref ? "selected" : ""}>Comparar ambas (usar la comisión de respaldo de arriba para calcular márgenes)</option>
+                <option value="classic" ${canalMl.listingTypePref === "classic" ? "selected" : ""}>Usar Clásica — la comisión real de cada producto, según su categoría y precio</option>
+                <option value="premium" ${canalMl.listingTypePref === "premium" ? "selected" : ""}>Usar Premium — la comisión real de cada producto, según su categoría y precio</option>
+              </select>
+              <p class="text-xs text-slate-400 mt-1">La comisión de Mercado Libre varía por producto (categoría, precio y tipo de publicación) — elegí acá cuál usar para calcular el margen y la decisión de "¿conviene publicar?" de cada producto, en vez de la comisión de respaldo de arriba. Necesita haber corrido "Actualizar comisiones reales de Mercado Libre" (pantalla Oportunidades) al menos una vez para cada producto.</p>
             </div>
           </div>
           <p id="cfg-ml-feedback" class="text-sm mt-2 min-h-[1.25rem]"></p>
@@ -2418,6 +2546,7 @@ window.LC = window.LC || {};
           commission_pct: num("cfg-ml-comision"),
           shipping_cost: num("cfg-ml-envio"),
           other_fixed_cost: num("cfg-ml-otros"),
+          listing_type_pref: document.getElementById("cfg-ml-listing-pref").value || null,
           target_margin_pct: num("cfg-ml-margen-objetivo"),
           min_margin_pct: num("cfg-ml-margen-minimo"),
         });

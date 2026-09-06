@@ -445,6 +445,23 @@ window.LC = window.LC || {};
     return request("/api/suscripcion");
   }
 
+  // 6 de septiembre de 2026 — cobro real de la mensualidad/anualidad con
+  // Mercado Pago (ver app/api/routes/pagos.py). Igual criterio que
+  // conectarMercadoLibre/conectarGoogleSheets: /iniciar devuelve una URL
+  // real a la que hay que navegar de página completa (ahí es donde se
+  // ingresa la tarjeta, nunca acá) — nunca un fetch que "complete el pago".
+  async function fetchPlanesPago() {
+    return request("/api/pagos/planes");
+  }
+
+  async function iniciarPago(planCode, ciclo) {
+    return request("/api/pagos/iniciar", { method: "POST", body: { planCode, ciclo } });
+  }
+
+  async function cancelarSuscripcionPago() {
+    return request("/api/pagos/cancelar", { method: "POST" });
+  }
+
   async function listarMisSolicitudesSoporte() {
     return request("/api/soporte/solicitudes");
   }
@@ -524,6 +541,9 @@ window.LC = window.LC || {};
     detalleSolicitudSoporteAdmin,
     responderSolicitudSoporteAdmin,
     fetchMiSuscripcion,
+    fetchPlanesPago,
+    iniciarPago,
+    cancelarSuscripcionPago,
     listarMisSolicitudesSoporte,
     crearSolicitudSoporte,
     obtenerMiSolicitudSoporte,

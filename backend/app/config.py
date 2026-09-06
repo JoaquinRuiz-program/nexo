@@ -92,6 +92,25 @@ class Settings(BaseSettings):
     # que coincidir EXACTO con la registrada en Google Cloud Console).
     google_redirect_uri: str = ""
 
+    # Mercado Pago — cobro real de la mensualidad/anualidad de Nexo (6 de
+    # septiembre de 2026, ver app/adapters/mercadopago.py). A diferencia de
+    # Mercado Libre/Google (donde cada EMPRESA CLIENTE conecta su propia
+    # cuenta), acá es Nexo quien cobra: una única cuenta de Mercado Pago,
+    # la del dueño de Nexo, para todos los clientes. Se crean UNA vez en
+    # https://www.mercadopago.cl/developers/panel — "Tus integraciones" ->
+    # credenciales de PRODUCCIÓN (nunca las de prueba/sandbox una vez que
+    # se cobre a clientes reales). Vacío por defecto: sin esto,
+    # /api/pagos/iniciar devuelve un error claro diciendo exactamente qué
+    # falta, nunca inventa un cobro.
+    mercadopago_access_token: str = ""
+    # Clave secreta para validar la firma (header X-Signature) de los
+    # webhooks de pago — "Tus integraciones" -> Webhooks -> "Configurar
+    # notificaciones" -> revelar clave. Sin esto, /api/pagos/webhook
+    # rechaza CUALQUIER notificación (nunca confía en un webhook sin firma
+    # verificable — alguien podría mandar un POST falso diciendo "este
+    # cliente ya pagó").
+    mercadopago_webhook_secret: str = ""
+
     # URL del frontend (frontend/index.html) — a dónde redirige
     # /api/mercadolibre/callback después de procesar la autorización (con
     # ?ml=conectado o ?ml=error&razon=..., antes del "#", para que sea un
@@ -189,5 +208,7 @@ def print_env_diagnostics(settings: Settings) -> None:
     print(f"  GOOGLE_CLIENT_ID={settings.google_client_id or '(no definida)'}")
     print(f"  GOOGLE_CLIENT_SECRET={mask_secret(settings.google_client_secret)}")
     print(f"  GOOGLE_REDIRECT_URI={settings.google_redirect_uri or '(no definida)'}")
+    print(f"  MERCADOPAGO_ACCESS_TOKEN={mask_secret(settings.mercadopago_access_token)}")
+    print(f"  MERCADOPAGO_WEBHOOK_SECRET={mask_secret(settings.mercadopago_webhook_secret)}")
     print(f"  FRONTEND_BASE_URL={settings.frontend_base_url}")
     print(f"  TOKEN_ENCRYPTION_KEY={mask_secret(settings.token_encryption_key)}")

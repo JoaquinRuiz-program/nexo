@@ -479,6 +479,7 @@ window.LC = window.LC || {};
         limitePublicaciones: data.plan.limitePublicaciones, precio: data.plan.precio, features: data.plan.features,
       },
       estado: data.estado,
+      cicloFacturacion: data.cicloFacturacion,
       productosUtilizados: data.uso.productos,
       publicacionesUtilizadas: data.uso.publicaciones,
       fechaRenovacion: data.fechaRenovacion ? new Date(data.fechaRenovacion) : null,

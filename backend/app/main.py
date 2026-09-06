@@ -32,6 +32,7 @@ from app.api.routes import (
     dashboard,
     google_sheets,
     mercadolibre,
+    pagos,
     productos,
     productos_db,
     publicaciones,
@@ -103,6 +104,7 @@ app.include_router(publicaciones.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
 app.include_router(suscripcion.router)
+app.include_router(pagos.router)
 app.include_router(soporte.router)
 
 # 5 de septiembre de 2026 — imágenes de producto subidas desde el

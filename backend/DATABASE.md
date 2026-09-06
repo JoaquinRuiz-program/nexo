@@ -417,6 +417,83 @@ diferencia de Mercado Libre, Google sí acepta `http://localhost...` como
 Redirect URI para desarrollo local — no hace falta un túnel HTTPS para
 probar esto antes de tener un dominio real.
 
+## Cobro real con Mercado Pago (6 de septiembre de 2026)
+
+Distinto de Mercado Libre/Google Sheets en algo fundamental: ahí cada
+EMPRESA CLIENTE conecta su propia cuenta (OAuth, un token por tienda). Acá
+es al revés — **Nexo es el vendedor**, cobrando la mensualidad/anualidad a
+sus clientes. Por eso hay una única cuenta de Mercado Pago (la del dueño
+de Nexo) y un único `MERCADOPAGO_ACCESS_TOKEN` de servidor para todos los
+clientes — nunca OAuth, nunca por tienda. Ver
+`app/adapters/mercadopago.py` y `app/api/routes/pagos.py`.
+
+**Dos mecanismos reales de Mercado Pago, uno por ciclo de facturación:**
+
+- **Mensual -> Suscripciones (`POST /preapproval`)**: cobro recurrente
+  real — Mercado Pago vuelve a cobrar la tarjeta guardada cada mes solo,
+  sin que el cliente tenga que volver.
+- **Anual -> Pago único (`POST /checkout/preferences`, "Checkout Pro")**:
+  un cobro real por el total del año con el descuento vigente (15%,
+  `app/domain/plans.py::DESCUENTO_ANUAL_PCT`), pero NO un cobro recurrente
+  de Mercado Pago. Decisión deliberada: la documentación oficial de
+  Suscripciones confirma con precisión un cobro recurrente MENSUAL
+  (`frequency_type: "months"`, `frequency: 1`); no hay una confirmación
+  igual de clara sobre "cobrar automáticamente una sola vez cada 12
+  meses" sin ambigüedad. Con dinero real de por medio, se eligió el
+  camino 100% documentado en vez de adivinar: el ciclo anual se renueva
+  con un nuevo pago único cuando se acerca el vencimiento (Nexo puede
+  avisarle al cliente, pero nunca le vuelve a cobrar la tarjeta sin que
+  él confirme un nuevo pago). Si en el futuro se confirma oficialmente
+  que un cobro anual recurrente automático es seguro y sin ambigüedad,
+  ahí se puede migrar — nunca antes de volver a verificar contra la
+  documentación oficial vigente en ese momento.
+
+**Flujo:**
+
+```
+Frontend: pantalla "Mi plan" -> elegir plan + ciclo -> POST /api/pagos/iniciar
+  -> arma external_reference = "nexo:<store_id>:<plan_code>:<ciclo>"
+     (nunca escribe nada en Subscription todavía — elegir un plan y
+     pagarlo de verdad son cosas distintas)
+  -> crea la suscripción/preferencia real en Mercado Pago, devuelve
+     `checkoutUrl` (init_point)
+Frontend: navega de página completa a checkoutUrl — ahí el dueño de la
+  tarjeta la ingresa en el checkout HOSTEADO de Mercado Pago (Nexo nunca
+  la ve, ni el número ni nada)
+Mercado Pago redirige el navegador a GET /api/pagos/callback (backend,
+  nunca directo al frontend — mismo motivo que _frontend_redirect en
+  mercadolibre.py: separar los parámetros que agrega Mercado Pago del
+  router de hash del frontend) -> SIEMPRE redirige al frontend con un
+  aviso genérico ("estamos confirmando tu pago") — esta redirección NUNCA
+  decide nada por sí sola, un usuario podría fabricar esa URL a mano.
+POST /api/pagos/webhook es la ÚNICA fuente de verdad de "se pagó de
+  verdad" — Mercado Pago lo llama servidor a servidor, con una firma
+  verificable (header X-Signature, validada contra
+  MERCADOPAGO_WEBHOOK_SECRET con HMAC-SHA256). Al recibir uno, se le
+  vuelve a preguntar a la propia API de Mercado Pago el estado real
+  (GET /preapproval/{id} o GET /v1/payments/{id}) — nunca se confía en
+  los datos que trae el cuerpo del webhook a ciegas. Recién ahí se
+  activa el plan real: Subscription.status="active",
+  billing_cycle, mercadopago_preapproval_id/mercadopago_last_payment_id,
+  current_period_end (+30 o +365 días).
+POST /api/pagos/cancelar -> cancela de verdad el cobro recurrente en
+  Mercado Pago (ciclo mensual) antes de marcar la suscripción cancelada
+  localmente — nunca alcanza con borrar el dato local, si no se cancela
+  allá Mercado Pago sigue cobrando la tarjeta el mes que viene.
+```
+
+**Limitación conocida, no construida todavía:** detectar que un cobro
+mensual del mes 2 en adelante FALLÓ (para marcar la suscripción
+"past_due") requiere procesar el topic `subscription_authorized_payment`
+de los webhooks — no se implementó en esta primera versión (activar el
+plan la primera vez sí está cubierto de punta a punta). Tampoco hay
+recordatorio automático de "tu plan anual vence pronto" todavía.
+
+**Lo único que no se puede generar desde acá** (mismo criterio que
+Mercado Libre/Google): una cuenta de Mercado Pago real y su Access
+Token/Webhook Secret de producción — ver `backend/.env.example` para la
+guía paso a paso de `MERCADOPAGO_ACCESS_TOKEN`/`MERCADOPAGO_WEBHOOK_SECRET`.
+
 ## Estructura agregada
 
 ```

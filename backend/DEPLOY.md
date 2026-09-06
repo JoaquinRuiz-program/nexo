@@ -96,8 +96,10 @@ commiteado a Git — `.env` ya está en `.gitignore`).
 | `FRONTEND_BASE_URL` | `https://app.tudominio.cl` | A dónde redirige el backend después del OAuth de Mercado Libre y de Google. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Los de la app OAuth real creada en console.cloud.google.com (ver `DATABASE.md`, sección "Google Sheets real") | **5 de septiembre de 2026.** Nunca los de un proyecto de prueba. Pendiente de crear — no bloquea el resto del despliegue, la integración queda deshabilitada (con mensaje claro) hasta que existan. |
 | `GOOGLE_REDIRECT_URI` | `https://api.tudominio.cl/api/google-sheets/callback` | Tiene que coincidir EXACTO con la Redirect URI registrada en Google Cloud Console. |
+| `MERCADOPAGO_ACCESS_TOKEN` | El de la cuenta de Mercado Pago REAL de Nexo (producción, no de prueba), creado en mercadopago.cl/developers/panel (ver `DATABASE.md`, sección "Cobro real con Mercado Pago") | **6 de septiembre de 2026.** Pendiente de crear — no bloquea el resto del despliegue, `/api/pagos/*` queda deshabilitado (con mensaje claro) hasta que exista. |
+| `MERCADOPAGO_WEBHOOK_SECRET` | La clave que genera Mercado Pago al configurar la URL de webhook (`https://api.tudominio.cl/api/pagos/webhook`) en el panel de la app | Sin esto, `/api/pagos/webhook` rechaza cualquier notificación (nunca confía en un aviso de pago sin firma verificable). |
 | `WOOCOMMERCE_LEGACY_STORE_ID` | El `store_id` real del cliente piloto de WooCommerce en la base de producción (no el de dev) | Ver `ADMIN_NEXO.md` para cómo consultarlo. Dejar sin definir si no se usa el reporte de WooCommerce todavía. |
-| `BACKEND_PUBLIC_BASE_URL` | `https://api.tudominio.cl` | **Nuevo** (6 de septiembre de 2026) — URL con la que Nexo arma el link público de cada imagen subida. Si queda en `localhost`, Mercado Libre no puede descargar la imagen y el ítem se crea sin foto real. |
+| `BACKEND_PUBLIC_BASE_URL` | `https://api.tudominio.cl` | URL con la que Nexo arma el link público de cada imagen subida (6 de septiembre de 2026) Y a dónde redirige Mercado Pago después del checkout (`GET /api/pagos/callback`, ver `DATABASE.md`). Si queda en `localhost`, ninguna de las dos cosas funciona en producción. |
 | `UPLOADS_DIR` | Ruta a un disco/volumen PERSISTENTE del proveedor de hosting | Ver sección "Almacenamiento de imágenes" arriba — sin un volumen persistente, un redeploy borra las imágenes de los clientes. |
 
 `frontend/js/env.js` (el único archivo del frontend que cambia entre entornos):
@@ -214,5 +216,7 @@ a nivel de base de datos, ver `ADMIN_NEXO.md`).
 | 10 | Sin `debug=True` / stack traces crudos | ✅ Ya cumplido |
 | 11 | CSRF | ✅ Ya cumplido — `SameSite=Lax` + `HttpOnly` alcanza con el diseño actual (todo endpoint mutante es POST/PUT) |
 | 12 | Rate limiting en login/registro | ⚠️ **No bloqueante para el primer cliente** (ver razonamiento abajo) — hacerlo inmediatamente después de este lanzamiento, antes de un segundo cliente o de que la URL se difunda más. |
+| 13 | `MERCADOPAGO_WEBHOOK_SECRET` configurada antes de cobrar a un cliente real | Sin esto, `/api/pagos/webhook` rechaza todo — no hay forma de activar un plan pagado por error sin la firma verificada |
+| 14 | Nexo nunca ve/toca un número de tarjeta | ✅ Ya cumplido por diseño — el pago se hace en el checkout hosteado de Mercado Pago (`init_point`), nunca en un formulario propio |
 
 **Rate limiting — por qué no bloquea hoy**: el mensaje de login ya es idéntico para "email no existe" y "contraseña incorrecta" (sin enumeración de usuarios), la URL de producción va a ser nueva y desconocida, y hay un solo cliente conocido — el vector de fuerza bruta no tiene a quién apuntar todavía. En cuanto exista un segundo cliente, o la URL deje de ser nueva/desconocida, pasa a ser prioritario.
