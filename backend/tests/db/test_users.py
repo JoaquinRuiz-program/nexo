@@ -19,7 +19,7 @@ from app.domain.security import hash_password, verify_password
 def test_la_contrasena_nunca_se_guarda_en_texto_plano(db_session, now):
     plano = "mi-contraseña-super-secreta"
     user = User(
-        email="nuevo@lalibreriaonlineoficial.cl",
+        email="nuevo@tienda-de-prueba.cl",
         password_hash=hash_password(plano),
         full_name="Usuario Nuevo",
         created_at=now,

@@ -3,11 +3,15 @@
 suscripción (nunca la de otra empresa: todo acá cuelga de
 `get_current_store`, igual criterio que el resto del backend de cliente).
 
-Solo lectura + uso actual. Cambiar de plan/estado es exclusivo del panel de
-administrador de Nexo (ver app/api/routes/admin.py) mientras no exista un
-proveedor de pago real conectado — un cliente NUNCA puede modificar su
-propia suscripción con un request manipulado, ni ver la de otra empresa
-(no hay ningún parámetro de store_id acá, a propósito).
+Solo lectura + uso actual. Un cliente puede cambiar/pagar su plan de verdad
+desde el 6 de septiembre de 2026 — ver app/api/routes/pagos.py (Mercado
+Pago) — pero SIEMPRE a través de un pago real confirmado por webhook,
+nunca escribiendo directo sobre su propia fila de Subscription. El panel
+de administrador de Nexo (app/api/routes/admin.py) conserva, aparte, la
+capacidad de asignar/cambiar un plan a mano (para casos manuales:
+cortesías, acuerdos especiales, arreglar un dato viejo) — un cliente NUNCA
+puede modificar su propia suscripción con un request manipulado, ni ver la
+de otra empresa (no hay ningún parámetro de store_id acá, a propósito).
 """
 
 from __future__ import annotations

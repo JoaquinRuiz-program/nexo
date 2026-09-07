@@ -37,7 +37,7 @@ $wpdb->insert(
 	$wpdb->prefix . 'woocommerce_api_keys',
 	array(
 		'user_id'         => $user->ID,
-		'description'     => 'Libreria Central - auditoria de solo lectura (entorno de prueba)',
+		'description'     => 'Auditoria de solo lectura (entorno de prueba)',
 		'permissions'     => 'read',
 		'consumer_key'    => wc_api_hash( $consumer_key ),
 		'consumer_secret' => $consumer_secret,

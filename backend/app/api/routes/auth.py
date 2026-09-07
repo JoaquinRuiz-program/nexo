@@ -21,7 +21,13 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
-from app.api.deps import clear_session_cookie, get_current_session, get_current_user, set_session_cookie
+from app.api.deps import (
+    clear_session_cookie,
+    get_current_session,
+    get_current_user,
+    set_session_cookie,
+    store_en_vista_de_admin,
+)
 from app.config import get_settings
 from app.db.models import AuthSession, Store, StoreSettings, User
 from app.db.session import get_db
@@ -78,17 +84,19 @@ class LoginRequest(BaseModel):
 
 
 def _sesion_publica(user: User, store: Store | None, sesion: AuthSession | None = None) -> dict:
-    # 6 de septiembre de 2026 — "modo soporte": si un administrador de Nexo
-    # "entró como soporte" a esta empresa (ver
-    # app/api/routes/admin.py::entrar_como_soporte), esta sesión lleva
-    # `impersonated_by_admin_id` marcado. Nunca silencioso: se lo decimos
-    # siempre al frontend (que muestra un aviso persistente), nunca solo al
-    # admin. `sesion` es None en registro/login (una sesión recién creada
-    # ahí nunca es de soporte) — solo /me lo pasa de verdad.
+    # 6 de septiembre de 2026 — "ver como empresa": si esta sesión de un
+    # admin de Nexo tiene un contexto de empresa activo (ver
+    # app/api/routes/admin.py::entrar_a_ver_empresa), se lo decimos siempre
+    # al frontend, que mientras dure muestra un aviso persistente. Nunca
+    # silencioso. `sesion` es None en registro/login (una sesión recién
+    # creada nunca está viendo otra empresa) — solo /me lo pasa de verdad.
     modo_soporte = None
-    if sesion is not None and sesion.impersonated_by_admin_id is not None:
-        admin = sesion.impersonated_by_admin
-        modo_soporte = {"adminEmail": admin.email if admin else None}
+    if sesion is not None and sesion.viewing_store_id is not None and user.is_nexo_admin:
+        modo_soporte = {
+            "adminEmail": user.email,
+            "empresaId": store.id if store is not None else None,
+            "empresaNombre": store.name if store is not None else None,
+        }
     return {
         "usuario": {"id": user.id, "email": user.email, "nombre": user.full_name},
         # None solo para un administrador de Nexo sin tienda propia (ver
@@ -198,5 +206,15 @@ def me(usuario: User = Depends(get_current_user), sesion: AuthSession = Depends(
     # puede no tener ninguna tienda propia, y /me es lo primero que llama
     # el frontend al hidratar sesión (tiene que funcionar para los dos
     # tipos de usuario, nunca 500 para un admin válido sin empresa).
-    tienda = db.get(Store, sesion.active_store_id) if sesion.active_store_id is not None else None
+    #
+    # 6 de septiembre de 2026 — si el admin está viendo una empresa, la
+    # empresa que reporta /me es ESA (la misma que van a usar los endpoints
+    # de negocio, ver deps.py::get_current_store): que las dos cosas
+    # coincidan es lo que hace que el frontend pinte la empresa correcta
+    # después de un refresh, sin guardar nada en el navegador.
+    en_vista = store_en_vista_de_admin(sesion, db)
+    if en_vista is not None:
+        tienda = en_vista
+    else:
+        tienda = db.get(Store, sesion.active_store_id) if sesion.active_store_id is not None else None
     return _sesion_publica(usuario, tienda, sesion)

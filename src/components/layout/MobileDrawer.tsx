@@ -21,7 +21,7 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[--color-gold-500] text-[--color-ink-950]">
               <BookOpen size={20} strokeWidth={2.2} />
             </div>
-            <p className="font-display text-lg font-semibold text-white">Librería Central</p>
+            <p className="font-display text-lg font-semibold text-white">Mi tienda</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 text-white/70 hover:bg-[--color-ink-900]" aria-label="Cerrar menú">
             <X size={22} />

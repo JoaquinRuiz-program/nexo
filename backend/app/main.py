@@ -32,6 +32,7 @@ from app.api.routes import (
     dashboard,
     google_sheets,
     mercadolibre,
+    pagos,
     productos,
     productos_db,
     publicaciones,
@@ -103,6 +104,7 @@ app.include_router(publicaciones.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
 app.include_router(suscripcion.router)
+app.include_router(pagos.router)
 app.include_router(soporte.router)
 
 # 5 de septiembre de 2026 — imágenes de producto subidas desde el
@@ -116,7 +118,16 @@ app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    print_env_diagnostics(get_settings())
+    # 6 de septiembre de 2026 — release candidate: esto es SOLO un
+    # diagnóstico para los logs. Si falla (por ejemplo, una consola que no
+    # puede codificar un carácter), no debe impedir que la aplicación
+    # arranque: FastAPI aborta el proceso entero si un handler de startup
+    # lanza una excepción. Pasó de verdad al probar el arranque en una
+    # configuración de producción (sin .env).
+    try:
+        print_env_diagnostics(get_settings())
+    except Exception as err:  # noqa: BLE001 - nunca debe tumbar el arranque
+        print(f"AVISO: no se pudo imprimir el diagnostico de configuracion: {err!r}")
 
 
 @app.get("/api/health")

@@ -272,3 +272,55 @@ def test_importar_sin_suscripcion_no_tiene_ningun_limite(client, db_session, a_s
     )
     assert res.status_code == 200, res.text
     assert res.json()["creados"] == 2
+
+
+# ------------------------------------------------------------------
+# Topes de importación (6 de septiembre de 2026, P1-2 de la auditoría
+# pre-producción): sin esto, un archivo enorme podía agotar la memoria del
+# proceso — y con un solo worker en producción, dejar sin servicio a TODAS
+# las empresas, no solo a la que subió el archivo.
+# ------------------------------------------------------------------
+
+
+def test_archivo_mas_grande_que_el_tope_se_rechaza_sin_procesarlo(client, a_store):
+    from app.domain.spreadsheet_io import MAX_ARCHIVO_BYTES
+
+    gigante = io.BytesIO(b"a" * (MAX_ARCHIVO_BYTES + 1))
+    res = client.post("/api/catalogo/importar/analizar", files={"file": ("enorme.csv", gigante, "text/csv")})
+
+    assert res.status_code == 400
+    assert "MB" in res.json()["detail"]
+
+
+def test_archivo_con_mas_filas_que_el_tope_se_rechaza(client, a_store):
+    from app.domain.spreadsheet_io import MAX_FILAS
+
+    filas = "\n".join(f"SKU-{i},Producto {i},1000" for i in range(MAX_FILAS + 1))
+    csv_largo = f"SKU,Nombre,Precio\n{filas}\n"
+    res = client.post(
+        "/api/catalogo/importar/analizar",
+        files={"file": ("muchas-filas.csv", io.BytesIO(csv_largo.encode("utf-8")), "text/csv")},
+    )
+
+    assert res.status_code == 400
+    assert "filas" in res.json()["detail"].lower()
+
+
+def test_un_archivo_normal_sigue_importandose_igual_que_antes(client, db_session, a_store):
+    """El tope no puede volverse un obstáculo para un catálogo real: el
+    archivo de siempre tiene que seguir funcionando exactamente igual."""
+    archivo = io.BytesIO(CSV_LIBRERIA.encode("utf-8"))
+    res = client.post("/api/catalogo/importar/analizar", files={"file": ("libreria.csv", archivo, "text/csv")})
+
+    assert res.status_code == 200, res.text
+    assert res.json()["resumen"]["totalFilas"] == 2
+
+
+def test_importacion_de_costos_tambien_respeta_el_tope_de_tamano(client, a_store):
+    from app.domain.spreadsheet_io import MAX_ARCHIVO_BYTES
+
+    gigante = io.BytesIO(b"a" * (MAX_ARCHIVO_BYTES + 1))
+    res = client.post("/api/costos/importar", files={"file": ("costos-enorme.csv", gigante, "text/csv")})
+
+    assert res.status_code == 400
+    assert "MB" in res.json()["detail"]

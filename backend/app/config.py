@@ -49,7 +49,9 @@ class Settings(BaseSettings):
     # ver app/db/). Por defecto un archivo SQLite local, para no depender de
     # instalar nada en desarrollo/pruebas. En producción se sobreescribe con
     # una URL de PostgreSQL vía la variable de entorno DATABASE_URL.
-    database_url: str = "sqlite:///./libreria_central.db"
+    # 6 de septiembre de 2026 — el archivo cambió de nombre; si venís de una
+    # copia anterior del proyecto, ver backend/DATABASE.md.
+    database_url: str = "sqlite:///./nexo.db"
 
     # OAuth de Mercado Libre (app/adapters/mercadolibre.py) — se generan
     # registrando una aplicación en https://developers.mercadolibre.cl (o el
@@ -70,8 +72,7 @@ class Settings(BaseSettings):
     # HTTPS obligatorio).
     mercadolibre_redirect_uri: str = ""
     # Dominio de autorización — depende del país del vendedor (Chile por
-    # default, ya que la tienda real es lalibreriaonlineoficial.cl). Cambiar
-    # solo si la cuenta de Mercado Libre es de otro país.
+    # default). Cambiar solo si la cuenta de Mercado Libre es de otro país.
     mercadolibre_auth_domain: str = "auth.mercadolibre.cl"
 
     # OAuth de Google, SOLO para la integración de Google Sheets como fuente
@@ -91,6 +92,25 @@ class Settings(BaseSettings):
     # URL de este backend que Google debe llamar después del login (tiene
     # que coincidir EXACTO con la registrada en Google Cloud Console).
     google_redirect_uri: str = ""
+
+    # Mercado Pago — cobro real de la mensualidad/anualidad de Nexo (6 de
+    # septiembre de 2026, ver app/adapters/mercadopago.py). A diferencia de
+    # Mercado Libre/Google (donde cada EMPRESA CLIENTE conecta su propia
+    # cuenta), acá es Nexo quien cobra: una única cuenta de Mercado Pago,
+    # la del dueño de Nexo, para todos los clientes. Se crean UNA vez en
+    # https://www.mercadopago.cl/developers/panel — "Tus integraciones" ->
+    # credenciales de PRODUCCIÓN (nunca las de prueba/sandbox una vez que
+    # se cobre a clientes reales). Vacío por defecto: sin esto,
+    # /api/pagos/iniciar devuelve un error claro diciendo exactamente qué
+    # falta, nunca inventa un cobro.
+    mercadopago_access_token: str = ""
+    # Clave secreta para validar la firma (header X-Signature) de los
+    # webhooks de pago — "Tus integraciones" -> Webhooks -> "Configurar
+    # notificaciones" -> revelar clave. Sin esto, /api/pagos/webhook
+    # rechaza CUALQUIER notificación (nunca confía en un webhook sin firma
+    # verificable — alguien podría mandar un POST falso diciendo "este
+    # cliente ya pagó").
+    mercadopago_webhook_secret: str = ""
 
     # URL del frontend (frontend/index.html) — a dónde redirige
     # /api/mercadolibre/callback después de procesar la autorización (con
@@ -176,10 +196,19 @@ def get_settings() -> Settings:
 
 
 def print_env_diagnostics(settings: Settings) -> None:
+    # 6 de septiembre de 2026 — release candidate: este mensaje tenía un
+    # simbolo Unicode ("warning sign") y acentos. En PRODUCCIÓN no existe
+    # ningún .env (las variables vienen del panel del hosting), así que es
+    # justo esta rama la que se ejecuta siempre — y si la salida estándar
+    # del contenedor no es UTF-8 (locale C/POSIX, que es lo habitual en
+    # imágenes mínimas), el print lanza UnicodeEncodeError DENTRO del
+    # handler de startup y FastAPI aborta el arranque: "Application startup
+    # failed". Un mensaje de diagnóstico nunca puede impedir que la
+    # aplicación levante, así que el texto queda en ASCII puro.
     if ENV_PATH.exists():
         print(f".env cargado desde: {ENV_PATH}")
     else:
-        print(f"⚠ No se encontró .env en {ENV_PATH}. Usando solo variables de entorno del proceso, si hay alguna.")
+        print(f"AVISO: no se encontro .env en {ENV_PATH}. Usando solo variables de entorno del proceso, si hay alguna.")
     print(f"  WOOCOMMERCE_URL={settings.woocommerce_url or '(no definida)'}")
     print(f"  WOOCOMMERCE_CONSUMER_KEY={mask_secret(settings.woocommerce_consumer_key)}")
     print(f"  WOOCOMMERCE_CONSUMER_SECRET={mask_secret(settings.woocommerce_consumer_secret)}")
@@ -189,5 +218,7 @@ def print_env_diagnostics(settings: Settings) -> None:
     print(f"  GOOGLE_CLIENT_ID={settings.google_client_id or '(no definida)'}")
     print(f"  GOOGLE_CLIENT_SECRET={mask_secret(settings.google_client_secret)}")
     print(f"  GOOGLE_REDIRECT_URI={settings.google_redirect_uri or '(no definida)'}")
+    print(f"  MERCADOPAGO_ACCESS_TOKEN={mask_secret(settings.mercadopago_access_token)}")
+    print(f"  MERCADOPAGO_WEBHOOK_SECRET={mask_secret(settings.mercadopago_webhook_secret)}")
     print(f"  FRONTEND_BASE_URL={settings.frontend_base_url}")
     print(f"  TOKEN_ENCRYPTION_KEY={mask_secret(settings.token_encryption_key)}")

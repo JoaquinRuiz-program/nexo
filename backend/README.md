@@ -355,7 +355,7 @@ y se enfocó en dejar la estructura lista para cuando esos datos lleguen:
   una lista pelada — `resumen.productosConCosto === 0` es exactamente lo
   que una futura pantalla necesita para mostrar "⚠️ Aún no hay costos de
   compra cargados" en vez de una tabla vacía o con números inventados.
-- La base de datos local (`libreria_central.db`) se reseteó a un estado
+- La base de datos local (`nexo.db`) se reseteó a un estado
   limpio antes de terminar esta fase: catálogo de prueba sí, costos y
   canales configurados NO — para que ningún dato de verificación quede
   mezclado como si fuera información real.
@@ -497,7 +497,7 @@ una vez que el `.env` tenga las credenciales de verdad).
 
 ### Volver a un estado limpio (antes de entregar, o entre pruebas)
 
-`libreria_central.db` es un archivo local (gitignored, nunca se sube) — el
+`nexo.db` es un archivo local (gitignored, nunca se sube) — el
 catálogo de `seed_demo.py` es solo para desarrollo/demo, nunca datos reales
 del dueño. Para borrar todo (catálogo de prueba, costos, cuentas de
 Mercado Libre de prueba, pedidos importados en pruebas) y dejar la base
@@ -505,7 +505,7 @@ vacía, lista para datos reales o para volver a sembrar el catálogo demo:
 
 ```bash
 cd backend
-rm libreria_central.db        # Windows: del libreria_central.db
+rm nexo.db        # Windows: del nexo.db
 alembic upgrade head           # recrea el esquema vacío
 python -m app.db.seed_demo    # opcional — solo si querés el catálogo demo de nuevo
 ```

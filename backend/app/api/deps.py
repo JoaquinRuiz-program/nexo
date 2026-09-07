@@ -75,10 +75,44 @@ def get_current_user(session: AuthSession = Depends(get_current_session)) -> Use
     return session.user
 
 
+def store_en_vista_de_admin(session: AuthSession, db: Session) -> Store | None:
+    """La empresa que este admin de Nexo está "viendo como" en ESTA sesión,
+    o None si no está en ese modo (6 de septiembre de 2026).
+
+    Dos condiciones, siempre las dos: la sesión tiene `viewing_store_id` Y
+    el usuario de la sesión ES admin de Nexo AHORA (no cuando entró). Si a
+    alguien se le revoca `is_nexo_admin` mientras mira una empresa, el
+    contexto deja de aplicar en la siguiente request — nunca queda un
+    acceso "heredado" a datos de un cliente. Un usuario común no puede
+    fabricarlo: esta columna solo se escribe en
+    app/api/routes/admin.py, detrás de require_nexo_admin, y jamás sale de
+    nada que mande el cliente."""
+    if session.viewing_store_id is None:
+        return None
+    if not session.user.is_nexo_admin:
+        return None
+    return db.get(Store, session.viewing_store_id)
+
+
 def get_current_store(session: AuthSession = Depends(get_current_session), db: Session = Depends(get_db)) -> Store:
     """La empresa de ESTA sesión — ver AuthSession.active_store_id. Nunca
     "la primera tienda que exista" (así era antes, ver _get_default_store,
-    ahora eliminado router por router)."""
+    ahora eliminado router por router).
+
+    6 de septiembre de 2026 — "ver como empresa": si esta sesión (de un
+    admin de Nexo) tiene un contexto de empresa activo, ESA es la empresa
+    de la request. Sigue siendo el único punto de todo el backend que
+    decide de qué empresa es cada request: ningún router de negocio se
+    entera de que hay un admin del otro lado."""
+    en_vista = store_en_vista_de_admin(session, db)
+    if en_vista is not None:
+        return en_vista
+    if session.viewing_store_id is not None and session.user.is_nexo_admin:
+        # El contexto apunta a una empresa que ya no existe (la borraron
+        # mientras el admin la miraba): error real, nunca caer en silencio
+        # a la tienda propia del admin, que sería mirar datos de otra
+        # empresa sin darse cuenta.
+        raise HTTPException(status_code=404, detail="La empresa que estabas viendo ya no existe.")
     if session.active_store_id is None:
         # No debería pasar nunca en la práctica: /api/auth/registro siempre
         # crea una tienda junto con el usuario. Si pasa (dato corrupto,
@@ -116,5 +150,6 @@ __all__ = [
     "get_current_session",
     "get_current_user",
     "get_current_store",
+    "store_en_vista_de_admin",
     "require_nexo_admin",
 ]

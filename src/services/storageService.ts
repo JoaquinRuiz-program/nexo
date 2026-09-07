@@ -10,9 +10,9 @@ import type { ActivityEntry, Product } from '@/types/product';
 // ---------------------------------------------------------------------------
 
 const KEYS = {
-  products: 'libreria-central:products',
-  activity: 'libreria-central:activity',
-  automation: 'libreria-central:automation',
+  products: 'prototipo:products',
+  activity: 'prototipo:activity',
+  automation: 'prototipo:automation',
 } as const;
 
 export interface AutomationState {

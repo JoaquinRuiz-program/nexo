@@ -1,11 +1,13 @@
 {
-  "name": "libreria-central",
+  "name": "nexo-prototipo-legacy",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "comentario": "ESTE PAQUETE NO ES NEXO. Es el prototipo React/Vite con el que arrancó el proyecto (guarda todo en localStorage, no habla con el backend). El producto real es frontend/ (estático, sin build) + backend/ (FastAPI). Ver backend/DEPLOY.md. El script 'build' falla a propósito: Cloudflare Pages / Netlify / Vercel autodetectan este package.json si se los apunta a la raíz del repositorio, y publicarían el prototipo como si fuera Nexo. Para compilar el prototipo a mano: npm run build:prototipo.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node -e \"console.error('\\nERROR: la raiz de este repositorio NO es Nexo, es el prototipo React/Vite viejo.\\n\\nEl frontend real es la carpeta frontend/ y NO tiene build: son archivos estaticos que se publican tal cual.\\n\\nEn el proveedor de hosting configura:\\n  Root directory : frontend\\n  Build command  : (vacio)\\n  Output dir     : frontend\\n\\nVer backend/DEPLOY.md. Para compilar el prototipo igual: npm run build:prototipo\\n'); process.exit(1)\"",
+    "build:prototipo": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },

@@ -29,7 +29,7 @@ from app.db.models import Store
 from app.db.session import get_db
 from app.domain.catalog_import import IMPORT_FIELDS, ColumnMapping, build_rows, detect_columns, row_to_dict, summarize_rows
 from app.domain.catalog_writer import escribir_filas
-from app.domain.spreadsheet_io import UnsupportedSpreadsheetFormat, read_rows
+from app.domain.spreadsheet_io import UnsupportedSpreadsheetFormat, read_rows, validar_tamano
 
 router = APIRouter(prefix="/api/catalogo", tags=["catalogo"])
 
@@ -38,6 +38,9 @@ def _read_uploaded_rows(file: UploadFile, contenido: bytes) -> tuple[list[str], 
     if not file.filename:
         raise HTTPException(status_code=400, detail="El archivo no tiene nombre.")
     try:
+        # Tope de tamaño/filas (6 de septiembre de 2026, P1-2) — server-side
+        # siempre, antes de intentar parsear nada.
+        validar_tamano(contenido)
         return read_rows(BytesIO(contenido), file.filename)
     except (UnsupportedSpreadsheetFormat, ValueError) as err:
         raise HTTPException(status_code=400, detail=str(err)) from err

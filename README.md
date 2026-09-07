@@ -1,6 +1,22 @@
-# Librería Central — Prototipo Fase 1 + Fase 1.5 + Fase 2
+> ## ⚠️ Esto NO es Nexo — es el prototipo original
+>
+> Lo que hay en la **raíz** de este repositorio (`src/`, `index.html`,
+> `package.json`) es el prototipo React/Vite con el que arrancó el
+> proyecto: guarda todo en localStorage y no tiene backend.
+>
+> **El producto real es Nexo**, y son otras dos carpetas:
+>
+> | | Carpeta | Cómo se despliega |
+> |---|---|---|
+> | Frontend | `frontend/` | Estático, **sin build** |
+> | Backend | `backend/` | FastAPI + PostgreSQL |
+>
+> Guía de despliegue: **[`backend/DEPLOY.md`](backend/DEPLOY.md)**.
+> Nunca publiques la raíz de este repositorio como si fuera Nexo.
 
-Prototipo funcional y visual para administrar los productos de una librería:
+# Prototipo original (React/Vite) — Fase 1 + Fase 1.5 + Fase 2
+
+Prototipo funcional y visual para administrar los productos de una tienda:
 importación automática de catálogo desde Excel/CSV, procesamiento simulado
 por IA, y ahora **simulación completa de publicación en Mercado Libre**
 (selección, revisión, publicación individual y masiva, sincronización de

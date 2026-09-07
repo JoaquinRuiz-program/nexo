@@ -1,8 +1,13 @@
 """
-Planes y suscripciones. Los precios son de EJEMPLO (demo) — igual que ya
-están marcados en `js/demoData.js` — hasta que se defina un precio real.
-Las columnas de Stripe quedan reservadas y nulas: no se implementa cobro
-real en esta fase, solo se deja la estructura lista para conectarlo después.
+Planes y suscripciones.
+
+6 de septiembre de 2026 — cobro real con Mercado Pago (ver
+app/adapters/mercadopago.py, app/api/routes/pagos.py): `monthly_price_clp`
+es el precio real en pesos chilenos, el único que se usa para calcular
+montos a cobrar (nunca se parsea `price_demo_label`, que es solo el texto
+que ve el cliente). Las columnas de Stripe quedan reservadas y nulas —
+Nexo integró Mercado Pago, no Stripe, pero no hay razón para borrar
+columnas ya migradas que no molestan a nadie.
 """
 
 from __future__ import annotations
@@ -27,6 +32,12 @@ class Plan(Base):
     # marketplace). None = sin límite, mismo criterio que product_limit.
     publication_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     price_demo_label: Mapped[str] = mapped_column(String(50), nullable=False)  # ej. "Precio demo: $19.990"
+    # 6 de septiembre de 2026 — precio REAL en CLP, mensual, sin IVA/recargos
+    # (el único número que usa app/api/routes/pagos.py para calcular cuánto
+    # cobrarle a Mercado Pago — price_demo_label es texto para mostrar,
+    # nunca se parsea para cobrar). Nullable: un plan a medida ("empresarial",
+    # precio a coordinar con el dueño) puede no tener un precio de catálogo.
+    monthly_price_clp: Mapped[int | None] = mapped_column(Integer, nullable=True)
     features: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     is_active: Mapped[bool] = mapped_column(default=True)
 
@@ -49,6 +60,23 @@ class Subscription(Base):
     # usa todavía (pagos reales fuera de alcance de esta fase).
     stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # mensual | anual — solo tiene sentido cuando el pago es real (Mercado
+    # Pago); una suscripción trial o asignada a mano por el admin no tiene
+    # ciclo de cobro todavía, por eso nullable.
+    billing_cycle: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # ID real de la suscripción recurrente en Mercado Pago (plan mensual,
+    # ver POST /preapproval) — None hasta el primer pago real o si el ciclo
+    # es anual (que no usa una suscripción recurrente de Mercado Pago, ver
+    # docstring de app/adapters/mercadopago.py sobre por qué).
+    mercadopago_preapproval_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # ID del último pago real aprobado en Mercado Pago — de un pago único
+    # (ciclo anual) o de un cobro recurrente autorizado (ciclo mensual).
+    # Sirve para auditoría/soporte ("¿este pago fue real? buscalo acá"),
+    # nunca para decidir el estado de la suscripción (eso lo hace el
+    # webhook, ver app/api/routes/pagos.py).
+    mercadopago_last_payment_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_payment_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     store: Mapped["Store"] = relationship(back_populates="subscription")  # noqa: F821
     plan: Mapped["Plan"] = relationship(back_populates="subscriptions")

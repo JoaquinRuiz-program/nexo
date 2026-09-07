@@ -18,7 +18,7 @@ function resolveTitle(pathname: string): string {
   if (TITLES[pathname]) return TITLES[pathname];
   if (pathname.endsWith('/publicar')) return 'Preparar publicación';
   if (pathname.startsWith('/productos/')) return 'Detalle de producto';
-  return 'Librería Central';
+  return 'Mi tienda';
 }
 
 export function AppLayout() {

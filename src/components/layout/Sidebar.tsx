@@ -21,7 +21,7 @@ export function Sidebar() {
           <BookOpen size={22} strokeWidth={2.2} />
         </div>
         <div>
-          <p className="font-display text-lg font-semibold leading-tight text-white">Librería Central</p>
+          <p className="font-display text-lg font-semibold leading-tight text-white">Mi tienda</p>
           <p className="text-sm text-[--color-ink-600]">Gestión de productos</p>
         </div>
       </div>

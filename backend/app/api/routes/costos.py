@@ -18,6 +18,7 @@ from app.api.deps import get_current_store
 from app.db.import_costs import import_costs
 from app.db.models import Store
 from app.db.session import get_db
+from app.domain.spreadsheet_io import validar_tamano
 
 router = APIRouter(prefix="/api/costos", tags=["costos"])
 
@@ -31,6 +32,8 @@ async def importar_costos(
 
     contenido = await file.read()
     try:
+        # Mismo tope que la importación de catálogo (P1-2) — server-side.
+        validar_tamano(contenido)
         resultado = import_costs(io.BytesIO(contenido), file.filename, db, store.id)
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err

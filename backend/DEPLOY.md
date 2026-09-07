@@ -33,6 +33,34 @@ servidor, alcanza con que sea el mismo dominio.
 ## Comparación de opciones (simplicidad y costo bajo primero)
 
 ### Frontend (estático, sin build — cualquiera de estos alcanza)
+
+> ⚠️ **QUÉ carpeta se publica: `frontend/` — y solo esa.**
+>
+> El repositorio tiene, en su **raíz**, un prototipo viejo en React/Vite
+> (`src/`, `index.html`, `package.json` con `vite build`) que fue el punto
+> de partida del proyecto y **no es Nexo**: guarda datos falsos en
+> localStorage y no habla con este backend. Si se apunta el proveedor de
+> hosting a la raíz del repositorio, va a autodetectar ese `package.json`,
+> correr `vite build` y publicar el prototipo — el cliente vería una app
+> que parece Nexo pero con datos inventados.
+>
+> Configuración correcta en el proveedor (Cloudflare Pages, Netlify, Vercel):
+> - **Root directory / directorio de publicación**: `frontend`
+> - **Build command**: *vacío* (no hay build: es HTML/CSS/JS servido tal cual)
+> - **Output directory**: el mismo `frontend` (no `dist/`)
+>
+> La ruta es `frontend`, **no** `libreria-central/frontend`: la raíz del
+> repositorio git ES la carpeta `libreria-central` de tu máquina, así que
+> ese nombre no forma parte de ninguna ruta versionada y desaparece al
+> clonar. Poner `libreria-central/frontend` haría fallar el despliegue con
+> "directory not found".
+>
+> Red de seguridad (6 de septiembre de 2026): si igual se apunta el
+> proveedor a la raíz, el `npm run build` autodetectado **falla a
+> propósito** con un error que explica esta misma configuración, en vez de
+> publicar el prototipo en silencio. El prototipo se sigue pudiendo
+> compilar a mano con `npm run build:prototipo`.
+
 | Opción | Costo | Notas |
 |---|---|---|
 | **Cloudflare Pages** (recomendado) | Gratis | HTTPS automático, dominio propio gratis, despliegue por Git push. Sin servidor que mantener. |
@@ -89,15 +117,17 @@ commiteado a Git — `.env` ya está en `.gitignore`).
 |---|---|---|
 | `DATABASE_URL` | `postgresql+psycopg://usuario:clave@host:5432/nexo` | Del proveedor de Postgres elegido. |
 | `CORS_ALLOWED_ORIGINS` | `https://app.tudominio.cl` | **Nuevo** (30 de agosto de 2026) — antes hardcodeado a localhost, ahora configurable. Sin esto, el frontend queda bloqueado por CORS. |
-| `SESSION_COOKIE_SECURE` | `true` | Sin esto, la cookie de sesión no tiene el flag `Secure` en HTTPS real. |
+| `SESSION_COOKIE_SECURE` | `true` | Sin esto, la cookie de sesión no tiene el flag `Secure` en HTTPS real. **Ojo**: con `true`, el navegador SOLO manda la cookie por HTTPS — si el backend queda expuesto en HTTP plano, el login "funciona" (responde 200) pero la siguiente request vuelve 401 y nadie puede entrar, sin ningún error visible. Verificado el 6 de septiembre de 2026: es el comportamiento correcto de la cookie, no un bug — pero es la trampa clásica del día del lanzamiento. |
 | `TOKEN_ENCRYPTION_KEY` | Generar de cero, nunca reusar la de desarrollo | `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Guardarla en un gestor de secretos con backup — perderla desconecta Mercado Libre de todos los clientes (ver sección Mercado Libre). |
 | `MERCADOLIBRE_CLIENT_ID` / `MERCADOLIBRE_CLIENT_SECRET` | Los de la app real de Mercado Libre, registrada con la Redirect URI de producción (ver sección Mercado Libre) | Nunca los de una app de prueba. |
 | `MERCADOLIBRE_REDIRECT_URI` | `https://api.tudominio.cl/api/mercadolibre/callback` | Tiene que coincidir EXACTO con lo registrado en developers.mercadolibre.cl. |
 | `FRONTEND_BASE_URL` | `https://app.tudominio.cl` | A dónde redirige el backend después del OAuth de Mercado Libre y de Google. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Los de la app OAuth real creada en console.cloud.google.com (ver `DATABASE.md`, sección "Google Sheets real") | **5 de septiembre de 2026.** Nunca los de un proyecto de prueba. Pendiente de crear — no bloquea el resto del despliegue, la integración queda deshabilitada (con mensaje claro) hasta que existan. |
 | `GOOGLE_REDIRECT_URI` | `https://api.tudominio.cl/api/google-sheets/callback` | Tiene que coincidir EXACTO con la Redirect URI registrada en Google Cloud Console. |
+| `MERCADOPAGO_ACCESS_TOKEN` | El de la cuenta de Mercado Pago REAL de Nexo (producción, no de prueba), creado en mercadopago.cl/developers/panel (ver `DATABASE.md`, sección "Cobro real con Mercado Pago") | **6 de septiembre de 2026.** Pendiente de crear — no bloquea el resto del despliegue, `/api/pagos/*` queda deshabilitado (con mensaje claro) hasta que exista. |
+| `MERCADOPAGO_WEBHOOK_SECRET` | La clave que genera Mercado Pago al configurar la URL de webhook (`https://api.tudominio.cl/api/pagos/webhook`) en el panel de la app | Sin esto, `/api/pagos/webhook` rechaza cualquier notificación (nunca confía en un aviso de pago sin firma verificable). |
 | `WOOCOMMERCE_LEGACY_STORE_ID` | El `store_id` real del cliente piloto de WooCommerce en la base de producción (no el de dev) | Ver `ADMIN_NEXO.md` para cómo consultarlo. Dejar sin definir si no se usa el reporte de WooCommerce todavía. |
-| `BACKEND_PUBLIC_BASE_URL` | `https://api.tudominio.cl` | **Nuevo** (6 de septiembre de 2026) — URL con la que Nexo arma el link público de cada imagen subida. Si queda en `localhost`, Mercado Libre no puede descargar la imagen y el ítem se crea sin foto real. |
+| `BACKEND_PUBLIC_BASE_URL` | `https://api.tudominio.cl` | URL con la que Nexo arma el link público de cada imagen subida (6 de septiembre de 2026) Y a dónde redirige Mercado Pago después del checkout (`GET /api/pagos/callback`, ver `DATABASE.md`). Si queda en `localhost`, ninguna de las dos cosas funciona en producción. |
 | `UPLOADS_DIR` | Ruta a un disco/volumen PERSISTENTE del proveedor de hosting | Ver sección "Almacenamiento de imágenes" arriba — sin un volumen persistente, un redeploy borra las imágenes de los clientes. |
 
 `frontend/js/env.js` (el único archivo del frontend que cambia entre entornos):
@@ -121,10 +151,18 @@ psycopg[binary]==3.2.*
 desarrollo** — `--reload` no debe usarse en producción. Comando real:
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
 ```
 
-Con **un solo worker** al principio si es posible (ver nota de `_pending_states` en la sección Mercado Libre) — 2 workers ya requeriría mover ese estado a algo compartido (Redis, o una tabla) para que el flujo de conectar Mercado Libre no falle de forma intermitente.
+(`$PORT` es la variable que inyecta el proveedor — Render y Railway la definen solas; en un VPS propio, poné el número a mano.)
+
+**`--workers 1` no es una sugerencia, es un requisito hoy.** Los estados
+OAuth pendientes viven en memoria del proceso — `_pending_states` en
+`app/api/routes/mercadolibre.py` **y** en `app/api/routes/google_sheets.py`.
+Con 2 o más workers (o réplicas), el estado se crea en un proceso y el
+callback puede llegar a otro: conectar Mercado Libre o Google Sheets falla
+de forma intermitente y sin un error claro. Antes de escalar a más de un
+worker hay que mover ese estado a algo compartido (Redis o una tabla).
 
 ---
 
@@ -148,8 +186,8 @@ Pasos exactos:
    cd backend
    alembic upgrade head
    ```
-6. Verificar (opcional): `alembic current`, y una inspección manual (`\dt` en `psql`) para confirmar que las 20 tablas y sus constraints quedaron creadas — en particular `uq_listing_account_product` (protección contra publicaciones duplicadas).
-7. **No copiar `libreria_central.db`** a producción bajo ningún concepto.
+6. Verificar (opcional): `alembic current`, y una inspección manual (`\dt` en `psql`) para confirmar que las 26 tablas y sus constraints quedaron creadas — en particular `uq_listing_account_product` (protección contra publicaciones duplicadas).
+7. **No copiar `nexo.db`** a producción bajo ningún concepto.
 8. Registrarse como usuario real en la app (paso normal de `/signup`) — esto crea el primer `User`+`Store` reales.
 9. Otorgarse `is_nexo_admin=True` manualmente (ver `ADMIN_NEXO.md`) contra la base de producción.
 10. A partir de ahí, todo el resto de la carga de datos (catálogo, costos, Mercado Libre) es el checklist de "primer cliente" más abajo — vía la app, nunca por script directo a producción.
@@ -214,5 +252,55 @@ a nivel de base de datos, ver `ADMIN_NEXO.md`).
 | 10 | Sin `debug=True` / stack traces crudos | ✅ Ya cumplido |
 | 11 | CSRF | ✅ Ya cumplido — `SameSite=Lax` + `HttpOnly` alcanza con el diseño actual (todo endpoint mutante es POST/PUT) |
 | 12 | Rate limiting en login/registro | ⚠️ **No bloqueante para el primer cliente** (ver razonamiento abajo) — hacerlo inmediatamente después de este lanzamiento, antes de un segundo cliente o de que la URL se difunda más. |
+| 13 | `MERCADOPAGO_WEBHOOK_SECRET` configurada antes de cobrar a un cliente real | Sin esto, `/api/pagos/webhook` rechaza todo — no hay forma de activar un plan pagado por error sin la firma verificada |
+| 14 | Nexo nunca ve/toca un número de tarjeta | ✅ Ya cumplido por diseño — el pago se hace en el checkout hosteado de Mercado Pago (`init_point`), nunca en un formulario propio |
 
 **Rate limiting — por qué no bloquea hoy**: el mensaje de login ya es idéntico para "email no existe" y "contraseña incorrecta" (sin enumeración de usuarios), la URL de producción va a ser nueva y desconocida, y hay un solo cliente conocido — el vector de fuerza bruta no tiene a quién apuntar todavía. En cuanto exista un segundo cliente, o la URL deje de ser nueva/desconocida, pasa a ser prioritario.
+
+---
+
+## Checklist de despliegue — de repositorio a primer cliente
+
+Verificado contra el código real el 6 de septiembre de 2026 (revisión
+release candidate). El orden importa: cada paso asume el anterior.
+
+### Infraestructura
+- [ ] **PostgreSQL creado** y backup automático confirmado en el panel del proveedor.
+- [ ] **`psycopg[binary]` descomentado** en `requirements.txt` (ver "Dependencias" arriba) — sin esto el backend no puede conectar a Postgres.
+- [ ] **Backend desplegado** con `uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1` (un solo worker, ver la nota de `_pending_states`).
+- [ ] **Frontend desplegado** apuntando a `frontend` (root directory dentro del repo, sin prefijos), **sin build** (ver el aviso al principio de este documento: no publicar la raíz del repo).
+
+### Variables de entorno (panel del hosting, nunca un archivo `.env`)
+- [ ] `DATABASE_URL` a Postgres.
+- [ ] `TOKEN_ENCRYPTION_KEY` **nueva** (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`), guardada en un gestor de secretos con backup — si se pierde, se desconectan todas las cuentas de Mercado Libre.
+- [ ] `SESSION_COOKIE_SECURE=true` (y el backend detrás de HTTPS real, o nadie podrá iniciar sesión).
+- [ ] `CORS_ALLOWED_ORIGINS=https://app.tudominio.cl`.
+- [ ] `FRONTEND_BASE_URL` y `BACKEND_PUBLIC_BASE_URL` con los dominios reales.
+- [ ] `UPLOADS_DIR` apuntando a un disco **persistente**.
+- [ ] `frontend/js/env.js` con la `API_BASE_URL` real (es el único archivo del frontend que cambia entre entornos).
+
+### Base de datos
+- [ ] `alembic upgrade head` ejecutado contra la base vacía de producción.
+- [ ] `alembic current` devuelve la última revisión.
+
+### Verificación de que levantó
+- [ ] `GET https://api.tudominio.cl/api/health` → `{"status":"ok"}`.
+- [ ] Los logs de arranque muestran las variables con los secretos **enmascarados** (nunca en claro).
+
+### Cuentas
+- [ ] Registrarte desde `/signup` en la app ya desplegada (crea tu `User` + `Store`).
+- [ ] Darte `is_nexo_admin = True` a mano contra la base de producción (ver `ADMIN_NEXO.md`).
+- [ ] Cerrar sesión, volver a entrar y confirmar que ves el **Panel Nexo**.
+
+### Integraciones (cada una necesita credenciales creadas por una persona)
+- [ ] **Mercado Libre**: app registrada en developers.mercadolibre.cl con la Redirect URI de producción; `MERCADOLIBRE_CLIENT_ID/SECRET/REDIRECT_URI` configuradas.
+- [ ] **Mercado Pago** (solo si vas a cobrar ya): `MERCADOPAGO_ACCESS_TOKEN` de producción y `MERCADOPAGO_WEBHOOK_SECRET`, con la URL de webhook `https://api.tudominio.cl/api/pagos/webhook` registrada y los topics "Pagos" y "Suscripciones" activados.
+- [ ] **Google Sheets** (opcional): `GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI`. Sin esto, la integración se muestra deshabilitada con un mensaje claro — no rompe nada.
+
+### Primer cliente real
+- [ ] Crear su cuenta (o que se registre) y confirmar que su empresa arranca **vacía** (sin productos, sin ventas).
+- [ ] Configurar costos y márgenes de Mercado Libre en Configuración.
+- [ ] Importar su catálogo (Excel/CSV o Google Sheets) y verificar los productos reales.
+- [ ] Conectar **su** cuenta de Mercado Libre por OAuth (nunca la tuya) y confirmar el estado "Conectado".
+- [ ] Actualizar comisiones reales de Mercado Libre y revisar Oportunidades.
+- [ ] Preparar una publicación y llegar hasta la pantalla de revisión **sin publicar**, para confirmar de punta a punta antes de la primera publicación real.

@@ -1,7 +1,7 @@
 name: libreria-central-woocommerce-test
 
 # Entorno WooCommerce de PRUEBA para desarrollar y verificar la integración
-# de lectura de Librería Central. No tiene ninguna relación ni conexión con
+# de lectura del proyecto. No tiene ninguna relación ni conexión con
 # el WooCommerce real de la librería (lalibreriaonlineoficial.cl).
 #
 # Uso:

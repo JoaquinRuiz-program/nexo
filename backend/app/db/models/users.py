@@ -85,20 +85,22 @@ class AuthSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # "Modo soporte" (6 de septiembre de 2026) — NULL en cualquier sesión
-    # normal (login/registro). Si un administrador de Nexo "entró como
-    # soporte" a esta empresa (ver app/api/routes/admin.py::entrar_como_soporte),
-    # acá queda registrado QUÉ admin fue — nunca silencioso: GET /api/auth/me
-    # lo expone (el propio cliente vería, si mirara su sesión, que hay un
-    # admin operando) y queda además en AdminActionLog. `foreign_keys`
-    # explícito en ambas relaciones de acá abajo porque ahora hay DOS
-    # columnas de esta tabla apuntando a `users.id` — sin esto, SQLAlchemy
-    # no puede saber sola cuál es cuál.
-    impersonated_by_admin_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # "Ver como empresa" (6 de septiembre de 2026) — NULL en cualquier
+    # sesión normal. Cuando un administrador de Nexo entra a ver una
+    # empresa (ver app/api/routes/admin.py::entrar_a_ver_empresa), acá queda
+    # QUÉ empresa está mirando ESA sesión suya. Es un CONTEXTO sobre la
+    # sesión del admin, no una sesión nueva: el usuario autenticado sigue
+    # siendo el admin (user_id no cambia), la cookie no se toca, y salir es
+    # nada más volver esta columna a NULL — por eso sobrevive a un refresh
+    # (vive en el servidor, no en el navegador) y nunca deja al admin
+    # deslogueado. Ver app/api/deps.py::get_current_store, el único lugar
+    # que la lee. Nunca es silencioso: GET /api/auth/me lo expone y queda
+    # además en AdminActionLog.
+    viewing_store_id: Mapped[int | None] = mapped_column(ForeignKey("stores.id"), nullable=True)
 
     user: Mapped["User"] = relationship(foreign_keys=[user_id], back_populates="sessions")
-    active_store: Mapped["Store | None"] = relationship()  # noqa: F821
-    impersonated_by_admin: Mapped["User | None"] = relationship(foreign_keys=[impersonated_by_admin_id])
+    active_store: Mapped["Store | None"] = relationship(foreign_keys=[active_store_id])  # noqa: F821
+    viewing_store: Mapped["Store | None"] = relationship(foreign_keys=[viewing_store_id])  # noqa: F821
 
 
 class PasswordResetToken(Base):

@@ -300,8 +300,8 @@ window.LC = window.LC || {};
             <span class="reco-badge reco-${c.estado}">${escapeHtml(ESTADO_LABEL[c.estado] || c.estado)}</span>
           </div>
           <div class="mt-4">
-            <button id="admin-entrar-soporte" class="btn-secondary">Entrar como esta empresa (soporte)</button>
-            <p class="text-xs text-slate-400 mt-1.5">Vas a ver Nexo exactamente como lo ve este cliente, por 1 hora — queda registrado en el historial de acciones administrativas.</p>
+            <button id="admin-entrar-soporte" class="btn-secondary">Ver como esta empresa</button>
+            <p class="text-xs text-slate-400 mt-1.5">Vas a ver Nexo exactamente como lo ve este cliente, sin cerrar tu sesión de administrador — queda registrado en el historial de acciones administrativas.</p>
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mt-6">
             <div><p class="stat-label">Productos</p><p class="text-lg font-semibold mt-1">${c.productos.cantidad}</p></div>
@@ -447,9 +447,9 @@ window.LC = window.LC || {};
     document.getElementById("admin-back").addEventListener("click", () => LC.router.navigate("/admin"));
     document.getElementById("admin-entrar-soporte").addEventListener("click", () => {
       openModal({
-        title: "¿Entrar como esta empresa?",
-        body: `<p>Vas a operar Nexo exactamente como lo ve <strong>${escapeHtml(c.nombre)}</strong> (usuario ${escapeHtml(dueno.email)}), durante 1 hora como máximo. Queda registrado en el historial de acciones administrativas.</p>`,
-        primaryLabel: "Entrar como soporte",
+        title: "¿Ver esta empresa?",
+        body: `<p>Vas a ver Nexo exactamente como lo ve <strong>${escapeHtml(c.nombre)}</strong> (usuario ${escapeHtml(dueno.email)}). Tu sesión de administrador sigue abierta: salís cuando quieras desde el aviso de arriba. Queda registrado en el historial de acciones administrativas.</p>`,
+        primaryLabel: "Ver esta empresa",
         secondaryLabel: "Cancelar",
         onPrimary: async () => {
           const res = await LC.backendApi.entrarComoSoporte(storeId);
@@ -457,10 +457,9 @@ window.LC = window.LC || {};
             toast("error", res.error.mensaje);
             return;
           }
-          // La cookie de sesión del navegador cambió de verdad (Set-Cookie
-          // real) — hace falta una recarga completa, nunca un navigate()
-          // de SPA: todo el estado de sesión en memoria (LC.auth) quedó
-          // obsoleto y hay que rehidratarlo desde cero.
+          // La sesión (la cookie) no cambió, pero la copia en memoria de
+          // LC.auth sí quedó vieja: recarga completa, nunca un navigate()
+          // de SPA, para rehidratarla desde /api/auth/me.
           window.location.hash = "/dashboard";
           window.location.reload();
         },

@@ -52,6 +52,7 @@ DEFAULT_PLANS = [
         "product_limit": 200,
         "publication_limit": 150,
         "price_demo_label": "$80.000 CLP/mes",
+        "monthly_price_clp": 80000,
         "features": ["Hasta 200 productos", "Hasta 150 publicaciones activas en Mercado Libre", "Conexión con Mercado Libre", "Soporte por email"],
     },
     {
@@ -60,9 +61,20 @@ DEFAULT_PLANS = [
         "product_limit": 1000,
         "publication_limit": 800,
         "price_demo_label": "$200.000 CLP/mes",
+        "monthly_price_clp": 200000,
         "features": ["Hasta 1.000 productos", "Hasta 800 publicaciones activas en Mercado Libre", "Soporte prioritario", "Pensado para catálogos en crecimiento"],
     },
 ]
+
+# 6 de septiembre de 2026 — cobro real con Mercado Pago: descuento por pagar
+# el año completo de una vez, definido por el dueño (nunca inventado). Se
+# aplica sobre 12 meses del precio mensual real (`monthly_price_clp`),
+# redondeado al peso — nunca sobre `price_demo_label` (texto, no un número).
+DESCUENTO_ANUAL_PCT = 15
+
+
+def precio_anual_clp(monthly_price_clp: int) -> int:
+    return round(monthly_price_clp * 12 * (1 - DESCUENTO_ANUAL_PCT / 100))
 
 
 def ensure_default_plans(db: Session) -> dict[str, Plan]:
@@ -135,10 +147,13 @@ def resumen_suscripcion(db: Session, store: Store) -> dict:
             "limiteProductos": sub.plan.product_limit,
             "limitePublicaciones": sub.plan.publication_limit,
             "precio": sub.plan.price_demo_label,
+            "precioMensualClp": sub.plan.monthly_price_clp,
             "features": sub.plan.features,
         },
         "estado": sub.status,
+        "cicloFacturacion": sub.billing_cycle,
         "fechaInicio": sub.started_at.isoformat(),
         "fechaRenovacion": sub.current_period_end.isoformat(),
+        "ultimoPagoEn": sub.last_payment_at.isoformat() if sub.last_payment_at else None,
         "uso": {"productos": cantidad_productos, "publicaciones": cantidad_publicaciones},
     }
