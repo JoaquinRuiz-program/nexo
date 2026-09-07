@@ -76,15 +76,16 @@ nunca serializa un modelo completo.
 | `GET /api/admin/clientes/{store_id}` | Detalle: usuario, tienda, productos, publicaciones por estado, Mercado Libre (sin tokens), costos configurados, actividad reciente. `erroresRecientes` es siempre `null` — no existe todavía un registro de errores por cliente (se ve en los logs del servidor). |
 | `PUT /api/admin/clientes/{store_id}/estado` | Suspender/reactivar (`{"suspendido": true/false}`). |
 | `PUT /api/admin/clientes/{store_id}/suscripcion` | Cambiar plan/estado de la suscripción — crea la primera si la tienda no tenía ninguna. |
-| `POST /api/admin/clientes/{store_id}/entrar` | **6 de septiembre de 2026 — "entrar como soporte".** Crea una sesión real (misma cookie de siempre) scopeada a esa empresa, con `impersonated_by_admin_id` marcado — el admin pasa a operar Nexo exactamente como lo ve ese cliente, sin pedirle la contraseña. Vida corta (1 hora, nunca "recordarme"), nunca silenciosa: queda en `AdminActionLog` y `GET /api/auth/me` expone `modoSoporte` (el frontend muestra un aviso persistente mientras dure). Prohibido contra otra cuenta de admin (400). Terminarla es el `POST /api/auth/logout` de siempre — no existe forma de "volver" a la sesión de admin anterior en la misma pestaña, porque su token nunca vivió en el servidor sin cifrar (solo el hash); hay que volver a loguearse. |
+| `POST /api/admin/clientes/{store_id}/entrar` | **6 de septiembre de 2026 — "ver como empresa".** Marca `AuthSession.viewing_store_id` en la sesión DEL PROPIO ADMIN: no crea ninguna sesión nueva y no toca la cookie. El admin sigue siendo el usuario autenticado (`esNexoAdmin` sigue en `true`), pero `get_current_store` pasa a devolver la empresa del cliente, así que ve y opera Nexo exactamente como lo ve ese cliente sin pedirle la contraseña. Como el contexto vive en el servidor, sobrevive a un refresh y a cerrar/reabrir la pestaña. Nunca silencioso: queda en `AdminActionLog` y `GET /api/auth/me` expone `modoSoporte` (el frontend muestra un aviso persistente mientras dure). Prohibido contra otra cuenta de admin (400). |
+| `POST /api/admin/ver-como/salir` | Vuelve `viewing_store_id` a `NULL`: el admin queda en su propio contexto, **con su sesión intacta** — no pasa por `/login` de nuevo. Idempotente. |
 
 ## Qué NO hace este panel
 
 No modifica precios, stock, productos ni publicaciones de ningún
 cliente — eso sigue siendo responsabilidad exclusiva del dueño de esa
-empresa, incluso operando en modo soporte (el admin ve/actúa como el
-dueño, pero cada acción que haga en ese modo queda igual sujeta a las
-reglas normales de esa cuenta — sin atajos adicionales).
+empresa, incluso mientras el admin está viendo esa cuenta (cada acción
+que haga en ese modo queda igual sujeta a las reglas normales de esa
+cuenta — sin atajos adicionales).
 
 ## Hallazgos de seguridad corregidos en la misma ronda (no son del panel admin en sí, pero se auditaron juntos)
 

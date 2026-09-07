@@ -55,7 +55,12 @@ window.LC = window.LC || {};
     }
     if (loggedIn) {
       const session = LC.auth.getSession();
-      if (session && session.esNexoAdmin && !RUTAS_ADMIN.includes(name)) {
+      // 6 de septiembre de 2026 — mientras el admin está VIENDO una empresa
+      // (session.modoSoporte, ver app/api/routes/admin.py) sí tiene una
+      // empresa activa de verdad, así que las pantallas de cliente cargan
+      // bien y no hay que sacarlo de ahí: justamente entró para verlas.
+      const viendoEmpresa = !!(session && session.modoSoporte);
+      if (session && session.esNexoAdmin && !viendoEmpresa && !RUTAS_ADMIN.includes(name)) {
         window.location.hash = "/admin";
         return;
       }

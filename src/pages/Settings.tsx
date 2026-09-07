@@ -4,8 +4,8 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 
 export function Settings() {
-  const [nombre, setNombre] = useState('Librería Central');
-  const [email, setEmail] = useState('contacto@libreriacentral.cl');
+  const [nombre, setNombre] = useState('Mi tienda');
+  const [email, setEmail] = useState('contacto@mitienda.cl');
   const [telefono, setTelefono] = useState('+56 9 1234 5678');
   const [saved, setSaved] = useState(false);
 

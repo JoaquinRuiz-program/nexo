@@ -13,6 +13,9 @@ listar ni modificar nada del otro — ni siquiera adivinando/iterando un ID.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 from datetime import datetime
 
 import httpx
@@ -398,6 +401,40 @@ def test_ningun_store_id_enviado_por_el_cliente_altera_el_tenant_usado(client_a,
         ("GET", "/api/configuracion/canales"),
         ("GET", "/api/mercadolibre/estado"),
         ("GET", "/api/auth/me"),
+        # 6 de septiembre de 2026 (P1-3 de la auditoría pre-producción):
+        # esta lista se había quedado congelada en 7 rutas mientras el
+        # backend crecía. Todo endpoint de negocio agregado después tiene
+        # que estar acá — es la red que impide que un cambio futuro deje
+        # uno abierto sin que ningún test lo note.
+        ("GET", "/api/suscripcion"),
+        ("GET", "/api/soporte/solicitudes"),
+        ("POST", "/api/soporte/solicitudes"),
+        ("GET", "/api/soporte/solicitudes/1"),
+        ("GET", "/api/pagos/planes"),
+        ("POST", "/api/pagos/iniciar"),
+        ("POST", "/api/pagos/cancelar"),
+        ("GET", "/api/google-sheets/estado"),
+        ("GET", "/api/google-sheets/conectar"),
+        ("POST", "/api/google-sheets/desconectar"),
+        ("POST", "/api/google-sheets/hoja"),
+        ("POST", "/api/google-sheets/importar/analizar"),
+        ("POST", "/api/google-sheets/importar/confirmar"),
+        ("POST", "/api/catalogo/importar/analizar"),
+        ("POST", "/api/catalogo/importar/confirmar"),
+        ("POST", "/api/costos/importar"),
+        ("GET", "/api/productos/1"),
+        ("PUT", "/api/productos/1/costo"),
+        ("POST", "/api/productos/1/imagenes"),
+        ("DELETE", "/api/productos/1/imagenes/1"),
+        ("GET", "/api/publicaciones/borrador/1"),
+        ("POST", "/api/publicaciones/preparar"),
+        ("GET", "/api/publicaciones/mercadolibre/decision-lote"),
+        ("POST", "/api/mercadolibre/desconectar"),
+        ("POST", "/api/mercadolibre/importar-ventas"),
+        ("GET", "/api/admin/clientes"),
+        ("GET", "/api/admin/usuarios"),
+        ("POST", "/api/admin/clientes/1/entrar"),
+        ("POST", "/api/admin/ver-como/salir"),
     ],
 )
 def test_ningun_endpoint_de_negocio_responde_sin_sesion(client_a, metodo, ruta):
@@ -502,3 +539,118 @@ def test_empresa_a_publica_su_producto_y_nunca_puede_publicar_ni_usar_la_cuenta_
     variante_b = db_session.get(ProductVariant, variant_id_b)
     publicaciones_de_b = db_session.query(MarketplaceListing).filter_by(product_id=variante_b.product_id).count()
     assert publicaciones_de_b == 0
+
+
+# ------------------------------------------------------------------
+# Soporte y pagos (6 de septiembre de 2026, P1-3 de la auditoría
+# pre-producción). Ambos módulos se agregaron después de que se escribiera
+# esta suite y nunca tuvieron una prueba cross-tenant propia: se verificó
+# por lectura que cuelgan de get_current_store, pero eso no impide que un
+# cambio futuro lo rompa en silencio. Estos tests fijan la propiedad.
+# ------------------------------------------------------------------
+
+
+def _crear_ticket(client: TestClient, *, asunto: str) -> int:
+    res = client.post(
+        "/api/soporte/solicitudes",
+        json={"category": "otro", "subject": asunto, "description": "Detalle de la solicitud."},
+    )
+    assert res.status_code == 200, res.text
+    return res.json()["id"]
+
+
+def test_empresa_a_no_puede_leer_el_ticket_de_soporte_de_empresa_b(client_a, client_b):
+    _registrar(client_a, email="a-sop@empresas.cl", empresa="Empresa A")
+    _registrar(client_b, email="b-sop@empresas.cl", empresa="Empresa B")
+    ticket_b = _crear_ticket(client_b, asunto="Problema privado de B")
+
+    res = client_a.get(f"/api/soporte/solicitudes/{ticket_b}")
+
+    assert res.status_code == 404  # nunca 403 — no confirma que el ticket exista
+    assert "Problema privado de B" not in res.text
+
+
+def test_el_listado_de_soporte_de_cada_empresa_solo_trae_lo_propio(client_a, client_b):
+    _registrar(client_a, email="a-sop2@empresas.cl", empresa="Empresa A")
+    _registrar(client_b, email="b-sop2@empresas.cl", empresa="Empresa B")
+    _crear_ticket(client_a, asunto="Ticket de A")
+    _crear_ticket(client_b, asunto="Ticket de B")
+
+    asuntos_a = [t["asunto"] for t in client_a.get("/api/soporte/solicitudes").json()]
+    asuntos_b = [t["asunto"] for t in client_b.get("/api/soporte/solicitudes").json()]
+
+    assert asuntos_a == ["Ticket de A"]
+    assert asuntos_b == ["Ticket de B"]
+
+
+def test_cancelar_la_suscripcion_de_a_nunca_toca_la_de_b(client_a, client_b, db_session):
+    """/api/pagos/cancelar no acepta ningún identificador: opera siempre
+    sobre la suscripción de la sesión. Se comprueba que efectivamente sea
+    así, no solo que el endpoint responda 200."""
+    _registrar(client_a, email="a-pago@empresas.cl", empresa="Empresa A")
+    _registrar(client_b, email="b-pago@empresas.cl", empresa="Empresa B")
+
+    res = client_a.post("/api/pagos/cancelar")
+    assert res.status_code == 200, res.text
+
+    estado_a = client_a.get("/api/suscripcion").json()["estado"]
+    estado_b = client_b.get("/api/suscripcion").json()["estado"]
+    assert estado_a == "canceled"
+    assert estado_b == "trialing"  # B intacta: nunca la tocó la acción de A
+
+
+def test_iniciar_un_pago_no_permite_elegir_la_empresa_a_la_que_se_le_acredita(client_a, client_b, monkeypatch):
+    """El external_reference que se manda a Mercado Pago (y con el que el
+    webhook decide a QUÉ empresa activarle el plan) se arma SIEMPRE con la
+    tienda de la sesión — nunca con nada que venga en el body."""
+    settings_pago = Settings(mercadopago_access_token="TEST-token", mercadopago_webhook_secret="secreto-de-prueba")
+    monkeypatch.setattr("app.api.routes.pagos.get_settings", lambda: settings_pago)
+    sesion_a = _registrar(client_a, email="a-pago2@empresas.cl", empresa="Empresa A")
+    sesion_b = _registrar(client_b, email="b-pago2@empresas.cl", empresa="Empresa B")
+    store_id_a, store_id_b = sesion_a["empresa"]["id"], sesion_b["empresa"]["id"]
+
+    with respx.mock:
+        ruta = respx.post("https://api.mercadopago.com/preapproval").mock(
+            return_value=httpx.Response(201, json={"id": "PA-1", "init_point": "https://mp/checkout", "status": "pending"})
+        )
+        # A manda además un store_id ajeno en el body: tiene que ser ignorado.
+        res = client_a.post(
+            "/api/pagos/iniciar", json={"planCode": "basico", "ciclo": "mensual", "store_id": store_id_b}
+        )
+
+    assert res.status_code == 200, res.text
+    referencia = json.loads(ruta.calls[0].request.content)["external_reference"]
+    assert referencia == f"nexo:{store_id_a}:basico:mensual"
+    assert f":{store_id_b}:" not in referencia
+
+
+def test_el_webhook_de_pago_solo_activa_el_plan_de_la_empresa_referenciada(client_a, client_b, monkeypatch):
+    """Es el único camino por el que se activa un plan pagado — si un
+    webhook pudiera activar la empresa equivocada, una empresa terminaría
+    pagando el plan de otra."""
+    settings_pago = Settings(mercadopago_access_token="TEST-token", mercadopago_webhook_secret="secreto-de-prueba")
+    monkeypatch.setattr("app.api.routes.pagos.get_settings", lambda: settings_pago)
+    sesion_a = _registrar(client_a, email="a-hook@empresas.cl", empresa="Empresa A")
+    _registrar(client_b, email="b-hook@empresas.cl", empresa="Empresa B")
+    store_id_a = sesion_a["empresa"]["id"]
+
+    ts, data_id = "1700000000", "PAY-9"
+    manifest = f"id:{data_id.lower()};ts:{ts};"
+    v1 = hmac.new(b"secreto-de-prueba", manifest.encode(), hashlib.sha256).hexdigest()
+
+    with respx.mock:
+        respx.get(f"https://api.mercadopago.com/v1/payments/{data_id}").mock(
+            return_value=httpx.Response(
+                200, json={"id": data_id, "status": "approved", "external_reference": f"nexo:{store_id_a}:pro:anual"}
+            )
+        )
+        res = client_a.post(
+            "/api/pagos/webhook",
+            json={"type": "payment", "data": {"id": data_id}},
+            headers={"x-signature": f"ts={ts},v1={v1}", "x-request-id": ""},
+        )
+
+    assert res.status_code == 200, res.text
+    assert client_a.get("/api/suscripcion").json()["plan"]["codigo"] == "pro"       # A: activada
+    assert client_b.get("/api/suscripcion").json()["plan"]["codigo"] == "basico"    # B: intacta
+    assert client_b.get("/api/suscripcion").json()["estado"] == "trialing"

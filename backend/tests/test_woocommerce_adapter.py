@@ -10,7 +10,7 @@ from app.adapters.woocommerce import (
 )
 
 BASE_CONFIG = dict(
-    base_url="http://libreria-central-test.local",
+    base_url="http://tienda-test.local",
     consumer_key="ck_test",
     consumer_secret="cs_test",
     max_retries=2,
@@ -21,7 +21,7 @@ BASE_CONFIG = dict(
 @pytest.mark.asyncio
 @respx.mock
 async def test_get_product_usa_query_string_en_http():
-    route = respx.get("http://libreria-central-test.local/wp-json/wc/v3/products/42").mock(
+    route = respx.get("http://tienda-test.local/wp-json/wc/v3/products/42").mock(
         return_value=httpx.Response(200, json={"id": 42, "name": "Cuaderno Torre", "sku": "LIB-0001"})
     )
     adapter = WooCommerceAdapter(WooCommerceConfig(**BASE_CONFIG))
@@ -54,7 +54,7 @@ async def test_https_usa_basic_auth_en_vez_de_query_params():
 @pytest.mark.asyncio
 @respx.mock
 async def test_401_lanza_woocommerce_auth_error_sin_reintentar():
-    route = respx.get("http://libreria-central-test.local/wp-json/wc/v3/products/1").mock(
+    route = respx.get("http://tienda-test.local/wp-json/wc/v3/products/1").mock(
         return_value=httpx.Response(401, json={"code": "woocommerce_rest_cannot_view", "message": "no autorizado"})
     )
     adapter = WooCommerceAdapter(WooCommerceConfig(**BASE_CONFIG))
@@ -78,7 +78,7 @@ async def test_catalogo_paginado_recorre_todas_las_paginas():
         page = int(request.url.params.get("page", "1"))
         return httpx.Response(200, json=pages[page], headers={"X-WP-Total": "3", "X-WP-TotalPages": "2"})
 
-    respx.get("http://libreria-central-test.local/wp-json/wc/v3/products").mock(side_effect=handler)
+    respx.get("http://tienda-test.local/wp-json/wc/v3/products").mock(side_effect=handler)
 
     adapter = WooCommerceAdapter(WooCommerceConfig(**BASE_CONFIG))
     progress_calls = []
@@ -100,7 +100,7 @@ async def test_reintentos_ante_429_luego_funciona():
             return httpx.Response(429 if attempts["count"] == 1 else 503, json={})
         return httpx.Response(200, json={"id": 1, "name": "ok tras reintentos"})
 
-    respx.get("http://libreria-central-test.local/wp-json/wc/v3/products/1").mock(side_effect=handler)
+    respx.get("http://tienda-test.local/wp-json/wc/v3/products/1").mock(side_effect=handler)
 
     adapter = WooCommerceAdapter(WooCommerceConfig(**{**BASE_CONFIG, "max_retries": 3}))
     product = await adapter.get_product(1)
@@ -113,7 +113,7 @@ async def test_reintentos_ante_429_luego_funciona():
 @pytest.mark.asyncio
 @respx.mock
 async def test_5xx_persistente_agota_reintentos_y_lanza_request_error():
-    respx.get("http://libreria-central-test.local/wp-json/wc/v3/products/1").mock(
+    respx.get("http://tienda-test.local/wp-json/wc/v3/products/1").mock(
         return_value=httpx.Response(500, json={})
     )
     adapter = WooCommerceAdapter(WooCommerceConfig(**{**BASE_CONFIG, "max_retries": 2}))
@@ -132,7 +132,7 @@ async def test_error_de_conexion_se_envuelve_en_woocommerce_request_error():
     WooCommerceRequestError, y el endpoint no sabía atraparlo (terminaba en
     un 500 con traceback en vez del 502 ya preparado para esto).
     """
-    respx.get("http://libreria-central-test.local/wp-json/wc/v3/products/1").mock(
+    respx.get("http://tienda-test.local/wp-json/wc/v3/products/1").mock(
         side_effect=httpx.ConnectError("Connection refused")
     )
     adapter = WooCommerceAdapter(WooCommerceConfig(**{**BASE_CONFIG, "max_retries": 1}))
@@ -153,7 +153,7 @@ async def test_get_all_variations_pagina_variaciones_de_producto_variable():
         page = int(request.url.params.get("page", "1"))
         return httpx.Response(200, json=pages[page], headers={"X-WP-Total": "2", "X-WP-TotalPages": "2"})
 
-    route = respx.get("http://libreria-central-test.local/wp-json/wc/v3/products/3335/variations").mock(
+    route = respx.get("http://tienda-test.local/wp-json/wc/v3/products/3335/variations").mock(
         side_effect=handler
     )
 

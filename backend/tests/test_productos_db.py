@@ -2,7 +2,7 @@
 Pruebas end-to-end del catálogo respaldado por la base de datos
 (app/api/routes/productos_db.py) — contra un cliente HTTP real de FastAPI,
 con una base SQLite en memoria inyectada vía dependency_override (nunca
-toca libreria_central.db, WooCommerce ni Mercado Libre).
+toca nexo.db, WooCommerce ni Mercado Libre).
 """
 
 from __future__ import annotations

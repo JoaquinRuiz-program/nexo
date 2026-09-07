@@ -369,27 +369,76 @@ def test_registro_administrativo_de_una_empresa_nunca_mezcla_el_de_otra(client, 
 
 
 # ------------------------------------------------------------------
-# "Entrar como soporte" — POST /api/admin/clientes/{id}/entrar
+# "Ver como empresa" — POST /api/admin/clientes/{id}/entrar
+#                      POST /api/admin/ver-como/salir
+#
+# 6 de septiembre de 2026 — el requisito central de estos tests: la sesión
+# del ADMIN nunca se cierra ni se reemplaza. "Ver como empresa" es un
+# contexto sobre su propia sesión (AuthSession.viewing_store_id), así que
+# sobrevive a un refresh y salir lo devuelve al panel sin volver a loguear.
 # ------------------------------------------------------------------
 
 
-def test_usuario_comun_no_puede_entrar_como_soporte(client, db_session):
+def _login_admin(client, db_session, email="admin-login@nexo.cl"):
+    """Login REAL (no el helper `autenticar`, que deja una cookie de prueba
+    sin dominio y conviviría con la cookie real) — así todo el flujo
+    entrar/refresh/salir pasa por el mismo mecanismo de cookies que un
+    navegador de verdad, con un solo "nexo_session" en juego."""
+    admin = User(
+        email=email, password_hash=hash_password("clave-admin-segura"), full_name="Admin Login",
+        is_nexo_admin=True, created_at=NOW, updated_at=NOW,
+    )
+    db_session.add(admin)
+    db_session.commit()
+    res = client.post("/api/auth/login", json={"email": email, "password": "clave-admin-segura"})
+    assert res.status_code == 200, res.text
+    return admin
+
+
+def _sesion_de(db_session, user):
+    return db_session.query(AuthSession).filter_by(user_id=user.id).order_by(AuthSession.id.desc()).first()
+
+
+def test_usuario_comun_no_puede_entrar_a_ver_una_empresa(client, db_session):
     usuario, tienda = _crear_empresa(db_session, email="dueno-soporte@empresa.cl", nombre_empresa="Empresa Soporte A")
     autenticar(client, db_session, usuario, tienda, ahora=NOW)
 
     res = client.post(f"/api/admin/clientes/{tienda.id}/entrar")
     assert res.status_code == 404  # nunca 403 — mismo criterio que el resto de /api/admin
+    # Y su propia sesión queda intacta: ni siquiera se le marcó un contexto.
+    assert _sesion_de(db_session, usuario).viewing_store_id is None
 
 
-def test_entrar_como_soporte_a_cliente_inexistente_da_404(client, db_session):
+def test_usuario_comun_no_puede_salir_de_ver_como(client, db_session):
+    usuario, tienda = _crear_empresa(db_session, email="comun-salir@empresa.cl", nombre_empresa="Empresa Comun Salir")
+    autenticar(client, db_session, usuario, tienda, ahora=NOW)
+
+    assert client.post("/api/admin/ver-como/salir").status_code == 404
+
+
+def test_un_usuario_comun_no_puede_fabricar_un_contexto_de_otra_empresa(client, db_session):
+    """El contexto vive SOLO en el servidor: no hay ningún parámetro,
+    header ni body con el que un cliente pueda pedir "vería la empresa X".
+    Aunque mande store_id por todos lados, sigue viendo la suya."""
+    usuario, tienda = _crear_empresa(db_session, email="fabricante@empresa.cl", nombre_empresa="Empresa Propia", con_producto=True)
+    _otro, ajena = _crear_empresa(db_session, email="ajena@empresa.cl", nombre_empresa="Empresa Ajena", con_producto=True)
+    autenticar(client, db_session, usuario, tienda, ahora=NOW)
+
+    me = client.get(f"/api/auth/me?store_id={ajena.id}&viewing_store_id={ajena.id}").json()
+    assert me["empresa"]["id"] == tienda.id
+    assert me["modoSoporte"] is None
+
+
+def test_entrar_a_ver_un_cliente_inexistente_da_404(client, db_session):
     admin = _crear_admin_nexo(db_session)
     autenticar(client, db_session, admin, None, ahora=NOW)
 
     res = client.post("/api/admin/clientes/999999/entrar")
     assert res.status_code == 404
+    assert _sesion_de(db_session, admin).viewing_store_id is None
 
 
-def test_entrar_como_soporte_a_otro_admin_esta_prohibido(client, db_session):
+def test_entrar_a_ver_la_empresa_de_otro_admin_esta_prohibido(client, db_session):
     otro_admin = User(email="otro-admin@nexo.cl", password_hash=hash_password("x"), full_name="Otro Admin", is_nexo_admin=True, created_at=NOW, updated_at=NOW)
     db_session.add(otro_admin)
     tienda_de_admin = Store(owner=otro_admin, name="Tienda de un admin (caso raro)", created_at=NOW)
@@ -401,10 +450,11 @@ def test_entrar_como_soporte_a_otro_admin_esta_prohibido(client, db_session):
 
     res = client.post(f"/api/admin/clientes/{tienda_de_admin.id}/entrar")
     assert res.status_code == 400
+    assert _sesion_de(db_session, admin).viewing_store_id is None
 
 
-def test_admin_entra_como_soporte_y_opera_exactamente_como_ese_cliente(client, db_session):
-    usuario, tienda = _crear_empresa(db_session, email="cliente-real@empresa.cl", nombre_empresa="Empresa Real", con_producto=True)
+def test_admin_ve_la_empresa_y_opera_exactamente_como_ese_cliente(client, db_session):
+    _usuario, tienda = _crear_empresa(db_session, email="cliente-real@empresa.cl", nombre_empresa="Empresa Real", con_producto=True)
     admin = _crear_admin_nexo(db_session)
     autenticar(client, db_session, admin, None, ahora=NOW)
 
@@ -412,14 +462,20 @@ def test_admin_entra_como_soporte_y_opera_exactamente_como_ese_cliente(client, d
     assert res.status_code == 200, res.text
     assert res.json()["empresa"] == {"id": tienda.id, "nombre": "Empresa Real"}
 
-    # La cookie del navegador (del admin) ahora es la sesión de soporte —
-    # /me tiene que ver la empresa del CLIENTE, nunca la del admin.
-    me = client.get("/api/auth/me")
-    assert me.status_code == 200
-    body = me.json()
+    # No se creó ninguna sesión nueva: es la MISMA sesión del admin, con un
+    # contexto marcado. Nada de impersonación.
+    assert db_session.query(AuthSession).count() == 1
+    sesion = _sesion_de(db_session, admin)
+    assert sesion.user_id == admin.id
+    assert sesion.viewing_store_id == tienda.id
+
+    # /me: el usuario autenticado sigue siendo el ADMIN (esNexoAdmin), pero
+    # la empresa activa es la del cliente, y el modo se informa siempre.
+    body = client.get("/api/auth/me").json()
+    assert body["usuario"]["email"] == "admin@nexo.cl"
+    assert body["esNexoAdmin"] is True
     assert body["empresa"]["id"] == tienda.id
-    assert body["esNexoAdmin"] is False  # la sesión pertenece al usuario dueño, no al admin
-    assert body["modoSoporte"] == {"adminEmail": "admin@nexo.cl"}
+    assert body["modoSoporte"] == {"adminEmail": "admin@nexo.cl", "empresaId": tienda.id, "empresaNombre": "Empresa Real"}
 
     # Y opera de verdad como esa empresa — ve SU catálogo real, con el
     # mismo mecanismo (get_current_store) que usaría el propio dueño.
@@ -429,58 +485,138 @@ def test_admin_entra_como_soporte_y_opera_exactamente_como_ese_cliente(client, d
     assert productos.json()[0]["sku"] == "SKU-1"
 
 
-def test_entrar_como_soporte_queda_registrado_en_el_historial_administrativo(client, db_session):
+def test_ver_como_empresa_sobrevive_a_un_refresh_y_a_navegar(client, db_session):
+    """El caso que el dueño pidió comprobar explícitamente: F5 no puede
+    devolver al login ni perder el contexto. Cada request de acá abajo es
+    independiente (nada en memoria del navegador), igual que después de un
+    refresh o de cerrar y reabrir la pestaña."""
+    _usuario, tienda = _crear_empresa(db_session, email="refresh@empresa.cl", nombre_empresa="Empresa Refresh", con_producto=True)
+    admin = _login_admin(client, db_session)
+
+    client.post(f"/api/admin/clientes/{tienda.id}/entrar")
+
+    for _ in range(3):  # tres "refresh" seguidos
+        me = client.get("/api/auth/me")
+        assert me.status_code == 200  # nunca 401 -> nunca la pantalla de login
+        assert me.json()["esNexoAdmin"] is True
+        assert me.json()["empresa"]["id"] == tienda.id
+        assert me.json()["modoSoporte"]["empresaId"] == tienda.id
+
+    # Navegar por pantallas de cliente sigue funcionando entre refreshes.
+    assert client.get("/api/productos").status_code == 200
+    assert client.get("/api/dashboard/resumen").status_code == 200
+    # Y el panel admin sigue accesible: la sesión NUNCA dejó de ser de admin.
+    assert client.get("/api/admin/clientes").status_code == 200
+
+    db_session.expire_all()
+    assert _sesion_de(db_session, admin).viewing_store_id == tienda.id
+
+
+def test_salir_de_ver_como_devuelve_al_admin_sin_cerrar_su_sesion(client, db_session):
+    _usuario, tienda = _crear_empresa(db_session, email="salir@empresa.cl", nombre_empresa="Empresa Salir", con_producto=True)
+    admin = _login_admin(client, db_session)
+    sesion_admin = _sesion_de(db_session, admin)
+
+    client.post(f"/api/admin/clientes/{tienda.id}/entrar")
+    assert client.post("/api/admin/ver-como/salir").status_code == 200
+
+    # La sesión es la misma fila de siempre, viva y sin contexto.
+    db_session.expire_all()
+    assert db_session.query(AuthSession).count() == 1
+    assert _sesion_de(db_session, admin).id == sesion_admin.id
+    assert _sesion_de(db_session, admin).revoked_at is None
+    assert _sesion_de(db_session, admin).viewing_store_id is None
+
+    # Sigue autenticado como admin, sin volver a pasar por /login.
+    me = client.get("/api/auth/me")
+    assert me.status_code == 200
+    assert me.json()["esNexoAdmin"] is True
+    assert me.json()["modoSoporte"] is None
+    assert client.get("/api/admin/clientes").status_code == 200
+
+
+def test_despues_de_salir_ya_no_ve_los_datos_de_esa_empresa(client, db_session):
+    """Nunca queda un acceso "heredado" a la empresa después de salir."""
+    _usuario, tienda = _crear_empresa(db_session, email="heredado@empresa.cl", nombre_empresa="Empresa Heredada", con_producto=True)
+    _login_admin(client, db_session)
+
+    client.post(f"/api/admin/clientes/{tienda.id}/entrar")
+    assert len(client.get("/api/productos").json()) == 1
+
+    client.post("/api/admin/ver-como/salir")
+    # Un admin sin contexto no tiene empresa activa: los endpoints de
+    # cliente dejan de responderle datos de nadie.
+    assert client.get("/api/productos").status_code == 500
+
+
+def test_admin_puede_pasar_de_una_empresa_a_otra(client, db_session):
+    _u_a, empresa_a = _crear_empresa(db_session, email="a@empresa.cl", nombre_empresa="Empresa A", con_producto=True)
+    _u_b, empresa_b = _crear_empresa(db_session, email="b@empresa.cl", nombre_empresa="Empresa B")
+    admin = _login_admin(client, db_session)
+
+    client.post(f"/api/admin/clientes/{empresa_a.id}/entrar")
+    assert client.get("/api/auth/me").json()["empresa"]["id"] == empresa_a.id
+    assert len(client.get("/api/productos").json()) == 1
+
+    client.post(f"/api/admin/clientes/{empresa_b.id}/entrar")
+    assert client.get("/api/auth/me").json()["empresa"]["id"] == empresa_b.id
+    # Ya no ve el catálogo de la empresa A — el contexto es uno solo.
+    assert client.get("/api/productos").json() == []
+
+    db_session.expire_all()
+    assert db_session.query(AuthSession).count() == 1  # nunca se acumulan sesiones
+    assert _sesion_de(db_session, admin).viewing_store_id == empresa_b.id
+
+
+def test_entrar_y_salir_quedan_registrados_en_el_historial_administrativo(client, db_session):
     _usuario, tienda = _crear_empresa(db_session, email="auditado@empresa.cl", nombre_empresa="Empresa Auditada")
     admin = _crear_admin_nexo(db_session)
     autenticar(client, db_session, admin, None, ahora=NOW)
 
     client.post(f"/api/admin/clientes/{tienda.id}/entrar")
+    client.post("/api/admin/ver-como/salir")
 
-    # Se verifica directo en la base (no volviendo a pasar por /api/admin/*
-    # con este mismo `client`): la cookie del navegador de prueba ya es la
-    # sesión de soporte a esta altura, igual que en un navegador real —
-    # no tiene sentido "seguir siendo admin" en la misma pestaña.
     log = db_session.query(AdminActionLog).filter_by(store_id=tienda.id, action="entrar_como_soporte").one()
     assert log.admin_user_id == admin.id
     assert "auditado@empresa.cl" in (log.detail or "")
+    salida = db_session.query(AdminActionLog).filter_by(store_id=tienda.id, action="salir_de_ver_empresa").one()
+    assert salida.admin_user_id == admin.id
 
 
-def test_sesion_de_soporte_dura_una_hora_nunca_una_sesion_larga(client, db_session):
-    _usuario, tienda = _crear_empresa(db_session, email="corta@empresa.cl", nombre_empresa="Empresa Sesion Corta")
+def test_si_le_revocan_el_rol_de_admin_el_contexto_deja_de_valer(client, db_session):
+    """El contexto se evalúa contra `is_nexo_admin` AHORA, no contra el
+    momento en que entró: quitarle el rol corta el acceso en la request
+    siguiente, sin tener que ir a limpiar sesiones a mano."""
+    _usuario, tienda = _crear_empresa(db_session, email="revocado@empresa.cl", nombre_empresa="Empresa Revocada", con_producto=True)
+    admin = _login_admin(client, db_session)
+    client.post(f"/api/admin/clientes/{tienda.id}/entrar")
+    assert len(client.get("/api/productos").json()) == 1
+
+    admin.is_nexo_admin = False
+    db_session.commit()
+
+    assert client.get("/api/auth/me").json()["modoSoporte"] is None
+    assert client.get("/api/productos").status_code == 500  # ya no hay empresa que mirar
+    assert client.get("/api/admin/clientes").status_code == 404
+
+
+def test_logout_durante_ver_como_cierra_la_sesion_del_admin(client, db_session):
+    _usuario, tienda = _crear_empresa(db_session, email="logout@empresa.cl", nombre_empresa="Empresa Logout")
+    admin = _login_admin(client, db_session)
+    client.post(f"/api/admin/clientes/{tienda.id}/entrar")
+
+    assert client.post("/api/auth/logout").status_code == 200
+    db_session.expire_all()
+    assert _sesion_de(db_session, admin).revoked_at is not None
+    assert client.get("/api/auth/me").status_code == 401
+
+
+def test_salir_sin_estar_viendo_ninguna_empresa_no_es_un_error(client, db_session):
     admin = _crear_admin_nexo(db_session)
     autenticar(client, db_session, admin, None, ahora=NOW)
 
-    res = client.post(f"/api/admin/clientes/{tienda.id}/entrar")
-    expira = datetime.fromisoformat(res.json()["expiraEn"])
-    duracion = expira - datetime.now()
-    assert timedelta(minutes=55) < duracion <= timedelta(hours=1, minutes=1)
-
-
-def test_salir_del_modo_soporte_revoca_la_sesion_de_verdad(client, db_session):
-    """Login real (no el helper `autenticar`, que deja una cookie de prueba
-    sin dominio) para que login -> entrar -> logout -> me pasen los cuatro
-    por el mismo mecanismo real de cookies, igual que en un navegador de
-    verdad — un solo cookie "nexo_session" en juego en todo momento."""
-    _usuario, tienda = _crear_empresa(db_session, email="salir@empresa.cl", nombre_empresa="Empresa Salir")
-    admin = User(email="admin-login@nexo.cl", password_hash=hash_password("clave-admin-segura"), full_name="Admin Login", is_nexo_admin=True, created_at=NOW, updated_at=NOW)
-    db_session.add(admin)
-    db_session.commit()
-
-    login = client.post("/api/auth/login", json={"email": "admin-login@nexo.cl", "password": "clave-admin-segura"})
-    assert login.status_code == 200
-
-    client.post(f"/api/admin/clientes/{tienda.id}/entrar")
-    sesion_soporte = db_session.query(AuthSession).filter_by(impersonated_by_admin_id=admin.id).one()
-    assert sesion_soporte.revoked_at is None
-
-    res_logout = client.post("/api/auth/logout")
-    assert res_logout.status_code == 200
-
-    db_session.refresh(sesion_soporte)
-    assert sesion_soporte.revoked_at is not None  # revocada de verdad en la base, no solo "cookie vencida"
-
-    res_me = client.get("/api/auth/me")
-    assert res_me.status_code == 401
+    assert client.post("/api/admin/ver-como/salir").status_code == 200
+    assert db_session.query(AdminActionLog).filter_by(action="salir_de_ver_empresa").count() == 0
 
 
 def test_una_sesion_normal_nunca_muestra_modo_soporte(client, db_session):

@@ -20,7 +20,7 @@ export function Header({ onMenuClick, title }: { onMenuClick: () => void; title:
       <div className="flex items-center gap-3">
         <div className="hidden text-right sm:block">
           <p className="text-sm font-medium text-[--color-ink-950]">Administrador</p>
-          <p className="text-xs text-[--color-neutral-600]">Librería Central</p>
+          <p className="text-xs text-[--color-neutral-600]">Mi tienda</p>
         </div>
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[--color-ink-100] text-[--color-ink-800]">
           <UserCircle size={26} />

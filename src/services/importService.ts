@@ -259,5 +259,5 @@ export async function downloadExcelTemplate() {
   const sheet = XLSX.utils.aoa_to_sheet([headers, example]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, 'Productos');
-  XLSX.writeFile(workbook, 'plantilla-productos-libreria-central.xlsx');
+  XLSX.writeFile(workbook, 'plantilla-productos.xlsx');
 }

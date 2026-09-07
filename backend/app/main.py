@@ -118,7 +118,16 @@ app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    print_env_diagnostics(get_settings())
+    # 6 de septiembre de 2026 — release candidate: esto es SOLO un
+    # diagnóstico para los logs. Si falla (por ejemplo, una consola que no
+    # puede codificar un carácter), no debe impedir que la aplicación
+    # arranque: FastAPI aborta el proceso entero si un handler de startup
+    # lanza una excepción. Pasó de verdad al probar el arranque en una
+    # configuración de producción (sin .env).
+    try:
+        print_env_diagnostics(get_settings())
+    except Exception as err:  # noqa: BLE001 - nunca debe tumbar el arranque
+        print(f"AVISO: no se pudo imprimir el diagnostico de configuracion: {err!r}")
 
 
 @app.get("/api/health")

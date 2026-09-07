@@ -1,7 +1,7 @@
 """
 Fixtures para las pruebas del modelo de datos. Cada prueba corre contra una
 base SQLite en memoria completamente aislada (no contra el archivo
-`libreria_central.db` real, y por supuesto sin tocar WooCommerce ni
+`nexo.db` real, y por supuesto sin tocar WooCommerce ni
 Mercado Libre) — se crea el esquema completo desde los modelos antes de
 cada prueba y se descarta al terminar.
 """
@@ -58,7 +58,7 @@ def now():
 @pytest.fixture()
 def a_user(db_session, now):
     user = User(
-        email="dueno@lalibreriaonlineoficial.cl",
+        email="dueno@tienda-de-prueba.cl",
         password_hash=hash_password("una-contraseña-segura"),
         full_name="Joaquín Ruiz",
         status="active",

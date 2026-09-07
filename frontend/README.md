@@ -133,14 +133,17 @@ Si el comando `python` no existe en tu sistema, prueba `python3 -m http.server 5
 http://localhost:5500
 ```
 
-**3. Inicia sesión** con cualquier email y cualquier contraseña (por
-ejemplo, `dueno@lalibreria.cl` / `demo1234`) — es una demostración, no hay
-verificación real todavía.
+**3. Inicia sesión** con tu cuenta real. La autenticación es real desde el
+29 de agosto de 2026 (backend `app/api/routes/auth.py`, cookie HttpOnly):
+ya no entra "cualquier email con cualquier contraseña". Si todavía no
+tenés cuenta, creala desde "Crear cuenta".
 
-Vas a ver el panel completo: Dashboard, Productos (con más de 50 productos
-de ejemplo, incluyendo variantes de color), Mercado Libre, Sincronización,
-Suscripción y Configuración — todo navegable, con modo oscuro, y con el
-indicador "Modo demostración" visible en todo momento.
+Con el backend corriendo vas a ver tus datos reales. Si el backend NO está
+disponible al cargar la página, la app entra en modo demostración —
+Dashboard, Productos, Mercado Libre, Automatizaciones, Mi plan y
+Configuración navegables con datos de ejemplo, y el indicador "Modo
+demostración" visible en todo momento. Nunca cae a datos demo en silencio
+con una sesión real: ahí muestra un error explícito (ver `js/dataSource.js`).
 
 ## Ajustes
 

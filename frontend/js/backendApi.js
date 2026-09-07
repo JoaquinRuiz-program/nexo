@@ -69,6 +69,11 @@ window.LC = window.LC || {};
   // app/api/routes/), se usa tal cual — ya está pensado para explicar qué
   // falta y cómo resolverlo.
   function classifyHttpError(status, detail, bodyParseFailed) {
+    // 6 de septiembre de 2026 (P0-1): la sesión vencida/revocada tiene su
+    // propio tipo — es una causa completamente distinta de "el servidor no
+    // responde", y la pantalla de error lo dice con esas palabras en vez
+    // de mandar al dueño a revisar su conexión a internet.
+    if (status === 401) return { tipo: "sesion", mensaje: detail || "Tu sesión expiró. Iniciá sesión de nuevo." };
     if (status === 500) return { tipo: "servidor", mensaje: detail || "Hubo un problema procesando esto. Intenta de nuevo en un momento." };
     if (status === 502) {
       const esAuth = !!detail && /autenticaci[oó]n/i.test(detail);
@@ -405,12 +410,17 @@ window.LC = window.LC || {};
     return request(`/api/admin/clientes/${storeId}/estado`, { method: "PUT", body: { suspendido } });
   }
 
-  // 6 de septiembre de 2026 — "entrar como soporte": la respuesta trae una
-  // cookie de sesión nueva (Set-Cookie real, ver app/api/routes/admin.py) —
-  // quien llama a esto tiene que recargar la página entera después,
-  // nunca seguir navegando en la SPA con el estado de sesión viejo en memoria.
+  // 6 de septiembre de 2026 — "ver como empresa": NO cambia la cookie ni la
+  // sesión del admin (ver app/api/routes/admin.py::entrar_a_ver_empresa),
+  // solo marca en el servidor qué empresa está viendo esta sesión. Aun así
+  // quien llama recarga la página: la copia en memoria de la sesión
+  // (LC.auth) quedó vieja y se rehidrata sola desde /api/auth/me.
   async function entrarComoSoporte(storeId) {
     return request(`/api/admin/clientes/${storeId}/entrar`, { method: "POST" });
+  }
+
+  async function salirDeVerComoEmpresa() {
+    return request("/api/admin/ver-como/salir", { method: "POST" });
   }
 
   async function listarUsuariosAdmin() {
@@ -534,6 +544,7 @@ window.LC = window.LC || {};
     detalleClienteAdmin,
     actualizarEstadoClienteAdmin,
     entrarComoSoporte,
+    salirDeVerComoEmpresa,
     listarUsuariosAdmin,
     listarPlanesAdmin,
     actualizarSuscripcionAdmin,

@@ -9,7 +9,7 @@ from __future__ import annotations
 from app.domain.catalog_import import build_rows, detect_columns, summarize_rows
 
 
-def test_detecta_columnas_con_los_nombres_exactos_de_libreria_central():
+def test_detecta_columnas_con_los_nombres_exactos_del_excel_original():
     mapping = detect_columns(["SKU", "Nombre", "Marca", "Categoría", "Precio", "Costo", "Stock", "Descripción", "Imagen", "Código de barras"])
     assert mapping.get("sku") == "SKU"
     assert mapping.get("nombre") == "Nombre"

@@ -69,7 +69,18 @@ window.LC = window.LC || {};
   // Render orquestador
   // ------------------------------------------------------------------
 
+  // Última ruta pintada — la usa rerenderActual() para que un "refrescá
+  // esta pantalla" disparado desde un handler vuelva a pasar por render()
+  // (y por su manejo de errores), en vez de llamar al renderer directo y
+  // quedarse con una promesa rechazada en silencio si falla la carga.
+  let rutaActual = { routeName: "dashboard", param: null };
+
+  function rerenderActual() {
+    return render(rutaActual.routeName, rutaActual.param);
+  }
+
   async function render(routeName, param) {
+    rutaActual = { routeName, param };
     const loggedIn = LC.auth.isLoggedIn();
     document.getElementById("auth-screens").classList.toggle("hidden", loggedIn);
     document.getElementById("app-shell").classList.toggle("hidden", !loggedIn);
@@ -136,10 +147,18 @@ window.LC = window.LC || {};
           main.innerHTML = `<div class="page-wrap">Sección no encontrada.</div>`;
       }
     } catch (err) {
-      // El mensaje técnico (err.message) queda plegado en "Ver detalles" —
-      // quien ve esta pantalla es el dueño del negocio, no alguien que
-      // necesite leer un stack trace para saber que algo salió mal.
-      main.innerHTML = `<div class="page-wrap"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("alert")}</div><p class="empty-state-title">Algo no funcionó como esperábamos</p><p class="empty-state-desc">Intenta recargar la página. Si el problema sigue, avísanos.</p><details class="mt-4 text-xs text-slate-400"><summary class="cursor-pointer">Ver detalles técnicos</summary><p class="mt-1 font-mono">${escapeHtml(String(err && err.message ? err.message : err))}</p></details></div></div>`;
+      // 6 de septiembre de 2026 (P0-1): un fallo cargando datos REALES
+      // tiene su propia pantalla, con la causa en lenguaje humano y un
+      // botón para reintentar — antes esto caía en datos de demostración
+      // sin que el dueño se enterara (ver js/dataSource.js).
+      if (err instanceof LC.dataSource.ErrorDatosReales) {
+        renderErrorDeDatos(main, err, routeName, param);
+      } else {
+        // El mensaje técnico (err.message) queda plegado en "Ver detalles" —
+        // quien ve esta pantalla es el dueño del negocio, no alguien que
+        // necesite leer un stack trace para saber que algo salió mal.
+        main.innerHTML = `<div class="page-wrap"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("alert")}</div><p class="empty-state-title">Algo no funcionó como esperábamos</p><p class="empty-state-desc">Intenta recargar la página. Si el problema sigue, avísanos.</p><details class="mt-4 text-xs text-slate-400"><summary class="cursor-pointer">Ver detalles técnicos</summary><p class="mt-1 font-mono">${escapeHtml(String(err && err.message ? err.message : err))}</p></details></div></div>`;
+      }
     }
 
     if (scrollTarget) {
@@ -147,6 +166,76 @@ window.LC = window.LC || {};
       scrollTarget = null;
       if (el) setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
     }
+  }
+
+  // 6 de septiembre de 2026 (P0-1) — no pudimos cargar los datos REALES de
+  // esta empresa. Se distingue la causa (conexión / servidor / sesión) en
+  // lenguaje humano, y NUNCA se rellena la pantalla con datos de
+  // demostración para disimular el fallo.
+  const CAUSA_ERROR_DATOS = {
+    red: {
+      titulo: "No pudimos conectar con el servidor",
+      desc: "Revisá tu conexión a internet y volvé a intentar. Tus datos están a salvo — no se perdió nada.",
+    },
+    timeout: {
+      titulo: "El servidor está tardando más de lo normal",
+      desc: "Puede ser algo momentáneo. Esperá unos segundos y volvé a intentar.",
+    },
+    servidor: {
+      titulo: "Tuvimos un problema al cargar tus datos",
+      desc: "Es un problema nuestro, no tuyo. Volvé a intentar en un momento; si sigue pasando, escribinos desde Ayuda y soporte.",
+    },
+    integracion: {
+      titulo: "No pudimos cargar tus datos en este momento",
+      desc: "Volvé a intentar en un momento. Si el problema sigue, escribinos desde Ayuda y soporte.",
+    },
+    sesion: {
+      titulo: "Tu sesión expiró",
+      desc: "Por seguridad cerramos las sesiones después de un tiempo. Iniciá sesión de nuevo para seguir.",
+    },
+  };
+
+  function renderErrorDeDatos(main, err, routeName, param) {
+    // Sesión vencida: no tiene sentido ofrecer "Reintentar" (va a volver a
+    // fallar) — el interceptor de 401 ya está mandando al login; acá solo
+    // se evita mostrar una pantalla de error confusa mientras tanto.
+    if (err.tipo === "sesion") {
+      main.innerHTML = `
+        <div class="page-wrap app-fade">
+          <div class="panel-card text-center py-12">
+            <div class="empty-state-icon">${icon("alert")}</div>
+            <p class="empty-state-title">${escapeHtml(CAUSA_ERROR_DATOS.sesion.titulo)}</p>
+            <p class="empty-state-desc mx-auto">${escapeHtml(CAUSA_ERROR_DATOS.sesion.desc)}</p>
+            <button id="btn-ir-login" class="btn-primary mt-6">Iniciar sesión</button>
+          </div>
+        </div>`;
+      document.getElementById("btn-ir-login").addEventListener("click", () => LC.router.navigate("/login"));
+      return;
+    }
+    const causa = CAUSA_ERROR_DATOS[err.tipo] || {
+      titulo: "No pudimos cargar tus datos",
+      desc: "Volvé a intentar en un momento. Si el problema sigue, escribinos desde Ayuda y soporte.",
+    };
+    main.innerHTML = `
+      <div class="page-wrap app-fade">
+        <div class="panel-card text-center py-12">
+          <div class="empty-state-icon">${icon("alert")}</div>
+          <p class="empty-state-title">${escapeHtml(causa.titulo)}</p>
+          <p class="empty-state-desc mx-auto">${escapeHtml(causa.desc)}</p>
+          <p class="text-xs text-slate-400 dark:text-slate-500 mt-4 max-w-md mx-auto">
+            No te mostramos datos de ejemplo en lugar de los tuyos: preferimos decirte que algo falló antes que enseñarte información que no es real.
+          </p>
+          <div class="flex items-center justify-center gap-3 mt-6">
+            <button id="btn-reintentar-datos" class="btn-primary">Reintentar</button>
+            <button data-nav="/soporte" class="btn-secondary">Ayuda y soporte</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById("btn-reintentar-datos").addEventListener("click", () => render(routeName, param));
+    main.querySelectorAll("[data-nav]").forEach((btn) => {
+      btn.addEventListener("click", () => LC.router.navigate(btn.dataset.nav));
+    });
   }
 
   function skeletonPage() {
@@ -183,23 +272,29 @@ window.LC = window.LC || {};
     document.getElementById("user-name-label").textContent = session.nombre;
     document.getElementById("user-avatar").textContent = initials(session.nombre);
     document.getElementById("theme-toggle-icon").innerHTML = icon(LC.theme.isDark() ? "sun" : "moon");
-    document.getElementById("sidebar-empresa-activa").textContent = session.esNexoAdmin ? "Panel Nexo" : nombreEmpresaActiva(session);
+    // 6 de septiembre de 2026 — un admin VIENDO una empresa
+    // (session.modoSoporte) sí tiene empresa activa: se muestra su nombre,
+    // igual que lo vería el cliente.
+    const viendoEmpresa = !!session.modoSoporte;
+    document.getElementById("sidebar-empresa-activa").textContent =
+      session.esNexoAdmin && !viendoEmpresa ? "Panel Nexo" : nombreEmpresaActiva(session);
     document.getElementById("nav-link-admin").classList.toggle("hidden", !session.esNexoAdmin);
     // Un admin de Nexo no tiene tienda propia — las pantallas de cliente
     // ni siquiera cargarían (get_current_store le daría error), así que
     // esos links ni se muestran (además del guard de router.js que ya
-    // redirige si igual se navega ahí a mano).
+    // redirige si igual se navega ahí a mano). Mientras ve una empresa sí
+    // se muestran: es exactamente lo que fue a ver.
     ["dashboard", "productos", "oportunidades", "importar", "integraciones", "automatizaciones", "suscripcion", "soporte", "configuracion"].forEach((r) => {
       const link = document.querySelector(`.nav-link[data-route="${r}"]`);
-      if (link) link.classList.toggle("hidden", !!session.esNexoAdmin);
+      if (link) link.classList.toggle("hidden", !!session.esNexoAdmin && !viendoEmpresa);
     });
     actualizarPillModoDemo();
     actualizarBannerModoSoporte(session);
   }
 
   // 6 de septiembre de 2026 — aviso persistente mientras un administrador
-  // de Nexo está operando como un cliente (ver
-  // app/api/routes/admin.py::entrar_como_soporte) — nunca silencioso.
+  // de Nexo está viendo la cuenta de un cliente (ver
+  // app/api/routes/admin.py::entrar_a_ver_empresa) — nunca silencioso.
   function actualizarBannerModoSoporte(session) {
     const banner = document.getElementById("soporte-banner");
     if (!banner) return;
@@ -207,7 +302,7 @@ window.LC = window.LC || {};
     banner.classList.toggle("hidden", !modoSoporte);
     if (modoSoporte) {
       document.getElementById("soporte-banner-texto").textContent =
-        `Estás operando como soporte de Nexo en la cuenta de ${nombreEmpresaActiva(session) || "esta empresa"} (${modoSoporte.adminEmail || "admin"}).`;
+        `Estás viendo la cuenta de ${modoSoporte.empresaNombre || nombreEmpresaActiva(session) || "esta empresa"} como administrador de Nexo (${modoSoporte.adminEmail || "admin"}). Tu sesión de administrador sigue abierta.`;
     }
   }
 
@@ -246,12 +341,16 @@ window.LC = window.LC || {};
     document.getElementById("sidebar-close-btn").addEventListener("click", closeMobileSidebar);
 
     document.getElementById("soporte-banner-salir").addEventListener("click", async () => {
-      // Termina la sesión de soporte (mismo logout de siempre) y vuelve a
-      // /login — nunca hay una forma de "volver" a la sesión de admin
-      // anterior en la misma pestaña (ver docstring de entrar_como_soporte).
-      await LC.auth.logout();
-      toast("info", "Saliste del modo soporte.");
-      LC.router.navigate("/login");
+      // Solo saca el contexto de empresa: la sesión del admin nunca se
+      // cerró (ver app/api/routes/admin.py::salir_de_ver_empresa), así que
+      // vuelve directo al panel, autenticado, sin pasar por /login.
+      const res = await LC.backendApi.salirDeVerComoEmpresa();
+      if (!res.ok) {
+        toast("error", res.error.mensaje);
+        return;
+      }
+      window.location.hash = "/admin";
+      window.location.reload();
     });
     document.getElementById("sidebar-overlay").addEventListener("click", closeMobileSidebar);
 
@@ -1425,10 +1524,10 @@ window.LC = window.LC || {};
     const agregarCostoBtn = document.getElementById("detail-agregar-costo");
     if (agregarCostoBtn) {
       agregarCostoBtn.addEventListener("click", () => {
-        abrirEditorCosto({ id: row.id, nombre: row.nombre, costo: rentabilidad ? rentabilidad.costo : null }, () => renderProductDetail(main, id));
+        abrirEditorCosto({ id: row.id, nombre: row.nombre, costo: rentabilidad ? rentabilidad.costo : null }, () => rerenderActual());
       });
     }
-    wireImagenesDetalle(main, row, () => renderProductDetail(main, id));
+    wireImagenesDetalle(main, row, () => rerenderActual());
   }
 
   // Miniatura de decisión "¿conviene vender en Mercado Libre?" (30 de
@@ -1691,7 +1790,7 @@ window.LC = window.LC || {};
               return;
             }
             toast("info", "Mercado Libre desconectado.");
-            renderMercadoLibre(main);
+            rerenderActual();
           },
         });
       });
@@ -2060,7 +2159,7 @@ window.LC = window.LC || {};
     main.querySelectorAll("[data-agregar-costo]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const p = productos.find((x) => String(x.id) === btn.dataset.agregarCosto);
-        abrirEditorCosto(p, () => renderOportunidades(main));
+        abrirEditorCosto(p, () => rerenderActual());
       });
     });
     main.querySelectorAll("[data-ir-configuracion]").forEach((btn) => {
@@ -2085,7 +2184,7 @@ window.LC = window.LC || {};
         } else {
           toast("success", combinacionesComisionActualizadas > 0 ? "Comisiones reales actualizadas." : "Las comisiones ya estaban actualizadas.");
         }
-        renderOportunidades(main);
+        rerenderActual();
       });
     }
   }
@@ -2096,9 +2195,11 @@ window.LC = window.LC || {};
   // ------------------------------------------------------------------
 
   const INTEGRACION_ICON = { mercadolibre: "cart", excel: "upload" };
-  const INTEGRACION_ESTADO_LABEL = { conectado: "Conectado", no_conectado: "No conectado", disponible: "Disponible" };
-  const INTEGRACION_ESTADO_DOT = { conectado: "dot--green", no_conectado: "dot--gray", disponible: "dot--green" };
-  const INTEGRACION_CTA = { conectado: "Ver detalles", no_conectado: "Conectar", disponible: "Usar ahora" };
+  // "desconocido" (6 de septiembre de 2026, P0-1): no pudimos consultar el
+  // estado real — nunca se afirma "No conectado" sin haberlo verificado.
+  const INTEGRACION_ESTADO_LABEL = { conectado: "Conectado", no_conectado: "No conectado", disponible: "Disponible", desconocido: "Estado no disponible" };
+  const INTEGRACION_ESTADO_DOT = { conectado: "dot--green", no_conectado: "dot--gray", disponible: "dot--green", desconocido: "dot--amber" };
+  const INTEGRACION_CTA = { conectado: "Ver detalles", no_conectado: "Conectar", disponible: "Usar ahora", desconocido: "Ver detalles" };
 
   async function renderIntegraciones(main) {
     const data = await LC.dataSource.getIntegraciones();
@@ -2310,14 +2411,14 @@ window.LC = window.LC || {};
     const manageBtn = document.getElementById("manage-sub-btn");
     if (manageBtn) {
       manageBtn.addEventListener("click", () => {
-        infoModal("Administrar suscripción", "La gestión de suscripciones y pagos estará disponible cuando conectemos Stripe u otro proveedor de pagos.");
+        infoModal("Administrar suscripción", "Esto es una vista de demostración (sin conexión al backend real) — no hay ningún pago que administrar acá. Con el backend real conectado, esta pantalla deja elegir un plan y pagarlo de verdad con Mercado Pago.");
       });
     }
 
     main.querySelectorAll("#ciclo-facturacion-tabs [data-ciclo]").forEach((btn) => {
       btn.addEventListener("click", () => {
         cicloElegido = btn.dataset.ciclo;
-        renderSuscripcion(main);
+        rerenderActual();
       });
     });
 
@@ -2361,7 +2462,7 @@ window.LC = window.LC || {};
               return;
             }
             toast("info", "Suscripción cancelada.");
-            renderSuscripcion(main);
+            rerenderActual();
           },
         });
       });
@@ -2373,13 +2474,13 @@ window.LC = window.LC || {};
         const plan = LC.demoData.plans.find((p) => p.id === planId);
         openModal({
           title: "Cambiar de plan",
-          body: `<p>¿Quieres cambiar tu plan de demostración a <strong>${escapeHtml(plan.nombre)}</strong>? Esto es parte de la demo — el cambio real de plan y el cobro se harán cuando conectemos el sistema de pagos.</p>`,
+          body: `<p>¿Quieres cambiar tu plan de demostración a <strong>${escapeHtml(plan.nombre)}</strong>? Esto es solo para probar la interfaz — no hay backend real conectado en este modo. Con el backend real conectado, el cambio de plan se paga de verdad con Mercado Pago.</p>`,
           primaryLabel: "Cambiar plan (demo)",
           secondaryLabel: "Cancelar",
           onPrimary: () => {
             LC.settings.setCurrentPlanId(planId);
             toast("success", `Plan actualizado a ${plan.nombre} (demo).`);
-            renderSuscripcion(main);
+            rerenderActual();
           },
         });
       });
@@ -2565,7 +2666,7 @@ window.LC = window.LC || {};
     main.querySelectorAll(".theme-opt-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         LC.theme.set(btn.dataset.themeOpt);
-        renderConfiguracion(main);
+        rerenderActual();
       });
     });
 

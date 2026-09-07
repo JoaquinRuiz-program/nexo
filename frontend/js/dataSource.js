@@ -62,6 +62,35 @@ window.LC = window.LC || {};
     return modoResuelto;
   }
 
+  /**
+   * 6 de septiembre de 2026 — auditoría pre-producción, hallazgo P0-1.
+   *
+   * Hasta hoy, si una consulta puntual fallaba estando en modo REAL (el
+   * backend se reinició, timeout, 500, sesión vencida), estas funciones
+   * devolvían en silencio los datos de `LC.demoData` — 65 productos
+   * inventados con nombres, SKU, precios y stock realistas — y el pill
+   * "Modo demostración" NI SIQUIERA se mostraba (depende de getModo(),
+   * que seguía diciendo "real"). Un cliente veía un catálogo que no era
+   * el suyo, sin ninguna señal, y podía decidir sobre datos que no
+   * existen.
+   *
+   * Regla desde ahora: en modo REAL nunca se responde con datos de
+   * demostración. Si la consulta falla, se lanza este error y la pantalla
+   * muestra un estado de error claro y accionable (ver js/app.js,
+   * renderErrorDeDatos). Los datos de demostración siguen sirviendo
+   * ÚNICAMENTE al modo demo declarado (backend inalcanzable al cargar la
+   * página, señalizado con el pill del header) — ese flujo no cambia.
+   */
+  class ErrorDatosReales extends Error {
+    constructor(error) {
+      super((error && error.mensaje) || "No pudimos cargar tus datos en este momento.");
+      this.name = "ErrorDatosReales";
+      // Mismo vocabulario que classifyHttpError (js/backendApi.js):
+      // red | timeout | servidor | datos | endpoint | http | json | integracion
+      this.tipo = (error && error.tipo) || "desconocido";
+    }
+  }
+
   function demoDashboardResumen() {
     const rows = LC.demoData.catalogRows;
     const total = rows.length;
@@ -112,10 +141,8 @@ window.LC = window.LC || {};
   async function getDashboardResumen() {
     if ((await getModo()) === "real") {
       const res = await LC.backendApi.fetchDashboardResumen();
-      if (res.ok) return adaptarDashboardResumen(res.data);
-      // El backend estaba arriba en el healthcheck pero esta consulta
-      // puntual falló (se cayó justo ahora, timeout, etc.) — no se rompe
-      // la pantalla, se cae a Demo Mode para esta carga.
+      if (!res.ok) throw new ErrorDatosReales(res.error);
+      return adaptarDashboardResumen(res.data);
     }
     return demoDashboardResumen();
   }
@@ -137,7 +164,10 @@ window.LC = window.LC || {};
           ? res.data.conectado
             ? { estado: "conectado", detalle: detalleConectado(res.data) }
             : { estado: "no_conectado", detalle: res.data.credencialesConfiguradas ? "Credenciales configuradas — falta autorizar la cuenta" : "Pendiente de configuración" }
-          : { estado: "no_conectado", detalle: "Pendiente de configuración" };
+          // 6 de septiembre de 2026 (P0-1): si la consulta falla, NO se
+          // afirma "no conectado" — no lo sabemos. Decirlo sería tan falso
+          // como mostrar datos demo.
+          : { estado: "desconocido", detalle: "No pudimos consultar el estado ahora mismo." };
       return {
         mercadoLibre: estadoConexion(resMl, (d) => `Cuenta ${d.cuentaExternaId}`),
         googleSheets: estadoConexion(resGs, (d) => (d.spreadsheetTitulo ? `Catálogo: ${d.spreadsheetTitulo}` : "Conectado")),
@@ -154,7 +184,8 @@ window.LC = window.LC || {};
   async function getProductos() {
     if ((await getModo()) === "real") {
       const res = await LC.backendApi.fetchProductos();
-      if (res.ok) return res.data;
+      if (!res.ok) throw new ErrorDatosReales(res.error);
+      return res.data;
     }
     return LC.demoData.catalogRows;
   }
@@ -162,7 +193,14 @@ window.LC = window.LC || {};
   async function getProductoDetalle(id) {
     if ((await getModo()) === "real") {
       const res = await LC.backendApi.fetchProductoDetalle(id);
-      if (!res.ok) return null;
+      if (!res.ok) {
+        // 404 = el producto no existe o es de otra empresa: eso SÍ es
+        // "no encontrado" de verdad. Cualquier otro fallo (backend caído,
+        // timeout, 500) es un error de carga — nunca se disfraza de
+        // "producto no encontrado", que haría pensar que se borró.
+        if (res.error.tipo === "endpoint") return null;
+        throw new ErrorDatosReales(res.error);
+      }
       const row = res.data;
       // Variantes hermanas (mismo producto padre, un color cada una) — se
       // arman filtrando la lista completa, igual que hace demoData con
@@ -206,7 +244,8 @@ window.LC = window.LC || {};
   async function getOportunidades() {
     if ((await getModo()) === "real") {
       const res = await LC.backendApi.obtenerSeleccion({ canal: "tienda", requiereStock: false });
-      if (res.ok) return res.data;
+      if (!res.ok) throw new ErrorDatosReales(res.error);
+      return res.data;
     }
     return LC.demoImportResult.seleccion;
   }
@@ -221,8 +260,13 @@ window.LC = window.LC || {};
 
   async function getIntegraciones() {
     const modo = await getModo();
-    let ml = { estado: "no_conectado", detalle: "Pendiente de configuración" };
-    let gs = { estado: "no_conectado", detalle: "Pendiente de configuración" };
+    // En modo real estos valores solo quedan si la consulta FALLA — por eso
+    // dicen "no pudimos consultar", nunca "no conectado" (6 de septiembre
+    // de 2026, P0-1: no afirmar un estado que no verificamos).
+    let ml = modo === "real"
+      ? { estado: "desconocido", detalle: "No pudimos consultar el estado ahora mismo." }
+      : { estado: "no_conectado", detalle: "Pendiente de configuración" };
+    let gs = { ...ml };
     if (modo === "real") {
       const [resMl, resGs] = await Promise.all([
         LC.backendApi.fetchMercadoLibreEstado(),
@@ -490,7 +534,8 @@ window.LC = window.LC || {};
   async function getSuscripcion() {
     if ((await getModo()) === "real") {
       const res = await LC.backendApi.fetchMiSuscripcion();
-      if (res.ok) return adaptarSuscripcion(res.data);
+      if (!res.ok) throw new ErrorDatosReales(res.error);
+      return adaptarSuscripcion(res.data);
     }
     const planId = LC.settings.getCurrentPlanId();
     const plan = LC.demoData.plans.find((p) => p.id === planId) || LC.demoData.plans[0];
@@ -508,6 +553,7 @@ window.LC = window.LC || {};
   }
 
   LC.dataSource = {
+    ErrorDatosReales,
     getModo,
     getDashboardResumen,
     getEstadoSistema,

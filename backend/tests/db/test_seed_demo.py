@@ -2,7 +2,7 @@
 Pruebas de app/db/seed_demo.py — el generador de datos de prueba que hace de
 "WooCommerce real" mientras no tengamos acceso definitivo al de la librería.
 Corre contra la misma base SQLite en memoria que el resto de tests/db/ (ver
-conftest.py), nunca contra libreria_central.db.
+conftest.py), nunca contra nexo.db.
 """
 
 from __future__ import annotations

@@ -61,6 +61,7 @@ from app.db.models import MarketplaceAccount, Store
 from app.db.session import get_db
 from app.domain.catalog_import import IMPORT_FIELDS, ColumnMapping, build_rows, detect_columns, row_to_dict, summarize_rows
 from app.domain.catalog_writer import escribir_filas
+from app.domain.spreadsheet_io import MAX_FILAS, MENSAJE_DEMASIADAS_FILAS
 from app.domain.token_crypto import TokenEncryptionNotConfigured, decrypt_token, encrypt_token
 
 logger = logging.getLogger(__name__)
@@ -423,6 +424,11 @@ async def _leer_filas_de_google(db: Session, store: Store, hoja: Optional[str]) 
 
     if not headers:
         raise HTTPException(status_code=400, detail=f"La pestaña '{hoja_final}' está vacía.")
+    # Mismo tope de filas que un Excel/CSV subido (P1-2, 6 de septiembre de
+    # 2026): una hoja gigante llega por la API igual que por un archivo, y
+    # consume la misma memoria del proceso.
+    if len(raw_rows) > MAX_FILAS:
+        raise HTTPException(status_code=400, detail=MENSAJE_DEMASIADAS_FILAS)
 
     # Recordar la última pestaña usada, para que "volver a sincronizar" no
     # tenga que volver a pedirla (ver docstring del módulo).

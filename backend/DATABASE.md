@@ -25,8 +25,12 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Por defecto, la base de datos vive en `backend/libreria_central.db` (un
-archivo SQLite que se crea solo). Si más adelante se quiere usar PostgreSQL
+Por defecto, la base de datos vive en `backend/nexo.db` (un
+archivo SQLite que se crea solo). **Hasta el 6 de septiembre de 2026 ese
+archivo se llamaba `libreria_central.db`**, nombre heredado del proyecto
+original; si venís de una copia anterior, renombralo (`mv
+libreria_central.db nexo.db`) o vas a arrancar con una base vacía y
+"perder" tus datos locales. Si más adelante se quiere usar PostgreSQL
 (recomendado para producción), se define `DATABASE_URL` en `backend/.env`
 — ver `.env.example`. El resto del código (modelos, migraciones) no cambia
 en absoluto: es la misma URL configurable, no una base de datos distinta
@@ -57,7 +61,7 @@ python -m pytest -q
 ```
 
 Las pruebas de la base de datos (`tests/db/`) corren contra SQLite **en
-memoria**, aisladas por prueba — nunca tocan `libreria_central.db`, ni
+memoria**, aisladas por prueba — nunca tocan `nexo.db`, ni
 WooCommerce, ni Mercado Libre.
 
 ## Qué se puede probar hoy
@@ -103,7 +107,7 @@ porción vertical ya construida, con datos de prueba en vez de WooCommerce:
   que ese job no cambiará el endpoint de abajo, solo quién llena la tabla.
 - `GET /api/productos` y `GET /api/productos/{id}` (`app/api/routes/productos_db.py`):
   leen el catálogo desde esta base de datos — probado con `pytest` (base en
-  memoria) y en vivo contra `libreria_central.db` real (`alembic upgrade head`
+  memoria) y en vivo contra `nexo.db` real (`alembic upgrade head`
   + `python -m app.db.seed_demo` + servidor corriendo).
 
 Todavía falta: el resto de endpoints que ya lista `frontend/js/dataSource.js`
@@ -127,7 +131,7 @@ asume ninguna comisión de Mercado Libre mientras no se configure — ver
 desde **`.xlsx` o `.csv`** (el dueño tiene su Excel, no hay que pedirle que
 lo convierta) — también vía `POST /api/costos/importar` para subirlo sin
 terminal. **Todavía no se cargó ningún costo real** porque no tenemos el
-Excel del dueño; el 24 de agosto de 2026 se reseteó `libreria_central.db` a
+Excel del dueño; el 24 de agosto de 2026 se reseteó `nexo.db` a
 un estado limpio (catálogo de prueba, cero costos, cero canales
 configurados) para que ningún dato de verificación quedara mezclado como si
 fuera información real. No se agregaron reglas de rentabilidad ni umbrales

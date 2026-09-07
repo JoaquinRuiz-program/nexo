@@ -49,7 +49,9 @@ class Settings(BaseSettings):
     # ver app/db/). Por defecto un archivo SQLite local, para no depender de
     # instalar nada en desarrollo/pruebas. En producción se sobreescribe con
     # una URL de PostgreSQL vía la variable de entorno DATABASE_URL.
-    database_url: str = "sqlite:///./libreria_central.db"
+    # 6 de septiembre de 2026 — el archivo cambió de nombre; si venís de una
+    # copia anterior del proyecto, ver backend/DATABASE.md.
+    database_url: str = "sqlite:///./nexo.db"
 
     # OAuth de Mercado Libre (app/adapters/mercadolibre.py) — se generan
     # registrando una aplicación en https://developers.mercadolibre.cl (o el
@@ -70,8 +72,7 @@ class Settings(BaseSettings):
     # HTTPS obligatorio).
     mercadolibre_redirect_uri: str = ""
     # Dominio de autorización — depende del país del vendedor (Chile por
-    # default, ya que la tienda real es lalibreriaonlineoficial.cl). Cambiar
-    # solo si la cuenta de Mercado Libre es de otro país.
+    # default). Cambiar solo si la cuenta de Mercado Libre es de otro país.
     mercadolibre_auth_domain: str = "auth.mercadolibre.cl"
 
     # OAuth de Google, SOLO para la integración de Google Sheets como fuente
@@ -195,10 +196,19 @@ def get_settings() -> Settings:
 
 
 def print_env_diagnostics(settings: Settings) -> None:
+    # 6 de septiembre de 2026 — release candidate: este mensaje tenía un
+    # simbolo Unicode ("warning sign") y acentos. En PRODUCCIÓN no existe
+    # ningún .env (las variables vienen del panel del hosting), así que es
+    # justo esta rama la que se ejecuta siempre — y si la salida estándar
+    # del contenedor no es UTF-8 (locale C/POSIX, que es lo habitual en
+    # imágenes mínimas), el print lanza UnicodeEncodeError DENTRO del
+    # handler de startup y FastAPI aborta el arranque: "Application startup
+    # failed". Un mensaje de diagnóstico nunca puede impedir que la
+    # aplicación levante, así que el texto queda en ASCII puro.
     if ENV_PATH.exists():
         print(f".env cargado desde: {ENV_PATH}")
     else:
-        print(f"⚠ No se encontró .env en {ENV_PATH}. Usando solo variables de entorno del proceso, si hay alguna.")
+        print(f"AVISO: no se encontro .env en {ENV_PATH}. Usando solo variables de entorno del proceso, si hay alguna.")
     print(f"  WOOCOMMERCE_URL={settings.woocommerce_url or '(no definida)'}")
     print(f"  WOOCOMMERCE_CONSUMER_KEY={mask_secret(settings.woocommerce_consumer_key)}")
     print(f"  WOOCOMMERCE_CONSUMER_SECRET={mask_secret(settings.woocommerce_consumer_secret)}")
