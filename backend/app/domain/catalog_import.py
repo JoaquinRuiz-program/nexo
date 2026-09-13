@@ -114,22 +114,62 @@ def detect_columns(headers: list[str]) -> ColumnMapping:
     return ColumnMapping(mapping=result)
 
 
+def _sin_separador_de_miles(cuerpo: str, separador: str) -> str:
+    """Resuelve un número que usa UN solo símbolo ambiguo (o solo puntos, o
+    solo comas): decide si es separador de miles o decimal.
+
+    Es separador de miles solo si el número entero calza exactamente con el
+    patrón "1 a 3 dígitos + grupos de exactamente 3" ("3.990", "1.234.567").
+    Cualquier otra cosa ("3.14", "3990.50", "0,5") es un decimal."""
+    grupos_de_miles = r"\d{1,3}(?:" + re.escape(separador) + r"\d{3})+"
+    if re.fullmatch(grupos_de_miles, cuerpo):
+        return cuerpo.replace(separador, "")
+    return cuerpo.replace(separador, ".")
+
+
 def _to_number(raw: str) -> float | None:
-    """Acepta "3990", "3.990", "3990.50" o formato chileno "3.990,50". None
-    si la celda está vacía; NaN-como-None si no se puede parsear (se
-    distingue de "vacío" en el caller)."""
+    """Acepta "3990", "3.990", "3990.50", "3.990,50" (chileno) y "3,990.50"
+    (inglés). None si la celda está vacía; None también si no se puede
+    parsear (se distingue de "vacío" en el caller).
+
+    13 de septiembre de 2026 — corregido un bug real, encontrado al importar
+    un catálogo de prueba con los precios exportados como TEXTO en formato
+    chileno: antes se intentaba `float(cleaned)` primero, y `float("3.990")`
+    NO falla — devuelve 3.9. Resultado: un catálogo entero importado con los
+    precios mil veces más bajos, en silencio y sin marcar ninguna fila como
+    error (el margen quedaba absurdo y Oportunidades recomendaba publicar a
+    pérdida). Ahora el separador se decide por la forma del número, nunca
+    dejando que `float()` resuelva la ambigüedad por su cuenta."""
     text = raw.strip()
     if not text:
         return None
     cleaned = re.sub(r"[^0-9.,\-]", "", text)
+    if not cleaned:
+        return None
+
+    negativo = cleaned.startswith("-")
+    cuerpo = cleaned.lstrip("-")
+
+    tiene_coma = "," in cuerpo
+    tiene_punto = "." in cuerpo
+    if tiene_coma and tiene_punto:
+        # Con los dos símbolos presentes no hay ambigüedad: el decimal es el
+        # que aparece ÚLTIMO ("3.990,50" chileno vs "3,990.50" inglés), y el
+        # otro es el separador de miles.
+        if cuerpo.rfind(",") > cuerpo.rfind("."):
+            cuerpo = cuerpo.replace(".", "").replace(",", ".")
+        else:
+            cuerpo = cuerpo.replace(",", "")
+    elif tiene_coma:
+        cuerpo = _sin_separador_de_miles(cuerpo, ",")
+    elif tiene_punto:
+        cuerpo = _sin_separador_de_miles(cuerpo, ".")
+
     try:
-        return float(cleaned)
-    except ValueError:
-        pass
-    try:
-        return float(cleaned.replace(".", "").replace(",", "."))
+        valor = float(cuerpo)
     except ValueError:
         return None
+    return -valor if negativo else valor
 
 
 @dataclass

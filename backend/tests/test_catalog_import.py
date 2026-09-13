@@ -6,6 +6,8 @@ particular (el pedido central de "catálogo universal", 24 de agosto de 2026).
 
 from __future__ import annotations
 
+import pytest
+
 from app.domain.catalog_import import build_rows, detect_columns, summarize_rows
 
 
@@ -101,6 +103,50 @@ def test_acepta_formato_chileno_de_numero():
     mapping = detect_columns(["Nombre", "Precio"])
     rows = build_rows([{"Nombre": "Producto", "Precio": "18.500,50"}], mapping)
     assert rows[0].precio == 18500.50
+
+
+@pytest.mark.parametrize(
+    "crudo, esperado",
+    [
+        # El caso que originó el bug (13 de septiembre de 2026): un precio
+        # chileno SIN decimales, exportado como texto. `float("3.990")` no
+        # falla — devuelve 3.99 — así que antes entraba mil veces más bajo,
+        # en silencio y sin marcar la fila como error.
+        ("3.990", 3990),
+        ("3.900", 3900),
+        ("1.234.567", 1234567),
+        ("12.345", 12345),
+        # Sin separadores.
+        ("3990", 3990),
+        # Punto decimal de verdad: NO son grupos de tres dígitos.
+        ("3990.50", 3990.50),
+        ("3.14", 3.14),
+        # Coma decimal sola.
+        ("0,5", 0.5),
+        ("18500,50", 18500.50),
+        # Los dos símbolos: manda el que aparece último.
+        ("3.990,50", 3990.50),   # chileno
+        ("3,990.50", 3990.50),   # inglés
+        ("1.234.567,89", 1234567.89),
+        # Con símbolo de moneda y espacios alrededor.
+        ("$ 3.990", 3990),
+        # Negativos.
+        ("-3.990", -3990),
+    ],
+)
+def test_separador_de_miles_vs_decimal(crudo, esperado):
+    mapping = detect_columns(["Nombre", "Precio"])
+    rows = build_rows([{"Nombre": "Producto", "Precio": crudo}], mapping)
+    assert rows[0].precio == esperado
+    assert rows[0].estado != "error"
+
+
+def test_numero_ilegible_sigue_siendo_bloqueante():
+    """El arreglo del separador no puede hacer que basura entre como válida."""
+    mapping = detect_columns(["Nombre", "Precio"])
+    rows = build_rows([{"Nombre": "Producto", "Precio": "1.000.00"}], mapping)
+    assert rows[0].precio is None
+    assert rows[0].estado == "error"
 
 
 def test_sku_duplicado_se_marca_en_ambas_filas():

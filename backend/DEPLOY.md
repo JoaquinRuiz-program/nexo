@@ -49,10 +49,10 @@ servidor, alcanza con que sea el mismo dominio.
 > - **Build command**: *vacío* (no hay build: es HTML/CSS/JS servido tal cual)
 > - **Output directory**: el mismo `frontend` (no `dist/`)
 >
-> La ruta es `frontend`, **no** `libreria-central/frontend`: la raíz del
-> repositorio git ES la carpeta `libreria-central` de tu máquina, así que
-> ese nombre no forma parte de ninguna ruta versionada y desaparece al
-> clonar. Poner `libreria-central/frontend` haría fallar el despliegue con
+> La ruta es `frontend` **a secas**, sin ningún prefijo: la raíz del
+> repositorio git es la carpeta del proyecto en tu máquina, así que su
+> nombre no forma parte de ninguna ruta versionada y desaparece al clonar.
+> Anteponerle el nombre de esa carpeta haría fallar el despliegue con
 > "directory not found".
 >
 > Red de seguridad (6 de septiembre de 2026): si igual se apunta el
