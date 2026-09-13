@@ -136,12 +136,15 @@ def test_borrador_de_producto_no_rentable_explica_por_que(client, db_session, a_
     assert any("negativa" in a for a in body["advertencias"])
 
 
-def test_borrador_sin_imagen_advierte_pero_no_bloquea(client, db_session, a_store):
+def test_borrador_sin_imagen_no_dice_listo_para_publicar(client, db_session, a_store):
+    """13 de septiembre de 2026 — Mercado Libre no acepta publicar sin foto
+    (ver confirmar, que responde 400), asi que el borrador nunca puede
+    anunciar "listo para publicar" mientras falte la imagen."""
     variant_id = _producto(db_session, a_store, sku="C", nombre="Producto sin imagen", marca=None, categoria="X", precio=10000, costo=5000, con_imagen=False)
 
     body = client.get(f"/api/publicaciones/borrador/{variant_id}", params={"requiere_stock": "false"}).json()
-    assert "Sin imagen cargada." in body["advertencias"]
-    assert body["estado"] == "listo_para_publicar"
+    assert any("Mercado Libre no permite publicar sin" in a for a in body["advertencias"])
+    assert body["estado"] == "requiere_revision"
 
 
 def test_borrador_de_producto_inexistente_da_404(client, a_store):
@@ -272,7 +275,11 @@ def test_preparar_sin_credenciales_de_la_app_devuelve_400(client, db_session, a_
 
     res = client.post(f"/api/publicaciones/{variant_id}/mercadolibre/preparar")
     assert res.status_code == 400
-    assert "MERCADOLIBRE_CLIENT_ID" in res.json()["detail"]
+    detalle = res.json()["detail"]
+    # El cliente recibe un mensaje suyo, no la configuracion del servidor.
+    assert "Mercado Libre todavía no está habilitada" in detalle
+    assert "MERCADOLIBRE_CLIENT_ID" not in detalle
+    assert ".env" not in detalle
 
 
 def test_preparar_variante_sin_precio_devuelve_400_accionable(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):

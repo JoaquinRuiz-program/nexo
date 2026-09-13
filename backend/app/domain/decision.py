@@ -52,6 +52,16 @@ REVISAR = "revisar"
 NO_CONVIENE = "no_conviene"
 
 
+def _clp(monto: float) -> str:
+    """Pesos chilenos: punto como separador de miles, sin decimales.
+
+    13 de septiembre de 2026 — antes estos mensajes usaban `{:,.0f}`, que
+    produce el formato ingles ("$25,806") y quedaba a la vista del cliente,
+    inconsistente con el resto de la aplicacion ("$25.806")."""
+    return f"${monto:,.0f}".replace(",", ".")
+
+
+
 @dataclass(frozen=True)
 class DecisionNegocio:
     decision: str  # CONVIENE | REVISAR | NO_CONVIENE
@@ -107,7 +117,7 @@ def evaluar_decision(
             razon=(
                 "El margen objetivo configurado no se puede alcanzar con ningún precio "
                 "(la comisión del canal más el margen objetivo superan el 100% del precio). "
-                f"El precio mínimo rentable es ${recomendacion.precio_minimo_rentable:,.0f}."
+                f"El precio mínimo rentable es {_clp(recomendacion.precio_minimo_rentable)}."
             ),
             **base,
         )
@@ -144,8 +154,8 @@ def evaluar_decision(
         return DecisionNegocio(
             decision=REVISAR,
             razon=(
-                f"El precio recomendado (${recomendacion.precio_recomendado:,.0f}) queda por encima "
-                f"del rango de precios de la competencia (hasta ${analisis_competencia.rango_precio_maximo:,.0f}). "
+                f"El precio recomendado ({_clp(recomendacion.precio_recomendado)}) queda por encima "
+                f"del rango de precios de la competencia (hasta {_clp(analisis_competencia.rango_precio_maximo)}). "
                 "Es rentable, pero podría costar más venderlo."
             ),
             **base,
@@ -155,12 +165,12 @@ def evaluar_decision(
     #    con margen mínimo ya confirmado en el paso 3/4) -> conviene.
     if sin_dato_de_competencia:
         razon = (
-            f"El precio recomendado (${recomendacion.precio_recomendado:,.0f}) alcanza el margen "
+            f"El precio recomendado ({_clp(recomendacion.precio_recomendado)}) alcanza el margen "
             "objetivo y el margen mínimo configurado. No hay datos de competencia disponibles."
         )
     else:
         razon = (
-            f"El precio recomendado (${recomendacion.precio_recomendado:,.0f}) alcanza el margen "
+            f"El precio recomendado ({_clp(recomendacion.precio_recomendado)}) alcanza el margen "
             "objetivo y es competitivo frente al mercado."
         )
     return DecisionNegocio(decision=CONVIENE, razon=razon, **base)

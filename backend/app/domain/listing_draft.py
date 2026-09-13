@@ -76,15 +76,29 @@ def build_draft(
         },
         "clasificacion": clasificacion,
         "razonClasificacion": row.get("razon"),
-        "estado": _ESTADO_POR_CLASIFICACION.get(clasificacion, "requiere_revision"),
+        "estado": _estado(clasificacion, imagenes),
         "advertencias": _advertencias(clasificacion, row.get("razon"), categoria, imagenes),
     }
+
+
+def _estado(clasificacion: str, imagenes: list[str]) -> str:
+    """13 de septiembre de 2026 — sin imagen NUNCA puede decir "listo para
+    publicar": Mercado Libre no acepta una publicación sin al menos una foto
+    y el backend la rechaza (ver publicaciones.py::confirmar). Antes el
+    estado salía solo de la rentabilidad, así que un producto rentable sin
+    imagen se mostraba como listo y al intentar publicarlo fallaba."""
+    estado = _ESTADO_POR_CLASIFICACION.get(clasificacion, "requiere_revision")
+    # Solo degrada "listo para publicar": si el producto ademas no es
+    # rentable, "no recomendado" es la senal mas util y tiene que ganar.
+    if estado == "listo_para_publicar" and not imagenes:
+        return "requiere_revision"
+    return estado
 
 
 def _advertencias(clasificacion: str, razon: Optional[str], categoria: Optional[str], imagenes: list[str]) -> list[str]:
     avisos: list[str] = []
     if not imagenes:
-        avisos.append("Sin imagen cargada.")
+        avisos.append("Falta una imagen — Mercado Libre no permite publicar sin al menos una foto.")
     if not categoria:
         avisos.append("Sin categoría — se recomienda completarla antes de publicar.")
     if clasificacion != "rentable" and razon:

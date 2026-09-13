@@ -76,13 +76,18 @@ def _require_configured(cfg: MercadoPagoConfig, settings: Settings) -> None:
     if not settings.mercadopago_webhook_secret:
         faltantes.append("MERCADOPAGO_WEBHOOK_SECRET")
     if faltantes:
+        # El detalle operativo va al log del servidor, nunca al cliente
+        # (mismo criterio que mercadolibre.py y google_sheets.py).
+        print(
+            f"AVISO: no se puede cobrar — faltan en backend/.env: {', '.join(faltantes)}. "
+            "Son las credenciales de la cuenta de Mercado Pago de NEXO "
+            "(https://www.mercadopago.cl/developers/panel, una sola vez para toda la plataforma)."
+        )
         raise HTTPException(
             status_code=400,
             detail=(
-                "Faltan datos de Mercado Pago en backend/.env: "
-                f"{', '.join(faltantes)}. Son las credenciales de la cuenta de Mercado Pago "
-                "de NEXO (se crean UNA sola vez en https://www.mercadopago.cl/developers/panel, "
-                "nunca por cada empresa que use Nexo) — no se pueden inventar."
+                "El pago en línea todavía no está habilitado en Nexo. "
+                "Escribinos desde Ayuda y soporte y coordinamos el pago con vos."
             ),
         )
 

@@ -8,7 +8,7 @@ cuando alcanza_margen_objetivo=True)."""
 from __future__ import annotations
 
 from app.domain.competencia import AnalisisCompetencia
-from app.domain.decision import CONVIENE, NO_CONVIENE, REVISAR, evaluar_decision
+from app.domain.decision import CONVIENE, NO_CONVIENE, REVISAR, _clp, evaluar_decision
 from app.domain.pricing import recomendar_precio
 from app.domain.profitability import ChannelCosts
 
@@ -134,3 +134,27 @@ def test_decision_es_pura_no_muta_los_objetos_de_entrada():
     evaluar_decision(recomendacion, competencia)
     assert recomendacion == snapshot_recomendacion
     assert competencia == snapshot_competencia
+
+
+# ------------------------------------------------------------------
+# Formato de moneda — 13 de septiembre de 2026. Estos textos los lee el
+# cliente en la pantalla de producto; antes usaban "{:,.0f}", que produce
+# el formato ingles ("$25,806") y quedaba inconsistente con el resto de la
+# aplicacion, que muestra pesos chilenos ("$25.806").
+# ------------------------------------------------------------------
+
+
+def test_los_montos_van_en_formato_chileno():
+    assert _clp(25806) == "$25.806"
+    assert _clp(1234567) == "$1.234.567"
+    assert _clp(990) == "$990"
+    assert _clp(25806.4) == "$25.806"  # sin decimales
+
+
+def test_la_razon_que_ve_el_cliente_usa_punto_de_miles():
+    competencia = AnalisisCompetencia(hay_competencia=False, precio_ganador=None, rango_precio_minimo=None, rango_precio_maximo=None)
+    recomendacion = recomendar_precio(
+        costo=12500.0, channel_costs=CHANNEL, margen_objetivo_pct=25.0, margen_minimo_pct=10.0, analisis_competencia=competencia
+    )
+    razon = evaluar_decision(recomendacion, competencia).razon
+    assert "," not in razon.split("$")[1][:10]  # ningun separador de miles con coma

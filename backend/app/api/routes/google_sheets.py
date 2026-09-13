@@ -114,16 +114,18 @@ def _require_configured(cfg: GoogleSheetsConfig, settings: Settings) -> None:
     if not settings.token_encryption_key:
         faltantes.append("TOKEN_ENCRYPTION_KEY")
     if faltantes:
+        # El detalle operativo va al log del servidor, nunca al cliente
+        # (mismo criterio que mercadolibre.py y pagos.py).
+        print(
+            f"AVISO: no se puede conectar Google Sheets — faltan en backend/.env: {', '.join(faltantes)}. "
+            "GOOGLE_* son las credenciales de la aplicación OAuth de NEXO en Google Cloud Console "
+            "(una sola vez para toda la plataforma). TOKEN_ENCRYPTION_KEY se genera local (ver .env.example)."
+        )
         raise HTTPException(
             status_code=400,
             detail=(
-                "Faltan datos de Google en backend/.env: "
-                f"{', '.join(faltantes)}. GOOGLE_* son las credenciales de la "
-                "aplicación OAuth de NEXO en Google Cloud Console (se crean UNA "
-                "sola vez, nunca por cada empresa que use Nexo) — no son datos "
-                "de la cuenta de Google de ningún cliente. TOKEN_ENCRYPTION_KEY "
-                "se genera local (ver .env.example). Ninguno de los dos se "
-                "puede inventar."
+                "La conexión con Google Sheets todavía no está habilitada en Nexo. "
+                "Mientras tanto podés importar tu catálogo desde un Excel o CSV."
             ),
         )
 

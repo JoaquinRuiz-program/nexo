@@ -110,9 +110,11 @@ window.LC = window.LC || {};
   }
 
   function sourcePill() {
-    if (state.modoBackend === "real") {
-      return `<div class="flex justify-end mb-2"><span class="source-pill source-pill--real">Backend real conectado</span></div>`;
-    }
+    // 13 de septiembre de 2026 — en modo real no se muestra ninguna
+    // etiqueta: "Backend real conectado" es vocabulario de desarrollo y no
+    // le dice nada al cliente. El aviso de modo demostracion si se queda,
+    // porque ahi si hay algo que advertir.
+    if (state.modoBackend === "real") return "";
     return `<div class="flex justify-end mb-2"><span class="source-pill source-pill--demo">Modo demostración — backend no disponible</span></div>`;
   }
 

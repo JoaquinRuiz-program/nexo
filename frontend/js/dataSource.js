@@ -171,7 +171,7 @@ window.LC = window.LC || {};
       return {
         mercadoLibre: estadoConexion(resMl, (d) => `Cuenta ${d.cuentaExternaId}`),
         googleSheets: estadoConexion(resGs, (d) => (d.spreadsheetTitulo ? `Catálogo: ${d.spreadsheetTitulo}` : "Conectado")),
-        baseDeDatos: { estado: "conectada", detalle: "Backend real conectado" },
+        baseDeDatos: { estado: "conectada", detalle: "Funcionando correctamente" },
       };
     }
     return {

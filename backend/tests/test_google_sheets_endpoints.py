@@ -146,15 +146,16 @@ def test_estado_sin_conexion_ni_credenciales(client, a_store, monkeypatch):
     assert body["credencialesConfiguradas"] is False
 
 
-def test_conectar_sin_credenciales_devuelve_400_con_el_detalle_de_lo_que_falta(client, a_store, monkeypatch):
+def test_conectar_sin_credenciales_no_le_filtra_la_configuracion_al_cliente(client, a_store, monkeypatch):
+    """Mismo criterio que mercadolibre.py y pagos.py (13 de septiembre de
+    2026): el detalle operativo va al log del servidor, nunca al cliente."""
     monkeypatch.setattr("app.api.routes.google_sheets.get_settings", lambda: UNCONFIGURED_SETTINGS)
     res = client.get("/api/google-sheets/conectar")
     assert res.status_code == 400
     detalle = res.json()["detail"]
-    assert "GOOGLE_CLIENT_ID" in detalle
-    assert "GOOGLE_CLIENT_SECRET" in detalle
-    assert "GOOGLE_REDIRECT_URI" in detalle
-    assert "TOKEN_ENCRYPTION_KEY" in detalle
+    assert "Google Sheets todavía no está habilitada" in detalle
+    for secreto in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "TOKEN_ENCRYPTION_KEY", ".env"):
+        assert secreto not in detalle
 
 
 def test_conectar_con_credenciales_devuelve_la_url_de_autorizacion_real(client, a_store, monkeypatch):

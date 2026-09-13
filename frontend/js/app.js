@@ -531,13 +531,10 @@ window.LC = window.LC || {};
 
     main.innerHTML = `
       <div class="page-wrap app-fade">
-        <div class="rounded-xl border ${esReal ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200" : "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200"} px-4 py-3 mb-6 text-sm flex items-center gap-2">
-          <span>${
-            esReal
-              ? "Catálogo real conectado al backend — el bloque de Mercado Libre y \"productos más vendidos\" abajo sigue siendo de ejemplo hasta conectar la sincronización."
-              : "Estás viendo datos de demostración (catálogo y ventas de Mercado Libre). Importa tu catálogo real (Excel, CSV o Google Sheets) y conecta tu cuenta de Mercado Libre para ver tu negocio real."
-          }</span>
-        </div>
+        ${esReal ? "" : `
+        <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200 px-4 py-3 mb-6 text-sm flex items-center gap-2">
+          <span>Estás viendo datos de demostración (catálogo y ventas de Mercado Libre). Importa tu catálogo real (Excel, CSV o Google Sheets) y conecta tu cuenta de Mercado Libre para ver tu negocio real.</span>
+        </div>`}
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           <div class="stat-card">
@@ -563,7 +560,7 @@ window.LC = window.LC || {};
           <div class="stat-card">
             <p class="stat-label">Última actualización</p>
             <p class="stat-value stat-value--sm">${formatDate(resumen.ultimaActualizacion)}</p>
-            <p class="stat-hint">${esReal ? "Catálogo real" : "Datos de demostración"}</p>
+            <p class="stat-hint">${esReal ? "Tu catálogo" : "Datos de demostración"}</p>
           </div>
         </div>
 
@@ -607,7 +604,7 @@ window.LC = window.LC || {};
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
           <div class="panel-card">
             <h3 class="panel-title">Estado del sistema</h3>
-            <p class="panel-subtitle mb-2">${esReal ? "Base de datos real conectada — Mercado Libre y Google Sheets según su estado real." : "Ninguna de estas conexiones está activa todavía."}</p>
+            <p class="panel-subtitle mb-2">${esReal ? "Así están hoy tus conexiones." : "Ninguna de estas conexiones está activa todavía."}</p>
             <div>
               ${statusRow("Mercado Libre", estado.mercadoLibre)}
               ${statusRow("Google Sheets", estado.googleSheets)}
@@ -636,7 +633,7 @@ window.LC = window.LC || {};
           </div>
           <div class="panel-card">
             <h3 class="panel-title">Accesos rápidos</h3>
-            <p class="panel-subtitle mb-3">${esReal ? "El catálogo es real; las ventas de Mercado Libre de abajo siguen siendo de ejemplo." : "Todo lo de acá usa datos de ejemplo por ahora."}</p>
+            <p class="panel-subtitle mb-3">${esReal ? "Atajos a lo que más vas a usar." : "Todo lo de acá usa datos de ejemplo por ahora."}</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               ${quickLink("box", "Ver productos", "/productos")}
               ${quickLink("bulb", "Oportunidades", "/oportunidades")}
@@ -1685,7 +1682,7 @@ window.LC = window.LC || {};
             </div>
           </div>
           <p class="text-sm text-slate-500 dark:text-slate-400 mt-3">
-            Tu cuenta está conectada correctamente. Las ventas, pedidos e ingresos de abajo siguen siendo de ejemplo hasta que importes tus ventas reales.
+            Tu cuenta está conectada correctamente. Cuando importes tus ventas de Mercado Libre las vas a ver acá.
           </p>
         </div>`;
     }

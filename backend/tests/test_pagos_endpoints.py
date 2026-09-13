@@ -162,12 +162,17 @@ def test_planes_requiere_sesion(client):
 # ------------------------------------------------------------------
 
 
-def test_iniciar_sin_credenciales_devuelve_400_con_el_detalle(client, a_store, monkeypatch):
+def test_iniciar_sin_credenciales_no_le_filtra_la_configuracion_al_cliente(client, a_store, monkeypatch):
+    """Un cliente que aprieta "Elegir y pagar" no puede recibir los nombres
+    de las variables de entorno ni la ruta del .env (13 de septiembre de
+    2026) — el detalle operativo va al log del servidor."""
     monkeypatch.setattr("app.api.routes.pagos.get_settings", lambda: UNCONFIGURED_SETTINGS)
     res = client.post("/api/pagos/iniciar", json={"planCode": "basico", "ciclo": "mensual"})
     assert res.status_code == 400
-    assert "MERCADOPAGO_ACCESS_TOKEN" in res.json()["detail"]
-    assert "MERCADOPAGO_WEBHOOK_SECRET" in res.json()["detail"]
+    detalle = res.json()["detail"]
+    assert "El pago en línea todavía no está habilitado" in detalle
+    for secreto in ("MERCADOPAGO_ACCESS_TOKEN", "MERCADOPAGO_WEBHOOK_SECRET", ".env"):
+        assert secreto not in detalle
 
 
 def test_iniciar_ciclo_invalido_da_400(client, a_store, monkeypatch):

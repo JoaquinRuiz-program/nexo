@@ -151,16 +151,23 @@ def _require_configured(cfg: MercadoLibreConfig, settings: Settings) -> None:
     if not settings.token_encryption_key:
         faltantes.append("TOKEN_ENCRYPTION_KEY")
     if faltantes:
+        # 13 de septiembre de 2026 — el detalle operativo va al LOG DEL
+        # SERVIDOR, nunca al cliente: antes este mensaje se le mostraba tal
+        # cual al dueño de la empresa, con rutas de archivos, nombres de
+        # variables de entorno y la instrucción de ir a crear credenciales.
+        # Eso es trabajo de quien opera Nexo, no del cliente. Mismo criterio
+        # en google_sheets.py y pagos.py.
+        print(
+            f"AVISO: no se puede conectar Mercado Libre — faltan en backend/.env: {', '.join(faltantes)}. "
+            "MERCADOLIBRE_* son las credenciales de la aplicación desarrolladora de NEXO "
+            "(https://developers.mercadolibre.cl, una sola vez para toda la plataforma). "
+            "TOKEN_ENCRYPTION_KEY se genera local (ver .env.example)."
+        )
         raise HTTPException(
             status_code=400,
             detail=(
-                "Faltan datos de Mercado Libre en backend/.env: "
-                f"{', '.join(faltantes)}. MERCADOLIBRE_* son las credenciales de "
-                "la aplicación desarrolladora de NEXO (se crean UNA sola vez en "
-                "https://developers.mercadolibre.cl, nunca por cada empresa que "
-                "use Nexo) — no son datos de la cuenta vendedora de ningún "
-                "cliente. TOKEN_ENCRYPTION_KEY se genera local (ver .env.example). "
-                "Ninguno de los dos se puede inventar."
+                "La conexión con Mercado Libre todavía no está habilitada en Nexo. "
+                "Ya estamos al tanto — si la necesitás pronto, escribinos desde Ayuda y soporte."
             ),
         )
 
