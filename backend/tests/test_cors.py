@@ -53,3 +53,37 @@ def test_preflight_desde_un_origen_no_permitido_se_rechaza():
         headers={"Origin": "https://sitio-cualquiera.com", "Access-Control-Request-Method": "GET"},
     )
     assert "access-control-allow-origin" not in {k.lower() for k in res.headers.keys()}
+
+
+# ------------------------------------------------------------------
+# Cabeceras de seguridad — 13 de septiembre de 2026. Antes el backend solo
+# tenía el middleware de CORS: cualquier sitio podía meter Nexo en un
+# <iframe> y montarle botones falsos encima (clickjacking).
+# ------------------------------------------------------------------
+
+
+def test_toda_respuesta_trae_las_cabeceras_de_seguridad():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    res = TestClient(app).get("/api/health")
+    assert res.headers["x-frame-options"] == "DENY"
+    assert res.headers["x-content-type-options"] == "nosniff"
+    assert res.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert "frame-ancestors 'none'" in res.headers["content-security-policy"]
+
+
+def test_hsts_solo_cuando_la_cookie_es_secure(monkeypatch):
+    """Mandar Strict-Transport-Security desde el http://localhost de
+    desarrollo hace que el navegador se niegue después a abrir localhost
+    por HTTP, y revertirlo es molesto."""
+    from fastapi.testclient import TestClient
+    from app.config import Settings
+    from app.main import app
+
+    res = TestClient(app).get("/api/health")
+    assert "strict-transport-security" not in res.headers
+
+    monkeypatch.setattr("app.main.get_settings", lambda: Settings(session_cookie_secure=True))
+    res = TestClient(app).get("/api/health")
+    assert res.headers["strict-transport-security"].startswith("max-age=")

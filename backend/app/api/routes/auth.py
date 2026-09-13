@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
@@ -32,6 +32,7 @@ from app.config import get_settings
 from app.db.models import AuthSession, Store, StoreSettings, User
 from app.db.session import get_db
 from app.domain.plans import crear_suscripcion_inicial
+from app.domain.rate_limit import esta_bloqueado, ip_del_request, registrar_exito, registrar_fallo
 from app.domain.security import generate_session_token, hash_password, hash_session_token, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -167,12 +168,25 @@ def registro(body: RegistroRequest, response: Response, db: Session = Depends(ge
 
 
 @router.post("/login")
-def login(body: LoginRequest, response: Response, db: Session = Depends(get_db)) -> dict:
+def login(body: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)) -> dict:
     email = (body.email or "").strip().lower()
+    ip = ip_del_request(request)
+
+    # 13 de septiembre de 2026 — antes esto aceptaba intentos ilimitados.
+    # Se corta ANTES de tocar la base y antes de verificar el hash: bcrypt
+    # es caro a propósito, y dejar que un atacante lo dispare mil veces por
+    # segundo es además una forma barata de tirar abajo el servidor.
+    if esta_bloqueado(email=email, ip=ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Demasiados intentos fallidos. Esperá unos minutos antes de volver a intentar.",
+        )
+
     usuario = db.query(User).filter_by(email=email).first()
     # Mismo mensaje y mismo código de estado tanto si el email no existe
     # como si la contraseña está mal — ver docstring del módulo.
     if usuario is None or not verify_password(body.password, usuario.password_hash):
+        registrar_fallo(email=email, ip=ip)
         raise HTTPException(status_code=401, detail=_CREDENCIALES_INVALIDAS)
     # 30 de agosto de 2026 — panel admin de Nexo: `User.status` ya existe
     # con el valor "suspended" desde antes, pero nada lo aplicaba. Ahora sí
@@ -188,6 +202,7 @@ def login(body: LoginRequest, response: Response, db: Session = Depends(get_db))
         # puede no tener tienda propia (no es un cliente).
         raise HTTPException(status_code=500, detail="Tu cuenta no tiene ninguna empresa asociada todavía.")
 
+    registrar_exito(email=email, ip=ip)
     _crear_sesion(db, response, usuario, body.remember_me)
     return _sesion_publica(usuario, tienda)
 
@@ -215,6 +230,7 @@ class CambiarPasswordRequest(BaseModel):
 @router.post("/cambiar-password")
 def cambiar_password(
     body: CambiarPasswordRequest,
+    request: Request,
     db: Session = Depends(get_db),
     usuario: User = Depends(get_current_user),
     sesion: AuthSession = Depends(get_current_session),
@@ -233,7 +249,13 @@ def cambiar_password(
     está usando ahora se mantiene, para no obligarlo a entrar de nuevo justo
     después de cambiarla). Es lo que se espera de un cambio de contraseña:
     si alguien más había quedado dentro, deja de estarlo."""
+    # Mismo límite que el login: con una sesión robada se podría adivinar la
+    # contraseña actual a fuerza bruta para después cambiarla.
+    ip = ip_del_request(request)
+    if esta_bloqueado(email=usuario.email, ip=ip):
+        raise HTTPException(status_code=429, detail="Demasiados intentos fallidos. Esperá unos minutos antes de volver a intentar.")
     if not verify_password(body.password_actual, usuario.password_hash):
+        registrar_fallo(email=usuario.email, ip=ip)
         raise HTTPException(status_code=400, detail="La contraseña actual no es correcta.")
     if body.password_actual == body.password_nueva:
         raise HTTPException(status_code=400, detail="La contraseña nueva tiene que ser distinta de la actual.")

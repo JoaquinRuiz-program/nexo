@@ -87,6 +87,40 @@ app.add_middleware(
     allow_credentials=True,
 )
 
+# 13 de septiembre de 2026 — cabeceras de seguridad. Antes de esto el
+# backend solo tenía el middleware de CORS: cualquier sitio podía meter
+# Nexo en un <iframe> y montarle botones falsos encima (clickjacking), y
+# nada le decía al navegador que forzara HTTPS en las visitas siguientes.
+#
+# `Strict-Transport-Security` va SOLO cuando la aplicación se sabe detrás
+# de HTTPS (settings.session_cookie_secure, la misma señal que ya gobierna
+# la cookie `Secure`): mandarlo desde el http://localhost de desarrollo
+# haría que el navegador se niegue después a abrir localhost por HTTP, y es
+# molesto de revertir.
+#
+# La CSP es la más restrictiva posible (`default-src 'none'`) porque este
+# servicio devuelve JSON y archivos subidos, nunca páginas HTML: el
+# frontend se sirve aparte (ver DEPLOY.md) y tiene sus propias necesidades
+# —Tailwind y Google Fonts— que no aplican acá.
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+    "Cross-Origin-Resource-Policy": "cross-origin",
+}
+
+
+@app.middleware("http")
+async def agregar_cabeceras_de_seguridad(request, call_next):  # noqa: ANN001, ANN201
+    respuesta = await call_next(request)
+    for nombre, valor in _SECURITY_HEADERS.items():
+        respuesta.headers.setdefault(nombre, valor)
+    if get_settings().session_cookie_secure:
+        respuesta.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return respuesta
+
+
 # Orden importante: productos.router registra /api/productos/reporte antes
 # de que productos_db.router registre /api/productos/{variant_id} — así una
 # request a /reporte siempre matchea la ruta literal primero.

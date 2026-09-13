@@ -283,6 +283,11 @@ release candidate). El orden importa: cada paso asume el anterior.
 - [ ] `alembic upgrade head` ejecutado contra la base vacía de producción.
 - [ ] `alembic current` devuelve la última revisión.
 
+### Seguridad (13 de septiembre de 2026)
+- [ ] `pip-audit` sin vulnerabilidades conocidas antes de desplegar (`python -m pip install pip-audit && python -m pip_audit`). Se corrió por primera vez el 13 de septiembre: Pillow tenía 40+ CVEs y es justo la librería que abre las imágenes que sube un cliente — se actualizó a 12.3.0.
+- [ ] Confirmar que las cabeceras de seguridad llegan en producción: `curl -I https://api.tudominio.cl/api/health` tiene que traer `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Content-Security-Policy` y —solo con `SESSION_COOKIE_SECURE=true`— `Strict-Transport-Security`.
+- [ ] El límite de intentos de login (`app/domain/rate_limit.py`) vive en memoria del proceso: **otra razón más para `--workers 1`**. Con varias réplicas cada una contaría por su cuenta y el límite se multiplica.
+
 ### Verificación de que levantó
 - [ ] `GET https://api.tudominio.cl/api/health` → `{"status":"ok"}`.
 - [ ] Los logs de arranque muestran las variables con los secretos **enmascarados** (nunca en claro).

@@ -21,6 +21,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.models import AuthSession, Store, User
 from app.db.session import get_db
+from app.domain.rate_limit import MAX_FALLOS_POR_EMAIL, reiniciar as reiniciar_intentos
 from app.domain.security import generate_session_token, hash_password, hash_session_token
 from app.main import app
 
@@ -30,6 +31,15 @@ def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):  # noqa: A
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
+
+
+@pytest.fixture(autouse=True)
+def _sin_intentos_previos():
+    """El límite de intentos vive en memoria del proceso: sin esto, un test
+    que agota los intentos dejaría bloqueados a los que corren después."""
+    reiniciar_intentos()
+    yield
+    reiniciar_intentos()
 
 
 @pytest.fixture()
@@ -311,3 +321,77 @@ def test_cambiar_password_cierra_las_demas_sesiones_pero_no_la_propia(client, db
 def test_sin_sesion_no_se_puede_cambiar_la_password(client):
     res = client.post("/api/auth/cambiar-password", json={"password_actual": "x" * 9, "password_nueva": "y" * 9})
     assert res.status_code == 401
+
+
+# ------------------------------------------------------------------
+# Límite de intentos fallidos — 13 de septiembre de 2026. Antes de esto
+# /api/auth/login aceptaba intentos ilimitados: se podían probar
+# contraseñas a máquina indefinidamente.
+# ------------------------------------------------------------------
+
+
+def test_despues_de_varios_fallos_el_login_se_bloquea(client, db_session):
+    client.post("/api/auth/registro", json={**REGISTRO_VALIDO, "email": "fuerzabruta@empresa.cl"})
+    client.post("/api/auth/logout")
+
+    for _ in range(MAX_FALLOS_POR_EMAIL):
+        res = client.post("/api/auth/login", json={"email": "fuerzabruta@empresa.cl", "password": "no-es-esta"})
+        assert res.status_code == 401
+
+    res = client.post("/api/auth/login", json={"email": "fuerzabruta@empresa.cl", "password": "no-es-esta"})
+    assert res.status_code == 429
+    assert "Demasiados intentos" in res.json()["detail"]
+
+
+def test_bloqueado_no_entra_ni_con_la_contrasena_correcta(client, db_session):
+    """Es el punto: si bastara con acertar, el atacante seguiría probando."""
+    client.post("/api/auth/registro", json={**REGISTRO_VALIDO, "email": "bloqueada@empresa.cl", "password": "contraseña-correcta-1"})
+    client.post("/api/auth/logout")
+    for _ in range(MAX_FALLOS_POR_EMAIL):
+        client.post("/api/auth/login", json={"email": "bloqueada@empresa.cl", "password": "mal"})
+
+    res = client.post("/api/auth/login", json={"email": "bloqueada@empresa.cl", "password": "contraseña-correcta-1"})
+    assert res.status_code == 429
+
+
+def test_un_login_correcto_limpia_el_contador(client, db_session):
+    """Quien se equivoca un par de veces y después entra bien no arrastra
+    nada: no queda a un fallo de quedarse afuera."""
+    client.post("/api/auth/registro", json={**REGISTRO_VALIDO, "email": "olvidadiza@empresa.cl", "password": "contraseña-correcta-1"})
+    client.post("/api/auth/logout")
+
+    for _ in range(MAX_FALLOS_POR_EMAIL - 1):
+        client.post("/api/auth/login", json={"email": "olvidadiza@empresa.cl", "password": "mal"})
+    assert client.post("/api/auth/login", json={"email": "olvidadiza@empresa.cl", "password": "contraseña-correcta-1"}).status_code == 200
+    client.post("/api/auth/logout")
+
+    # El contador volvió a cero: se pueden volver a fallar los mismos intentos.
+    for _ in range(MAX_FALLOS_POR_EMAIL - 1):
+        assert client.post("/api/auth/login", json={"email": "olvidadiza@empresa.cl", "password": "mal"}).status_code == 401
+
+
+def test_el_bloqueo_es_por_cuenta_no_deja_afuera_a_las_demas(client, db_session):
+    """Un ataque contra una cuenta no puede dejar sin entrar a otro cliente
+    (la cubeta por IP es mucho más alta, ver domain/rate_limit.py)."""
+    client.post("/api/auth/registro", json={**REGISTRO_VALIDO, "email": "atacada@empresa.cl"})
+    client.post("/api/auth/logout")
+    client.post("/api/auth/registro", json={**REGISTRO_VALIDO, "email": "tranquila@empresa.cl", "password": "contraseña-correcta-1"})
+    client.post("/api/auth/logout")
+
+    for _ in range(MAX_FALLOS_POR_EMAIL + 1):
+        client.post("/api/auth/login", json={"email": "atacada@empresa.cl", "password": "mal"})
+
+    assert client.post("/api/auth/login", json={"email": "tranquila@empresa.cl", "password": "contraseña-correcta-1"}).status_code == 200
+
+
+def test_cambiar_password_tambien_esta_limitado(client, db_session):
+    """Con una sesión robada se podría adivinar la contraseña actual a
+    fuerza bruta para después cambiarla."""
+    client.post("/api/auth/registro", json={**REGISTRO_VALIDO, "email": "cambio-limitado@empresa.cl", "password": "contraseña-correcta-1"})
+
+    for _ in range(MAX_FALLOS_POR_EMAIL):
+        res = client.post("/api/auth/cambiar-password", json={"password_actual": "mal", "password_nueva": "contraseña-nueva-2"})
+        assert res.status_code == 400
+
+    res = client.post("/api/auth/cambiar-password", json={"password_actual": "mal", "password_nueva": "contraseña-nueva-2"})
+    assert res.status_code == 429
