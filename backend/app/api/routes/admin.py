@@ -95,7 +95,19 @@ def _registrar_accion_admin(db: Session, admin: User, action: str, *, store_id: 
 
 @router.get("/clientes")
 def listar_clientes(db: Session = Depends(get_db), _admin: User = Depends(require_nexo_admin)) -> list[dict]:
-    tiendas = db.query(Store).order_by(Store.created_at.desc()).all()
+    """13 de septiembre de 2026 — la empresa propia de un administrador de
+    Nexo NO aparece en "Clientes". Antes si aparecia, y quedaba listada como
+    un cliente mas siendo que la mitad de las acciones del panel la rechazan
+    (entrar_a_ver_empresa responde 400 sobre la cuenta de un admin). El
+    administrador figura en la pestana "Usuarios" con su rol; para ver su
+    propia empresa entra a su cuenta como cualquier otro usuario."""
+    tiendas = (
+        db.query(Store)
+        .join(User, Store.owner_user_id == User.id)
+        .filter(User.is_nexo_admin.is_(False))
+        .order_by(Store.created_at.desc())
+        .all()
+    )
     filas = []
     for tienda in tiendas:
         cantidad_productos = db.query(func.count(Product.id)).filter(Product.store_id == tienda.id).scalar() or 0
@@ -116,7 +128,7 @@ def listar_clientes(db: Session = Depends(get_db), _admin: User = Depends(requir
 
 
 @router.get("/usuarios")
-def listar_usuarios(db: Session = Depends(get_db), _admin: User = Depends(require_nexo_admin)) -> list[dict]:
+def listar_usuarios(db: Session = Depends(get_db), admin: User = Depends(require_nexo_admin)) -> list[dict]:
     """Vista cruzada de usuarios (segunda pestaña del panel, pedida aparte
     de "Clientes" — hoy son casi la misma información porque cada tienda
     tiene un único dueño, pero se arma como su propia consulta para no
@@ -131,11 +143,76 @@ def listar_usuarios(db: Session = Depends(get_db), _admin: User = Depends(requir
             "email": u.email,
             "nombre": u.full_name,
             "esNexoAdmin": u.is_nexo_admin,
+            # Para que el panel no ofrezca quitarse el rol a uno mismo.
+            "esVos": u.id == admin.id,
             "estadoCuenta": u.status,
             "creadoEn": u.created_at.isoformat(),
             "empresa": None if tienda is None else {"storeId": tienda.id, "nombre": tienda.name},
         })
     return filas
+
+
+class RolAdministradorUpdate(BaseModel):
+    esAdmin: bool
+
+
+@router.put("/usuarios/{user_id}/administrador")
+def cambiar_rol_administrador(
+    user_id: int,
+    body: RolAdministradorUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_nexo_admin),
+) -> dict:
+    """Dar o quitar el rol de administrador de Nexo — 13 de septiembre de 2026.
+
+    Hasta hoy `is_nexo_admin` solo se otorgaba a mano contra la base de
+    datos, a proposito: no habia ningun endpoint que pudiera escalar
+    privilegios. Se abre ahora porque el dueno necesita sumar a otra persona
+    a administrar la plataforma sin tocar SQL. Las barreras que lo hacen
+    seguro:
+
+    - solo un administrador existente puede llamarlo (require_nexo_admin);
+    - NADIE puede cambiar su propio rol: ni auto-degradarse (y perder el
+      panel por accidente) ni tocarse a si mismo;
+    - nunca se puede quitar el ultimo administrador que queda, aunque lo
+      intente otro admin: Nexo quedaria sin nadie que pueda administrarlo;
+    - queda registrado en AdminActionLog, igual que suspender o ver una
+      empresa.
+
+    Quitar el rol tiene efecto inmediato: `require_nexo_admin` y
+    `store_en_vista_de_admin` (app/api/deps.py) leen el flag en cada
+    request, asi que si esa persona estaba viendo la cuenta de un cliente,
+    pierde el acceso en la request siguiente sin tener que cerrarle la
+    sesion.
+
+    Dar el rol a alguien que tiene empresa propia hace que esa empresa deje
+    de aparecer en "Clientes" (ver listar_clientes) — es coherente: pasa a
+    ser parte de Nexo, no un cliente."""
+    usuario = db.get(User, user_id)
+    if usuario is None:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    if usuario.id == admin.id:
+        raise HTTPException(status_code=400, detail="No podés cambiar tu propio rol de administrador.")
+
+    if not body.esAdmin and usuario.is_nexo_admin:
+        otros_admins = (
+            db.query(func.count(User.id))
+            .filter(User.is_nexo_admin.is_(True), User.id != usuario.id)
+            .scalar()
+            or 0
+        )
+        if otros_admins == 0:
+            raise HTTPException(status_code=400, detail="No podés quitar el último administrador de Nexo.")
+
+    usuario.is_nexo_admin = body.esAdmin
+    usuario.updated_at = datetime.now()
+    _registrar_accion_admin(
+        db, admin,
+        "dar_rol_administrador" if body.esAdmin else "quitar_rol_administrador",
+        detail=f"{'Dio' if body.esAdmin else 'Quitó'} el rol de administrador a {usuario.email}",
+    )
+    db.commit()
+    return {"id": usuario.id, "email": usuario.email, "esNexoAdmin": usuario.is_nexo_admin}
 
 
 @router.get("/clientes/{store_id}")

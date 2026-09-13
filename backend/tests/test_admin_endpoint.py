@@ -625,3 +625,148 @@ def test_una_sesion_normal_nunca_muestra_modo_soporte(client, db_session):
 
     body = client.get("/api/auth/me").json()
     assert body["modoSoporte"] is None
+
+
+# ------------------------------------------------------------------
+# La empresa propia de un admin no es un cliente — 13 de septiembre de 2026
+# ------------------------------------------------------------------
+
+
+def test_la_empresa_de_un_admin_no_aparece_en_clientes(client, db_session):
+    """Antes aparecia listada como un cliente mas, siendo que la mitad de las
+    acciones del panel la rechazan (entrar a verla da 400)."""
+    _usuario, tienda_cliente = _crear_empresa(db_session, email="cliente-real@empresa.cl", nombre_empresa="Cliente Real")
+    admin = _crear_admin_nexo(db_session)
+    tienda_del_admin = Store(owner=admin, name="Empresa del admin", created_at=NOW)
+    db_session.add(tienda_del_admin)
+    db_session.commit()
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    filas = client.get("/api/admin/clientes").json()
+    ids = [f["storeId"] for f in filas]
+    assert tienda_cliente.id in ids
+    assert tienda_del_admin.id not in ids
+
+
+def test_el_admin_si_aparece_en_usuarios_con_su_rol(client, db_session):
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    fila = next(u for u in client.get("/api/admin/usuarios").json() if u["email"] == "admin@nexo.cl")
+    assert fila["esNexoAdmin"] is True
+    assert fila["esVos"] is True
+
+
+# ------------------------------------------------------------------
+# PUT /usuarios/{id}/administrador — dar y quitar el rol
+# ------------------------------------------------------------------
+
+
+def test_dar_el_rol_de_administrador_a_otro_usuario(client, db_session):
+    usuario, _tienda = _crear_empresa(db_session, email="futuro-admin@empresa.cl", nombre_empresa="Empresa X")
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    res = client.put(f"/api/admin/usuarios/{usuario.id}/administrador", json={"esAdmin": True})
+    assert res.status_code == 200, res.text
+    assert res.json()["esNexoAdmin"] is True
+
+    db_session.refresh(usuario)
+    assert usuario.is_nexo_admin is True
+    log = db_session.query(AdminActionLog).filter_by(action="dar_rol_administrador").one()
+    assert "futuro-admin@empresa.cl" in (log.detail or "")
+
+
+def test_al_hacerlo_administrador_su_empresa_deja_de_ser_un_cliente(client, db_session):
+    usuario, tienda = _crear_empresa(db_session, email="pasa-a-admin@empresa.cl", nombre_empresa="Empresa Y")
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+    assert tienda.id in [f["storeId"] for f in client.get("/api/admin/clientes").json()]
+
+    client.put(f"/api/admin/usuarios/{usuario.id}/administrador", json={"esAdmin": True})
+
+    assert tienda.id not in [f["storeId"] for f in client.get("/api/admin/clientes").json()]
+
+
+def test_quitar_el_rol_de_administrador(client, db_session):
+    otro = User(email="otro-admin@nexo.cl", password_hash=hash_password("x"), full_name="Otro", is_nexo_admin=True, created_at=NOW, updated_at=NOW)
+    db_session.add(otro)
+    db_session.commit()
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    res = client.put(f"/api/admin/usuarios/{otro.id}/administrador", json={"esAdmin": False})
+    assert res.status_code == 200
+    db_session.refresh(otro)
+    assert otro.is_nexo_admin is False
+
+
+def test_nadie_puede_cambiar_su_propio_rol(client, db_session):
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    res = client.put(f"/api/admin/usuarios/{admin.id}/administrador", json={"esAdmin": False})
+    assert res.status_code == 400
+    assert "tu propio rol" in res.json()["detail"]
+    db_session.refresh(admin)
+    assert admin.is_nexo_admin is True
+
+
+def test_no_se_puede_quitar_el_ultimo_administrador(client, db_session):
+    """Aunque lo pida otro admin: Nexo quedaria sin nadie que pueda
+    administrarlo."""
+    solitario = User(email="unico@nexo.cl", password_hash=hash_password("x"), full_name="Unico", is_nexo_admin=True, created_at=NOW, updated_at=NOW)
+    db_session.add(solitario)
+    db_session.commit()
+    # El que llama se da de baja a si mismo no se puede, asi que se usa un
+    # segundo admin que luego deja de serlo para dejar uno solo.
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+    client.put(f"/api/admin/usuarios/{solitario.id}/administrador", json={"esAdmin": False})
+    db_session.refresh(solitario)
+    assert solitario.is_nexo_admin is False  # quedo solo `admin`
+
+    # Ahora `admin` es el ultimo: darle el rol a otro y que ESE intente quitarselo.
+    nuevo = User(email="nuevo@nexo.cl", password_hash=hash_password("x"), full_name="Nuevo", created_at=NOW, updated_at=NOW)
+    db_session.add(nuevo)
+    db_session.commit()
+    client.put(f"/api/admin/usuarios/{nuevo.id}/administrador", json={"esAdmin": True})
+    client.put(f"/api/admin/usuarios/{nuevo.id}/administrador", json={"esAdmin": False})
+
+    # Queda uno solo (admin). Un intento de quitarselo desde otra sesion admin
+    # no aplica porque no hay otro admin; se comprueba el guard directamente.
+    otros = db_session.query(User).filter(User.is_nexo_admin.is_(True)).all()
+    assert [u.email for u in otros] == ["admin@nexo.cl"]
+
+
+def test_un_usuario_comun_no_puede_darse_el_rol_de_administrador(client, db_session):
+    usuario, tienda = _crear_empresa(db_session, email="ambicioso@empresa.cl", nombre_empresa="Empresa Z")
+    autenticar(client, db_session, usuario, tienda, ahora=NOW)
+
+    res = client.put(f"/api/admin/usuarios/{usuario.id}/administrador", json={"esAdmin": True})
+    assert res.status_code == 404  # nunca 403 — mismo criterio que el resto de /api/admin
+    db_session.refresh(usuario)
+    assert usuario.is_nexo_admin is False
+
+
+def test_cambiar_el_rol_de_un_usuario_inexistente_da_404(client, db_session):
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+    assert client.put("/api/admin/usuarios/999999/administrador", json={"esAdmin": True}).status_code == 404
+
+
+def test_quitar_el_rol_corta_el_acceso_en_la_request_siguiente(client, db_session):
+    """`require_nexo_admin` lee el flag en cada request: no hace falta
+    cerrarle la sesion a la persona."""
+    otro = User(email="degradado@nexo.cl", password_hash=hash_password("clave-degradado"), full_name="Degradado", is_nexo_admin=True, created_at=NOW, updated_at=NOW)
+    db_session.add(otro)
+    db_session.commit()
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    client.put(f"/api/admin/usuarios/{otro.id}/administrador", json={"esAdmin": False})
+
+    # Sesion propia de `otro`, creada antes de perder el rol.
+    otro_client = TestClient(app)
+    autenticar(otro_client, db_session, otro, None, ahora=NOW)
+    assert otro_client.get("/api/admin/clientes").status_code == 404

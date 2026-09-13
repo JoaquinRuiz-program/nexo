@@ -431,6 +431,13 @@ window.LC = window.LC || {};
     return request("/api/admin/ver-como/salir", { method: "POST" });
   }
 
+  // 13 de septiembre de 2026 — dar o quitar el rol de administrador de Nexo
+  // desde el panel. El backend no deja cambiarse el rol a uno mismo ni
+  // quitar el ultimo administrador que queda.
+  async function cambiarRolAdministrador(userId, esAdmin) {
+    return request(`/api/admin/usuarios/${userId}/administrador`, { method: "PUT", body: { esAdmin } });
+  }
+
   async function listarUsuariosAdmin() {
     return request("/api/admin/usuarios");
   }
@@ -578,6 +585,7 @@ window.LC = window.LC || {};
     entrarComoSoporte,
     salirDeVerComoEmpresa,
     listarUsuariosAdmin,
+    cambiarRolAdministrador,
     listarPlanesAdmin,
     actualizarSuscripcionAdmin,
     listarSolicitudesSoporteAdmin,

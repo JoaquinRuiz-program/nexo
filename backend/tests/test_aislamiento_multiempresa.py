@@ -438,6 +438,7 @@ def test_ningun_store_id_enviado_por_el_cliente_altera_el_tenant_usado(client_a,
         ("GET", "/api/configuracion/general"),
         ("PUT", "/api/configuracion/general"),
         ("POST", "/api/auth/cambiar-password"),
+        ("PUT", "/api/admin/usuarios/1/administrador"),
     ],
 )
 def test_ningun_endpoint_de_negocio_responde_sin_sesion(client_a, metodo, ruta):

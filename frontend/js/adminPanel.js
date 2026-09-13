@@ -142,6 +142,7 @@ window.LC = window.LC || {};
                 <th class="px-3 py-2 font-medium">Rol</th>
                 <th class="px-3 py-2 font-medium">Estado</th>
                 <th class="px-3 py-2 font-medium">Registrado</th>
+                <th class="px-3 py-2 font-medium"></th>
               </tr>
             </thead>
             <tbody>
@@ -150,9 +151,10 @@ window.LC = window.LC || {};
                   <td class="px-3 py-2.5 font-medium text-slate-800 dark:text-slate-100">${escapeHtml(u.nombre)}</td>
                   <td class="px-3 py-2.5 text-slate-500 dark:text-slate-400">${escapeHtml(u.email)}</td>
                   <td class="px-3 py-2.5">${u.empresa ? escapeHtml(u.empresa.nombre) : "—"}</td>
-                  <td class="px-3 py-2.5">${u.esNexoAdmin ? '<span class="badge badge-variable">Admin Nexo</span>' : "Cliente"}</td>
+                  <td class="px-3 py-2.5">${u.esNexoAdmin ? '<span class="badge badge-variable">Administrador</span>' : "Cliente"}${u.esVos ? ' <span class="text-xs text-slate-400">(vos)</span>' : ""}</td>
                   <td class="px-3 py-2.5">${u.estadoCuenta === "suspended" ? "Suspendida" : "Activa"}</td>
                   <td class="px-3 py-2.5 text-slate-500 dark:text-slate-400">${formatDate(new Date(u.creadoEn))}</td>
+                  <td class="px-3 py-2.5 text-right">${u.esVos ? "" : `<button data-rol="${u.id}" data-rol-nuevo="${u.esNexoAdmin ? "quitar" : "dar"}" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline whitespace-nowrap">${u.esNexoAdmin ? "Quitar administrador" : "Hacer administrador"}</button>`}</td>
                 </tr>
               `).join("")}
             </tbody>
@@ -161,7 +163,40 @@ window.LC = window.LC || {};
       </div>
     `;
     main.querySelectorAll("[data-open]").forEach((tr) => {
-      tr.addEventListener("click", () => LC.router.navigate(`/admin/${tr.dataset.open}`));
+      tr.addEventListener("click", (e) => {
+        if (e.target.closest("[data-rol]")) return;   // el boton de rol no navega a la empresa
+        LC.router.navigate(`/admin/${tr.dataset.open}`);
+      });
+    });
+
+    // 13 de septiembre de 2026 — dar o quitar el rol de administrador de
+    // Nexo. Siempre se confirma: es un cambio de privilegios, no una
+    // preferencia. El backend rechaza cambiarse el rol a uno mismo y quitar
+    // el ultimo administrador que queda.
+    main.querySelectorAll("[data-rol]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const userId = Number(btn.dataset.rol);
+        const dar = btn.dataset.rolNuevo === "dar";
+        const usuario = usuarios.find((u) => u.id === userId);
+        openModal({
+          title: dar ? "¿Hacer administrador?" : "¿Quitar el rol de administrador?",
+          body: dar
+            ? `<p><strong>${escapeHtml(usuario.nombre)}</strong> (${escapeHtml(usuario.email)}) va a poder ver y administrar <strong>todas</strong> las empresas de Nexo, entrar a verlas y cambiarles el plan.${usuario.empresa ? " Su propia empresa deja de aparecer en Clientes." : ""}</p>`
+            : `<p><strong>${escapeHtml(usuario.nombre)}</strong> (${escapeHtml(usuario.email)}) pierde el acceso al panel de inmediato. Si estaba viendo la cuenta de un cliente, deja de verla.</p>`,
+          primaryLabel: dar ? "Sí, hacer administrador" : "Sí, quitar el rol",
+          secondaryLabel: "Cancelar",
+          onPrimary: async () => {
+            const res = await LC.backendApi.cambiarRolAdministrador(userId, dar);
+            if (!res.ok) {
+              toast("error", res.error.mensaje);
+              return;
+            }
+            toast("success", dar ? "Ahora es administrador de Nexo." : "Ya no es administrador de Nexo.");
+            await renderUsuarios(main);
+          },
+        });
+      });
     });
   }
 
