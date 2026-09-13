@@ -200,6 +200,58 @@ def logout(response: Response, sesion: AuthSession = Depends(get_current_session
     return {"ok": True}
 
 
+class CambiarPasswordRequest(BaseModel):
+    password_actual: str
+    password_nueva: str
+
+    @field_validator("password_nueva")
+    @classmethod
+    def _valida_password(cls, v: str) -> str:
+        if len(v or "") < 8:
+            raise ValueError(_PASSWORD_MUY_CORTA)
+        return v
+
+
+@router.post("/cambiar-password")
+def cambiar_password(
+    body: CambiarPasswordRequest,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_current_user),
+    sesion: AuthSession = Depends(get_current_session),
+) -> dict:
+    """13 de septiembre de 2026 — antes el botón "Cambiar contraseña" de
+    Configuración abría un cartel que decía que no estaba disponible: no
+    existía ninguna forma de cambiarla, ni desde la aplicación ni
+    recuperándola. Esto cubre el caso de alguien que SÍ recuerda su
+    contraseña actual; recuperarla sin recordarla necesita envío de email y
+    sigue pendiente.
+
+    Pide la contraseña actual a propósito: sin eso, cualquiera con acceso
+    físico a una sesión abierta podría dejar afuera al dueño de la cuenta.
+
+    Al cambiarla se revocan TODAS las demás sesiones de ese usuario (la que
+    está usando ahora se mantiene, para no obligarlo a entrar de nuevo justo
+    después de cambiarla). Es lo que se espera de un cambio de contraseña:
+    si alguien más había quedado dentro, deja de estarlo."""
+    if not verify_password(body.password_actual, usuario.password_hash):
+        raise HTTPException(status_code=400, detail="La contraseña actual no es correcta.")
+    if body.password_actual == body.password_nueva:
+        raise HTTPException(status_code=400, detail="La contraseña nueva tiene que ser distinta de la actual.")
+
+    ahora = datetime.now()
+    usuario.password_hash = hash_password(body.password_nueva)
+    usuario.updated_at = ahora
+    otras = (
+        db.query(AuthSession)
+        .filter(AuthSession.user_id == usuario.id, AuthSession.id != sesion.id, AuthSession.revoked_at.is_(None))
+        .all()
+    )
+    for s in otras:
+        s.revoked_at = ahora
+    db.commit()
+    return {"ok": True, "sesionesCerradas": len(otras)}
+
+
 @router.get("/me")
 def me(usuario: User = Depends(get_current_user), sesion: AuthSession = Depends(get_current_session), db: Session = Depends(get_db)) -> dict:
     # No usa get_current_store: un administrador de Nexo (is_nexo_admin)

@@ -237,3 +237,77 @@ def test_password_hash_usa_bcrypt_nunca_texto_plano_ni_sha256_simple(db_session)
 def test_generate_session_token_nunca_repite_valores():
     tokens = {generate_session_token() for _ in range(50)}
     assert len(tokens) == 50
+
+
+# ------------------------------------------------------------------
+# POST /cambiar-password — 13 de septiembre de 2026. Antes el boton de
+# Configuracion abria un cartel diciendo que no estaba disponible: no habia
+# NINGUNA forma de cambiar la contrasena desde la aplicacion.
+# ------------------------------------------------------------------
+
+
+def _registrar(client, email="cambio@empresa.cl", password="contraseña-inicial-1"):
+    res = client.post("/api/auth/registro", json={**REGISTRO_VALIDO, "email": email, "password": password})
+    assert res.status_code == 200, res.text
+    return email, password
+
+
+def test_cambiar_password_con_la_actual_correcta(client, db_session):
+    email, actual = _registrar(client)
+
+    res = client.post("/api/auth/cambiar-password", json={"password_actual": actual, "password_nueva": "contraseña-nueva-2"})
+    assert res.status_code == 200, res.text
+
+    client.post("/api/auth/logout")
+    assert client.post("/api/auth/login", json={"email": email, "password": actual}).status_code == 401
+    assert client.post("/api/auth/login", json={"email": email, "password": "contraseña-nueva-2"}).status_code == 200
+
+
+def test_cambiar_password_con_la_actual_equivocada_no_hace_nada(client, db_session):
+    email, actual = _registrar(client, email="equivocada@empresa.cl")
+
+    res = client.post("/api/auth/cambiar-password", json={"password_actual": "no-es-esta", "password_nueva": "contraseña-nueva-2"})
+    assert res.status_code == 400
+    assert "actual no es correcta" in res.json()["detail"]
+
+    client.post("/api/auth/logout")
+    assert client.post("/api/auth/login", json={"email": email, "password": actual}).status_code == 200
+
+
+def test_la_password_nueva_tiene_que_tener_ocho_caracteres(client, db_session):
+    _email, actual = _registrar(client, email="corta@empresa.cl")
+    res = client.post("/api/auth/cambiar-password", json={"password_actual": actual, "password_nueva": "corta"})
+    assert res.status_code == 422
+
+
+def test_la_password_nueva_no_puede_ser_igual_a_la_actual(client, db_session):
+    _email, actual = _registrar(client, email="igual@empresa.cl")
+    res = client.post("/api/auth/cambiar-password", json={"password_actual": actual, "password_nueva": actual})
+    assert res.status_code == 400
+
+
+def test_cambiar_password_cierra_las_demas_sesiones_pero_no_la_propia(client, db_session):
+    """Lo que se espera de un cambio de contrasena: si alguien mas habia
+    quedado dentro, deja de estarlo. La sesion que hace el cambio sigue
+    viva, para no obligar a entrar de nuevo justo despues."""
+    email, actual = _registrar(client, email="sesiones@empresa.cl")
+    usuario = db_session.query(User).filter_by(email=email).one()
+    # Dos sesiones mas, como si hubiera entrado desde otros dispositivos.
+    for _ in range(2):
+        db_session.add(AuthSession(
+            user=usuario, token_hash=hash_session_token(generate_session_token()),
+            active_store_id=None, created_at=datetime.now(), expires_at=datetime.now() + timedelta(hours=24),
+        ))
+    db_session.commit()
+
+    res = client.post("/api/auth/cambiar-password", json={"password_actual": actual, "password_nueva": "contraseña-nueva-2"})
+    assert res.json()["sesionesCerradas"] == 2
+
+    vivas = db_session.query(AuthSession).filter_by(user_id=usuario.id).filter(AuthSession.revoked_at.is_(None)).all()
+    assert len(vivas) == 1                      # solo la que hizo el cambio
+    assert client.get("/api/auth/me").status_code == 200
+
+
+def test_sin_sesion_no_se_puede_cambiar_la_password(client):
+    res = client.post("/api/auth/cambiar-password", json={"password_actual": "x" * 9, "password_nueva": "y" * 9})
+    assert res.status_code == 401

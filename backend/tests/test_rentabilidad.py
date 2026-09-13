@@ -384,3 +384,53 @@ def test_comision_ml_real_informativa_usa_el_costo_de_cada_variante_no_el_de_la_
     assert fila_a["comisionMlReal"]["classic"]["margenClp"] == 10000 - 4000 - 1000
     assert fila_b["comisionMlReal"]["classic"]["margenClp"] == 10000 - 7000 - 1000
     assert fila_a["comisionMlReal"]["classic"]["margenClp"] != fila_b["comisionMlReal"]["classic"]["margenClp"]
+
+
+# ------------------------------------------------------------------
+# GET/PUT /api/configuracion/general — 13 de septiembre de 2026. La pantalla
+# de Configuracion decia "Todavia no se puede editar desde aca" para el
+# nombre de la empresa, y el "nombre de la tienda" era una etiqueta guardada
+# en el localStorage del navegador, desconectada del nombre real.
+# ------------------------------------------------------------------
+
+
+def test_datos_generales_devuelve_el_nombre_real_de_la_empresa(client, a_store):
+    body = client.get("/api/configuracion/general").json()
+    assert body["companyName"] == "Tienda de prueba"
+    assert body["email"] == "tienda@ejemplo.cl"
+
+
+def test_cambiar_el_nombre_de_la_empresa_lo_cambia_en_los_dos_lugares(client, db_session, a_store):
+    """`Store.name` es lo que ve el panel de administrador y el resto del
+    backend; `StoreSettings.company_name` es lo que muestra Configuracion.
+    Tienen que quedar iguales o la empresa se llama distinto segun donde
+    se la mire."""
+    res = client.put("/api/configuracion/general", json={"companyName": "Comercial Andes SpA", "storeName": "Andes Store"})
+    assert res.status_code == 200
+    assert res.json()["companyName"] == "Comercial Andes SpA"
+
+    db_session.refresh(a_store)
+    ajustes = db_session.query(StoreSettings).filter_by(store_id=a_store.id).one()
+    assert a_store.name == "Comercial Andes SpA"
+    assert ajustes.company_name == "Comercial Andes SpA"
+    assert ajustes.store_name == "Andes Store"
+
+    # Y /api/auth/me, que es de donde el frontend toma el nombre visible.
+    assert client.get("/api/auth/me").json()["empresa"]["nombre"] == "Comercial Andes SpA"
+
+
+def test_el_nombre_de_la_empresa_no_puede_quedar_vacio(client, a_store):
+    assert client.put("/api/configuracion/general", json={"companyName": "   "}).status_code == 400
+
+
+def test_el_nombre_de_la_tienda_es_opcional(client, db_session, a_store):
+    res = client.put("/api/configuracion/general", json={"companyName": "Solo Empresa"})
+    assert res.status_code == 200
+    assert res.json()["storeName"] == ""
+
+
+def test_el_email_no_se_puede_cambiar_desde_aca(client, db_session, a_store):
+    """Es la identidad con la que se inicia sesion y no hay verificacion por
+    correo todavia: un error de tipeo dejaria a la persona sin entrar."""
+    client.put("/api/configuracion/general", json={"companyName": "X", "email": "otro@ejemplo.cl"})
+    assert client.get("/api/configuracion/general").json()["email"] == "tienda@ejemplo.cl"

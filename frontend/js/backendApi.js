@@ -496,6 +496,26 @@ window.LC = window.LC || {};
     return request("/api/configuracion/canales");
   }
 
+  // 13 de septiembre de 2026 — nombre de empresa y de tienda, editables de
+  // verdad (antes la pantalla decia "todavia no se puede editar desde aca"
+  // y el nombre de la tienda era una etiqueta guardada en el navegador).
+  async function obtenerDatosGenerales() {
+    return request("/api/configuracion/general");
+  }
+
+  async function guardarDatosGenerales({ companyName, storeName }) {
+    return request("/api/configuracion/general", { method: "PUT", body: { companyName, storeName } });
+  }
+
+  // Cambiar la propia contrasena. Pide la actual: el backend cierra las
+  // demas sesiones abiertas de la cuenta al cambiarla.
+  async function cambiarPassword(passwordActual, passwordNueva) {
+    return request("/api/auth/cambiar-password", {
+      method: "POST",
+      body: { password_actual: passwordActual, password_nueva: passwordNueva },
+    });
+  }
+
   async function configurarCanal(channel, body) {
     return request(`/api/configuracion/canales/${channel}`, { method: "PUT", body });
   }
@@ -548,6 +568,9 @@ window.LC = window.LC || {};
     reactivarPublicacionMercadoLibre,
     eliminarPublicacionMercadoLibre,
     obtenerConfiguracionCanales,
+    obtenerDatosGenerales,
+    guardarDatosGenerales,
+    cambiarPassword,
     configurarCanal,
     listarClientesAdmin,
     detalleClienteAdmin,

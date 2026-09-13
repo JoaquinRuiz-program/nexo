@@ -1223,6 +1223,74 @@ window.LC = window.LC || {};
   // Modal simple de "Agregar costo" — con feedback Guardando… / ✓
   // actualizado en el propio botón, para que nunca quede la duda de si
   // funcionó (pedido explícito: nunca dejar al usuario preguntándose).
+  // 13 de septiembre de 2026 — cambiar la contrasena desde la aplicacion.
+  // Antes este boton abria un cartel que decia que no estaba disponible: no
+  // habia ninguna forma de cambiarla. Pide la actual a proposito (ver
+  // app/api/routes/auth.py::cambiar_password) y el backend cierra las demas
+  // sesiones abiertas de esa cuenta.
+  function abrirCambioDePassword() {
+    const root = document.getElementById("modal-root");
+    root.innerHTML = `
+      <div class="modal-overlay fixed inset-0 bg-slate-900/50 dark:bg-slate-950/70 flex items-center justify-center z-[60] p-4">
+        <div class="modal-card bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-sm w-full p-6">
+          <h3 class="text-lg font-semibold mb-1">Cambiar contraseña</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Si tenés la sesión abierta en otro dispositivo, se va a cerrar.</p>
+          <label class="form-label" for="pwd-actual">Contraseña actual</label>
+          <input id="pwd-actual" type="password" class="form-input" autocomplete="current-password" />
+          <label class="form-label mt-3" for="pwd-nueva">Contraseña nueva</label>
+          <input id="pwd-nueva" type="password" class="form-input" autocomplete="new-password" />
+          <label class="form-label mt-3" for="pwd-confirmar">Repetí la contraseña nueva</label>
+          <input id="pwd-confirmar" type="password" class="form-input" autocomplete="new-password" />
+          <p class="text-xs text-slate-400 mt-1.5">Al menos 8 caracteres.</p>
+          <p id="pwd-feedback" class="text-sm mt-2 min-h-[1.25rem]"></p>
+          <div class="flex justify-end gap-3 mt-3">
+            <button id="pwd-cancelar" class="btn-secondary">Cancelar</button>
+            <button id="pwd-guardar" class="btn-primary">Cambiar</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const close = () => { root.innerHTML = ""; };
+    root.querySelector(".modal-overlay").addEventListener("click", (e) => {
+      if (e.target.classList.contains("modal-overlay")) close();
+    });
+    document.getElementById("pwd-cancelar").addEventListener("click", close);
+    document.getElementById("pwd-actual").focus();
+
+    document.getElementById("pwd-guardar").addEventListener("click", async () => {
+      const feedback = document.getElementById("pwd-feedback");
+      const error = (texto) => {
+        feedback.textContent = texto;
+        feedback.className = "text-sm mt-2 min-h-[1.25rem] text-red-600 dark:text-red-400";
+      };
+      const actual = document.getElementById("pwd-actual").value;
+      const nueva = document.getElementById("pwd-nueva").value;
+      const confirmar = document.getElementById("pwd-confirmar").value;
+
+      if (!actual) return error("Ingresá tu contraseña actual.");
+      if (nueva.length < 8) return error("La contraseña nueva tiene que tener al menos 8 caracteres.");
+      if (nueva !== confirmar) return error("Las dos contraseñas nuevas no coinciden.");
+
+      const btn = document.getElementById("pwd-guardar");
+      btn.disabled = true;
+      btn.textContent = "Cambiando…";
+      feedback.textContent = "";
+
+      const res = await LC.backendApi.cambiarPassword(actual, nueva);
+      if (!res.ok) {
+        btn.disabled = false;
+        btn.textContent = "Cambiar";
+        return error(res.error.mensaje);
+      }
+      btn.textContent = "✓ Contraseña cambiada";
+      const cerradas = res.data.sesionesCerradas;
+      toast("success", cerradas > 0
+        ? `Contraseña cambiada. Se cerraron ${cerradas} sesión(es) en otros dispositivos.`
+        : "Contraseña cambiada.");
+      setTimeout(close, 700);
+    });
+  }
+
   // 13 de septiembre de 2026 — stock fisico editable a mano, mismo patron que
   // abrirEditorCosto: un Excel real normalmente no trae columna de stock, asi
   // que tiene que poder cargarse desde aca. Vaciar el campo = "no gestiona
@@ -2569,9 +2637,17 @@ window.LC = window.LC || {};
     // Libre (30 de agosto de 2026, FASE 6 frontend) — sin esto, el precio
     // recomendado y la decisión "¿conviene?" siempre dan "faltan datos".
     let canalMl = null;
+    // 13 de septiembre de 2026 — nombre de empresa y de tienda salen del
+    // backend (GET /api/configuracion/general), ya no del localStorage: el
+    // "Nombre de la tienda" era una etiqueta local desconectada del nombre
+    // real de la empresa. En modo demostración se usa lo que ya hay en
+    // pantalla, que es lo unico disponible sin backend.
+    let general = { companyName: nombreEmpresaActiva(session) || "", storeName: settings.storeName || "" };
     if (await LC.dataSource.getModo() === "real") {
       const res = await LC.backendApi.obtenerConfiguracionCanales();
       if (res.ok) canalMl = res.data.find((c) => c.channel === "mercadolibre") || {};
+      const resGeneral = await LC.backendApi.obtenerDatosGenerales();
+      if (resGeneral.ok) general = resGeneral.data;
     }
 
     main.innerHTML = `
@@ -2582,19 +2658,19 @@ window.LC = window.LC || {};
           <p class="panel-subtitle mb-4">Información básica de tu negocio.</p>
           <div class="space-y-3">
             <div>
-              <label class="form-label">Empresa</label>
-              <p class="form-input flex items-center text-slate-500 dark:text-slate-400">${escapeHtml(nombreEmpresaActiva(session))}</p>
-              <p class="text-xs text-slate-400 mt-1">Todavía no se puede editar desde acá.</p>
+              <label class="form-label" for="cfg-empresa">Empresa</label>
+              <input id="cfg-empresa" type="text" value="${escapeHtml(general.companyName)}" class="form-input" maxlength="255" />
+              <p class="text-xs text-slate-400 mt-1">El nombre real de tu empresa en Nexo. Se ve en el panel y en tus publicaciones.</p>
             </div>
             <div>
-              <label class="form-label">Nombre de la tienda</label>
-              <input id="cfg-store" type="text" value="${escapeHtml(settings.storeName)}" class="form-input" />
-              <p class="text-xs text-slate-400 mt-1">Es solo una etiqueta para vos — todavía no cambia el nombre real de tu empresa en Nexo.</p>
+              <label class="form-label" for="cfg-store">Nombre de la tienda</label>
+              <input id="cfg-store" type="text" value="${escapeHtml(general.storeName)}" class="form-input" maxlength="255" />
+              <p class="text-xs text-slate-400 mt-1">Opcional, si tu tienda se llama distinto que la empresa.</p>
             </div>
             <div>
               <label class="form-label">Email</label>
               <p class="form-input flex items-center text-slate-500 dark:text-slate-400">${escapeHtml(session.email)}</p>
-              <p class="text-xs text-slate-400 mt-1">Todavía no se puede editar desde acá.</p>
+              <p class="text-xs text-slate-400 mt-1">Es el email con el que inicias sesión. Para cambiarlo, escribinos desde Ayuda y soporte.</p>
             </div>
           </div>
           <button id="cfg-general-save" class="btn-primary mt-4">Guardar cambios</button>
@@ -2695,11 +2771,33 @@ window.LC = window.LC || {};
       </div>
     `;
 
-    document.getElementById("cfg-general-save").addEventListener("click", () => {
-      LC.settings.update({
-        storeName: document.getElementById("cfg-store").value.trim() || settings.storeName,
+    document.getElementById("cfg-general-save").addEventListener("click", async () => {
+      const btn = document.getElementById("cfg-general-save");
+      const companyName = document.getElementById("cfg-empresa").value.trim();
+      if (!companyName) {
+        toast("error", "El nombre de la empresa no puede quedar vacío.");
+        return;
+      }
+      btn.disabled = true;
+      const textoOriginal = btn.textContent;
+      btn.textContent = "Guardando…";
+      const res = await LC.backendApi.guardarDatosGenerales({
+        companyName,
+        storeName: document.getElementById("cfg-store").value.trim(),
       });
-      toast("success", "Configuración guardada correctamente.");
+      btn.disabled = false;
+      btn.textContent = textoOriginal;
+      if (!res.ok) {
+        toast("error", res.error.mensaje);
+        return;
+      }
+      toast("success", "Datos guardados.");
+      // El nombre de la empresa se ve en la barra lateral y en el header:
+      // se rehidrata la sesión para que cambie en toda la aplicación, no
+      // solo en esta pantalla.
+      await LC.auth.hydrate();
+      updateUserHeader();
+      rerenderActual();
     });
 
     const btnGuardarMl = document.getElementById("cfg-ml-guardar");
@@ -2757,9 +2855,7 @@ window.LC = window.LC || {};
       btn.addEventListener("click", () => LC.router.navigate(btn.dataset.nav));
     });
 
-    document.getElementById("cfg-change-password").addEventListener("click", () => {
-      infoModal("Cambiar contraseña", "Todavía no está disponible cambiar la contraseña desde acá.");
-    });
+    document.getElementById("cfg-change-password").addEventListener("click", abrirCambioDePassword);
     document.getElementById("cfg-logout").addEventListener("click", async () => {
       await LC.auth.logout();
       toast("info", "Sesión cerrada.");

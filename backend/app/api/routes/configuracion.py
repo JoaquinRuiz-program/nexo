@@ -16,11 +16,80 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from fastapi import HTTPException
+
 from app.api.deps import get_current_store
-from app.db.models import ChannelCostSettings, Store
+from app.db.models import ChannelCostSettings, Store, StoreSettings
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api/configuracion", tags=["configuracion"])
+
+
+# ------------------------------------------------------------------
+# Datos generales de la empresa — 13 de septiembre de 2026.
+#
+# `StoreSettings` ya tenía estas columnas desde el esquema inicial, pero
+# nunca hubo un endpoint para editarlas: la pantalla de Configuración decía
+# "Todavía no se puede editar desde acá" y el nombre de la tienda era una
+# etiqueta guardada en el localStorage del navegador, desconectada del
+# nombre real de la empresa. Ahora el nombre se edita de verdad y se guarda
+# en los dos lugares que tienen que coincidir: `Store.name` (lo que ve el
+# panel de administrador y el resto del backend) y
+# `StoreSettings.company_name`.
+#
+# El EMAIL de acceso no se edita acá a propósito: es la identidad con la
+# que se inicia sesión y no existe verificación por correo todavía, así que
+# un error de tipeo dejaría a la persona sin forma de entrar a su cuenta.
+# ------------------------------------------------------------------
+
+
+class DatosGeneralesUpdate(BaseModel):
+    companyName: str
+    storeName: str | None = None
+
+
+def _settings_de(db: Session, store: Store) -> StoreSettings:
+    ajustes = db.query(StoreSettings).filter_by(store_id=store.id).first()
+    if ajustes is None:
+        # No debería pasar (registro siempre los crea), pero si una tienda
+        # vieja quedó sin fila, se crea acá en vez de fallar.
+        ajustes = StoreSettings(store_id=store.id, company_name=store.name, store_name=store.name)
+        db.add(ajustes)
+        db.flush()
+    return ajustes
+
+
+@router.get("/general")
+def obtener_datos_generales(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> dict:
+    ajustes = _settings_de(db, store)
+    db.commit()
+    return {
+        "companyName": store.name,
+        "storeName": ajustes.store_name or "",
+        "email": store.owner.email,
+    }
+
+
+@router.put("/general")
+def guardar_datos_generales(
+    body: DatosGeneralesUpdate, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    nombre = (body.companyName or "").strip()
+    if not nombre:
+        raise HTTPException(status_code=400, detail="El nombre de la empresa no puede quedar vacío.")
+    if len(nombre) > 255:
+        raise HTTPException(status_code=400, detail="El nombre de la empresa es demasiado largo.")
+
+    ajustes = _settings_de(db, store)
+    store.name = nombre
+    ajustes.company_name = nombre
+    ajustes.store_name = (body.storeName or "").strip()[:255]
+    db.commit()
+    return {
+        "companyName": store.name,
+        "storeName": ajustes.store_name,
+        "email": store.owner.email,
+    }
 
 
 class ChannelCostsUpdate(BaseModel):
