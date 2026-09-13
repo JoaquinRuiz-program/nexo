@@ -198,6 +198,14 @@ window.LC = window.LC || {};
     return request(`/api/productos/${id}/costo`, { method: "PUT", body: { costo } });
   }
 
+  // 13 de septiembre de 2026 — stock fisico editable a mano: la mayoria de
+  // los Excel reales solo traen codigo, nombre, costo y precio, asi que sin
+  // esto el stock quedaba vacio para siempre. `cantidad: null` = este
+  // producto no gestiona stock (distinto de 0 = sin unidades).
+  async function actualizarStockProducto(id, cantidad) {
+    return request(`/api/productos/${id}/stock`, { method: "PUT", body: { cantidad } });
+  }
+
   async function fetchMercadoLibreEstado() {
     return request("/api/mercadolibre/estado");
   }
@@ -506,6 +514,7 @@ window.LC = window.LC || {};
     fetchProductos,
     fetchProductoDetalle,
     actualizarCostoProducto,
+    actualizarStockProducto,
     agregarImagenProducto,
     eliminarImagenProducto,
     reordenarImagenesProducto,

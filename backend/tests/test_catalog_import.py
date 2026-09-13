@@ -83,6 +83,34 @@ def test_falta_nombre_es_bloqueante():
     assert "Falta nombre" in rows[0].problemas
 
 
+def test_excel_real_minimo_no_se_queja_de_lo_que_nexo_resuelve_solo():
+    """13 de septiembre de 2026 — el Excel tipico de una tienda trae solo
+    codigo, nombre, costo y precio. La categoria la predice Mercado Libre a
+    partir del nombre y la descripcion la arma domain/ai_content.py, asi que
+    ninguna de las dos debe ensuciar el resumen de importacion: solo se avisa
+    de lo que necesita que una persona haga algo."""
+    mapping = detect_columns(["Codigo", "Nombre", "Precio compra", "Precio venta"])
+    rows = build_rows(
+        [{"Codigo": "A-100", "Nombre": "Hervidor electrico 1.7L", "Precio compra": "14.900", "Precio venta": "32.990"}],
+        mapping,
+    )
+    assert rows[0].estado == "revision"
+    assert rows[0].costo == 14900
+    assert rows[0].precio == 32990
+    assert "Falta categoría" not in rows[0].problemas
+    assert "Falta descripción" not in rows[0].problemas
+    # Lo que si requiere accion humana
+    assert "Falta imagen" in rows[0].problemas
+    assert "Falta stock" in rows[0].problemas
+
+
+def test_stock_cero_no_es_un_stock_faltante():
+    mapping = detect_columns(["Nombre", "Precio", "Stock"])
+    rows = build_rows([{"Nombre": "Producto", "Precio": "1000", "Stock": "0"}], mapping)
+    assert rows[0].stock == 0
+    assert "Falta stock" not in rows[0].problemas
+
+
 def test_falta_sku_no_es_bloqueante_solo_revision():
     """El modelo de datos ya acepta productos sin SKU (WooCommerce real los
     trae así) — no debería bloquear la importación."""

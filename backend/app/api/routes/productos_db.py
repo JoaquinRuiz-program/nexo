@@ -53,6 +53,11 @@ class CostoUpdate(BaseModel):
     costo: float | None = None
 
 
+class StockUpdate(BaseModel):
+    # None = este producto no gestiona stock (distinto de 0 = sin unidades).
+    cantidad: int | None = None
+
+
 class ImagenUrlCreate(BaseModel):
     url: str
 
@@ -192,6 +197,31 @@ def configurar_costo(
         raise HTTPException(status_code=400, detail="El costo no puede ser negativo.")
 
     variante.cost_price = body.costo
+    db.commit()
+    db.refresh(variante)
+    return build_producto_fila(variante.product, variante)
+
+
+@router.put("/{variant_id}/stock")
+def configurar_stock(
+    variant_id: int, body: StockUpdate, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    """13 de septiembre de 2026 — stock físico editable a mano, mismo criterio
+    que `configurar_costo`: la mayoría de los Excel reales traen solo código,
+    nombre, costo y precio, así que sin esto el stock quedaba en `None` para
+    siempre y no había forma de corregirlo desde la aplicación.
+
+    NO toca `marketplace_stock` (las unidades reservadas para Mercado Libre,
+    ver configurar_stock_mercado_libre): son dos números separados a
+    propósito. `cantidad=None` significa "este producto no gestiona stock",
+    que es distinto de 0 ("gestiona stock y no queda ninguna")."""
+    variante = _variante_de_la_tienda(db, store, variant_id)
+    if body.cantidad is not None and body.cantidad < 0:
+        raise HTTPException(status_code=400, detail="El stock no puede ser negativo.")
+
+    variante.stock_quantity = body.cantidad
+    variante.manage_stock = body.cantidad is not None
+    variante.stock_status = "instock" if (body.cantidad or 0) > 0 else "outofstock"
     db.commit()
     db.refresh(variante)
     return build_producto_fila(variante.product, variante)

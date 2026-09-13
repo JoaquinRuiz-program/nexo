@@ -102,8 +102,10 @@ def _producto_simple(db_session, tienda, *, sku, nombre, precio, stock):
             variant_sku=sku,
             price=precio,
             stock_quantity=stock,
-            manage_stock=True,
-            stock_status="instock" if stock > 0 else "outofstock",
+            # `stock=None` = el producto no gestiona stock (caso real: un Excel
+            # sin columna de stock). Los demas tests pasan un entero.
+            manage_stock=stock is not None,
+            stock_status="instock" if (stock or 0) > 0 else "outofstock",
             created_at=NOW,
             updated_at=NOW,
         )
@@ -283,6 +285,80 @@ def test_no_se_puede_cargar_un_costo_negativo(client, db_session, a_store):
 
 def test_configurar_costo_de_producto_inexistente_devuelve_404(client, a_store):
     res = client.put("/api/productos/999999/costo", json={"costo": 100})
+    assert res.status_code == 404
+
+
+# ------------------------------------------------------------------
+# PUT /{variant_id}/stock — 13 de septiembre de 2026. La mayoria de los
+# Excel reales solo traen codigo, nombre, costo y precio: sin este endpoint
+# el stock quedaba en None para siempre, sin forma de corregirlo desde la
+# aplicacion.
+# ------------------------------------------------------------------
+
+
+def test_cargar_stock_a_mano_en_un_producto_que_no_lo_traia(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="STK-001", nombre="Producto sin stock", precio=10000, stock=None)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.put(f"/api/productos/{variant_id}/stock", json={"cantidad": 12})
+
+    assert res.status_code == 200
+    assert res.json()["stockQuantity"] == 12
+    variante = db_session.get(ProductVariant, variant_id)
+    assert variante.stock_quantity == 12
+    assert variante.manage_stock is True
+    assert variante.stock_status == "instock"
+
+
+def test_stock_en_cero_queda_sin_stock_pero_sigue_gestionando(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="STK-002", nombre="Producto", precio=10000, stock=5)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.put(f"/api/productos/{variant_id}/stock", json={"cantidad": 0})
+
+    assert res.status_code == 200
+    variante = db_session.get(ProductVariant, variant_id)
+    assert variante.stock_quantity == 0
+    assert variante.manage_stock is True          # 0 no es "no gestiona stock"
+    assert variante.stock_status == "outofstock"
+
+
+def test_vaciar_el_stock_significa_que_no_se_gestiona(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="STK-003", nombre="Producto", precio=10000, stock=5)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.put(f"/api/productos/{variant_id}/stock", json={"cantidad": None})
+
+    assert res.status_code == 200
+    variante = db_session.get(ProductVariant, variant_id)
+    assert variante.stock_quantity is None
+    assert variante.manage_stock is False
+
+
+def test_no_se_puede_cargar_un_stock_negativo(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="STK-004", nombre="Producto", precio=10000, stock=5)
+    variant_id = db_session.query(ProductVariant).one().id
+
+    res = client.put(f"/api/productos/{variant_id}/stock", json={"cantidad": -3})
+
+    assert res.status_code == 400
+
+
+def test_cambiar_el_stock_no_toca_el_reservado_para_mercado_libre(client, db_session, a_store):
+    """Son dos numeros separados a proposito (ver domain/marketplace_stock.py)."""
+    _producto_simple(db_session, a_store, sku="STK-005", nombre="Producto", precio=10000, stock=5)
+    variant_id = db_session.query(ProductVariant).one().id
+    client.put(f"/api/productos/{variant_id}/stock-mercadolibre", json={"cantidad": 3})
+
+    client.put(f"/api/productos/{variant_id}/stock", json={"cantidad": 40})
+
+    variante = db_session.get(ProductVariant, variant_id)
+    assert variante.stock_quantity == 40
+    assert variante.marketplace_stock == 3
+
+
+def test_configurar_stock_de_producto_inexistente_devuelve_404(client, a_store):
+    res = client.put("/api/productos/999999/stock", json={"cantidad": 5})
     assert res.status_code == 404
 
 

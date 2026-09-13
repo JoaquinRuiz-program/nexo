@@ -251,16 +251,23 @@ def build_rows(raw_rows: list[dict[str, Any]], mapping: ColumnMapping) -> list[R
             problemas.append(f"Stock no válido ({stock_raw!r})")
         if not sku:
             problemas.append("Falta SKU")
-        if not categoria:
-            problemas.append("Falta categoría")
-        if not descripcion:
-            problemas.append("Falta descripción")
         if not imagen_url:
             problemas.append("Falta imagen")
         if not costo_raw:
             problemas.append("Falta costo de compra")
         if not precio_raw:
             problemas.append("Falta precio de venta")
+        if stock is None:
+            problemas.append("Falta stock")
+        # 13 de septiembre de 2026 — categoría y descripción YA NO se marcan
+        # como problema: Nexo las resuelve solo más adelante (la categoría la
+        # predice Mercado Libre a partir del nombre, ver
+        # adapters/mercadolibre.py::predict_category; la descripción la arma
+        # domain/ai_content.py con los datos que sí existen). Un Excel normal
+        # —código, nombre, costo, precio— no trae ninguna de las dos, y
+        # marcarlas hacía que un archivo perfectamente válido se viera lleno
+        # de advertencias. Acá solo queda lo que de verdad necesita que una
+        # persona haga algo.
 
         if sku:
             seen_sku.setdefault(sku.lower(), []).append(index)

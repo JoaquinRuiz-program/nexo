@@ -1226,6 +1226,68 @@ window.LC = window.LC || {};
   // Modal simple de "Agregar costo" — con feedback Guardando… / ✓
   // actualizado en el propio botón, para que nunca quede la duda de si
   // funcionó (pedido explícito: nunca dejar al usuario preguntándose).
+  // 13 de septiembre de 2026 — stock fisico editable a mano, mismo patron que
+  // abrirEditorCosto: un Excel real normalmente no trae columna de stock, asi
+  // que tiene que poder cargarse desde aca. Vaciar el campo = "no gestiona
+  // stock", que no es lo mismo que 0.
+  function abrirEditorStock(producto, onGuardado) {
+    const root = document.getElementById("modal-root");
+    root.innerHTML = `
+      <div class="modal-overlay fixed inset-0 bg-slate-900/50 dark:bg-slate-950/70 flex items-center justify-center z-[60] p-4">
+        <div class="modal-card bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-sm w-full p-6">
+          <h3 class="text-lg font-semibold mb-1">${producto.stock == null ? "Agregar stock" : "Editar stock"}</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">${escapeHtml(producto.nombre)}</p>
+          <label class="form-label" for="stock-input">Unidades disponibles</label>
+          <input id="stock-input" type="number" min="0" step="1" inputmode="numeric" class="form-input" placeholder="0" value="${producto.stock ?? ""}" />
+          <p class="text-xs text-slate-400 mt-1.5">Dejalo vacio si este producto no lleva control de stock. Esto no cambia las unidades reservadas para Mercado Libre.</p>
+          <p id="stock-feedback" class="text-sm mt-2 min-h-[1.25rem]"></p>
+          <div class="flex justify-end gap-3 mt-3">
+            <button id="stock-cancelar" class="btn-secondary">Cancelar</button>
+            <button id="stock-guardar" class="btn-primary">Guardar</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const close = () => {
+      root.innerHTML = "";
+    };
+    root.querySelector(".modal-overlay").addEventListener("click", (e) => {
+      if (e.target.classList.contains("modal-overlay")) close();
+    });
+    document.getElementById("stock-cancelar").addEventListener("click", close);
+    document.getElementById("stock-input").focus();
+
+    document.getElementById("stock-guardar").addEventListener("click", async () => {
+      const feedback = document.getElementById("stock-feedback");
+      const valor = document.getElementById("stock-input").value.trim();
+      const cantidad = valor === "" ? null : Number(valor);
+      if (cantidad !== null && (!Number.isInteger(cantidad) || cantidad < 0)) {
+        feedback.textContent = "Ingresa un numero entero de 0 o mas.";
+        feedback.className = "text-sm mt-2 min-h-[1.25rem] text-red-600 dark:text-red-400";
+        return;
+      }
+      const btn = document.getElementById("stock-guardar");
+      btn.disabled = true;
+      btn.textContent = "Guardando…";
+      feedback.textContent = "";
+
+      const res = await LC.backendApi.actualizarStockProducto(producto.id, cantidad);
+      if (!res.ok) {
+        btn.disabled = false;
+        btn.textContent = "Guardar";
+        feedback.textContent = res.error.mensaje;
+        feedback.className = "text-sm mt-2 min-h-[1.25rem] text-red-600 dark:text-red-400";
+        return;
+      }
+      btn.textContent = "✓ Stock actualizado";
+      toast("success", "Stock actualizado.");
+      setTimeout(() => {
+        close();
+        onGuardado();
+      }, 500);
+    });
+  }
+
   function abrirEditorCosto(producto, onGuardado) {
     const root = document.getElementById("modal-root");
     root.innerHTML = `
@@ -1475,7 +1537,11 @@ window.LC = window.LC || {};
 
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
             <div><p class="stat-label">Precio</p><p class="text-lg font-semibold mt-1">${formatCLP(row.precio)}</p></div>
-            <div><p class="stat-label">Stock</p><p class="text-lg font-semibold mt-1">${row.stockQuantity ?? "—"}</p></div>
+            <div>
+              <p class="stat-label">Stock</p>
+              <p class="text-lg font-semibold mt-1">${row.stockQuantity ?? "Sin registrar"}</p>
+              <button id="detail-editar-stock" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline mt-0.5">${row.stockQuantity == null ? "Agregar stock" : "Editar"}</button>
+            </div>
             <div><p class="stat-label">Categoría</p><p class="text-lg font-semibold mt-1">${escapeHtml(row.categoria || "—")}</p></div>
             <div><p class="stat-label">Creado</p><p class="text-lg font-semibold mt-1">${formatDate(creado)}</p></div>
           </div>
@@ -1521,6 +1587,12 @@ window.LC = window.LC || {};
     main.querySelectorAll("[data-nav]").forEach((btn) => {
       btn.addEventListener("click", () => LC.router.navigate(btn.dataset.nav));
     });
+    const editarStockBtn = document.getElementById("detail-editar-stock");
+    if (editarStockBtn) {
+      editarStockBtn.addEventListener("click", () => {
+        abrirEditorStock({ id: row.id, nombre: row.nombre, stock: row.stockQuantity }, () => rerenderActual());
+      });
+    }
     const agregarCostoBtn = document.getElementById("detail-agregar-costo");
     if (agregarCostoBtn) {
       agregarCostoBtn.addEventListener("click", () => {
