@@ -88,3 +88,79 @@ def elegir_comision_principal(comisiones: dict[str, ListingFee], preferencia: Op
     if preferencia not in LISTING_TYPE_IDS:
         return None
     return comisiones.get(preferencia)
+
+
+TIPO_PUBLICACION_LABEL = {"classic": "Clásica", "premium": "Premium"}
+
+
+@dataclass(frozen=True)
+class RecomendacionTipoPublicacion:
+    tipo: str  # "classic" | "premium"
+    razon: str
+
+
+def _neto_pct(precio: float, costo: float, fee: ListingFee, shipping: float, other: float) -> Optional[float]:
+    """Margen neto como % del precio, con la comisión EXACTA de este tipo de
+    publicación. None si el precio es 0 (no se puede sacar %)."""
+    if not precio:
+        return None
+    neto = precio - costo - (fee.percentage_fee / 100.0 * precio + fee.fixed_fee) - shipping - other
+    return neto / precio * 100.0
+
+
+def recomendar_tipo_publicacion(
+    precio: Optional[float],
+    costo: Optional[float],
+    comisiones: dict[str, ListingFee],
+    *,
+    shipping_cost: float = 0.0,
+    other_fixed_cost: float = 0.0,
+    target_margin_pct: Optional[float] = None,
+) -> Optional[RecomendacionTipoPublicacion]:
+    """Elige AUTOMÁTICAMENTE Clásica vs Premium para ESTE producto, con la
+    comisión real y exacta de cada tipo (14 de septiembre de 2026, pedido del
+    dueño: "que el sistema te diga cuál te recomienda según el margen, con la
+    comisión exacta por producto" — reemplaza el listing_type_pref manual).
+
+    Regla: Clásica por defecto — menor comisión, más utilidad, y es lo que
+    Mercado Libre mismo sugiere para empezar. Se sube a Premium SOLO cuando el
+    producto aguanta su comisión más alta sin bajar del margen objetivo del
+    canal (target_margin_pct): ahí se gana la mayor visibilidad y las 12
+    cuotas sin resignar la rentabilidad buscada. Sin target configurado, o si
+    Premium no llega al objetivo, queda Clásica. Devuelve None si faltan datos
+    (sin precio/costo, o sin ninguna comisión real cacheada todavía)."""
+    if precio is None or costo is None or not comisiones:
+        return None
+
+    classic = comisiones.get("classic")
+    premium = comisiones.get("premium")
+
+    # Si solo hay una de las dos, esa es la recomendación (no hay elección).
+    if classic is None and premium is None:
+        return None
+    if premium is None:
+        return RecomendacionTipoPublicacion("classic", "Es el único tipo de publicación disponible para esta categoría.")
+    if classic is None:
+        return RecomendacionTipoPublicacion("premium", "Es el único tipo de publicación disponible para esta categoría.")
+
+    neto_premium_pct = _neto_pct(precio, costo, premium, shipping_cost, other_fixed_cost)
+    neto_classic_pct = _neto_pct(precio, costo, classic, shipping_cost, other_fixed_cost)
+
+    if (
+        target_margin_pct is not None
+        and neto_premium_pct is not None
+        and neto_premium_pct >= target_margin_pct
+    ):
+        return RecomendacionTipoPublicacion(
+            "premium",
+            f"El margen aguanta la comisión de Premium y aún deja {neto_premium_pct:.0f}% "
+            f"(sobre tu objetivo de {target_margin_pct:.0f}%): más visibilidad y 12 cuotas sin resignar rentabilidad.",
+        )
+
+    razon = "Menor comisión que Premium, así te queda más utilidad; es lo que Mercado Libre recomienda para empezar."
+    if neto_classic_pct is not None and neto_premium_pct is not None:
+        razon = (
+            f"Clásica te deja {neto_classic_pct:.0f}% de margen vs {neto_premium_pct:.0f}% en Premium — "
+            "más utilidad, y es lo que Mercado Libre recomienda para empezar."
+        )
+    return RecomendacionTipoPublicacion("classic", razon)

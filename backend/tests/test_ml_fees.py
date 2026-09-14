@@ -7,7 +7,12 @@ $5.000 CLP, categoría "Cuadernos").
 
 from __future__ import annotations
 
-from app.domain.ml_fees import elegir_comision_principal, parse_listing_fees
+from app.domain.ml_fees import (
+    ListingFee,
+    elegir_comision_principal,
+    parse_listing_fees,
+    recomendar_tipo_publicacion,
+)
 
 RESPUESTA_REAL_ML = [
     {
@@ -75,3 +80,50 @@ def test_elegir_comision_principal_sin_preferencia_no_elige_ninguna():
     comisiones = parse_listing_fees(RESPUESTA_REAL_ML)
     assert elegir_comision_principal(comisiones, None) is None
     assert elegir_comision_principal(comisiones, "algo-invalido") is None
+
+
+# ------------------------------------------------------------------
+# Recomendación AUTOMÁTICA de tipo de publicación (14 de septiembre de 2026)
+# ------------------------------------------------------------------
+
+# classic 13% / premium 17% — comisiones reales típicas de una categoría.
+_COMIS = {
+    "classic": ListingFee("Clásica", percentage_fee=13, fixed_fee=0, sale_fee_amount=0),
+    "premium": ListingFee("Premium", percentage_fee=17, fixed_fee=0, sale_fee_amount=0),
+}
+
+
+def test_recomienda_clasica_cuando_el_margen_no_aguanta_premium():
+    # precio 8000, costo 6000: neto premium = 2000 - 1360 = 640 (8%), lejos del 62% objetivo.
+    r = recomendar_tipo_publicacion(8000, 6000, _COMIS, target_margin_pct=62)
+    assert r.tipo == "classic"
+
+
+def test_recomienda_premium_cuando_el_margen_alto_lo_aguanta():
+    # precio 15000, costo 1500: neto premium = 13500 - 2550 = 10950 (73%) >= 62%.
+    r = recomendar_tipo_publicacion(15000, 1500, _COMIS, target_margin_pct=62)
+    assert r.tipo == "premium"
+
+
+def test_sin_target_configurado_siempre_clasica():
+    # Sin objetivo no hay contra qué medir "aguanta Premium" -> Clásica (más utilidad).
+    r = recomendar_tipo_publicacion(15000, 1500, _COMIS, target_margin_pct=None)
+    assert r.tipo == "classic"
+
+
+def test_una_sola_comision_disponible_es_la_recomendada():
+    solo_classic = {"classic": _COMIS["classic"]}
+    r = recomendar_tipo_publicacion(10000, 5000, solo_classic, target_margin_pct=62)
+    assert r.tipo == "classic"
+
+
+def test_sin_datos_devuelve_none():
+    assert recomendar_tipo_publicacion(None, 5000, _COMIS) is None
+    assert recomendar_tipo_publicacion(10000, None, _COMIS) is None
+    assert recomendar_tipo_publicacion(10000, 5000, {}) is None
+
+
+def test_el_envio_se_descuenta_al_evaluar_si_aguanta_premium():
+    # Mismo caso "alto margen" pero con un envío que lo hunde por debajo del objetivo.
+    r = recomendar_tipo_publicacion(15000, 1500, _COMIS, shipping_cost=8000, target_margin_pct=62)
+    assert r.tipo == "classic"

@@ -35,7 +35,14 @@ from sqlalchemy.orm import Session
 from app.adapters.mercadolibre import MercadoLibreAdapter, MercadoLibreAuthError, MercadoLibreRequestError
 from app.api.deps import get_current_store
 from app.api.routes.mercadolibre import _build_ml_config, _get_account, _get_valid_access_token, _require_configured
-from app.api.routes.rentabilidad import build_profitability_rows, comisiones_ml_cacheadas, resolver_costos_ml
+from app.api.routes.rentabilidad import (
+    aplicar_envio_real_ml,
+    build_profitability_rows,
+    comisiones_ml_cacheadas,
+    publicaciones_ml_por_producto,
+    resolver_costos_ml,
+)
+from app.services.ml_shipping_sync import sincronizar_costos_envio_de_la_cuenta
 from app.config import get_settings
 from app.db.models import ChannelCostSettings, MarketplaceAccount, MarketplaceListing, MarketplaceListingVariant, Product, ProductVariant, Store
 from app.db.session import get_db
@@ -284,6 +291,32 @@ async def preparar_publicacion_mercadolibre(
     }
 
 
+def _datos_conocidos_ml(producto: Product, variante: ProductVariant) -> dict[str, str]:
+    """Lo que Nexo YA sabe del producto, mapeado a los IDs de atributo reales
+    de Mercado Libre, para que la publicación se auto-complete sola en vez de
+    pedirle al dueño que reescriba datos que ya están en el catálogo (14 de
+    septiembre de 2026 — "que estos datos se pongan solos"):
+
+    - BOOK_TITLE (Título del libro) <- el nombre del producto. Solo existe en
+      categorías de libros; en el resto Mercado Libre lo ignora sin problema.
+    - GTIN/EAN/UPC (y su alias ISBN en libros, que ML expone como GTIN) <- el
+      código de barras. Un mismo dato real, nunca tres inventados.
+    - BRAND (Marca) <- la marca del producto.
+
+    Autor y Editorial NO se completan: no viven en el catálogo hoy — harían
+    falta como columnas del Excel (o cargarse a mano al revisar)."""
+    datos: dict[str, str] = {}
+    if producto.name:
+        datos["BOOK_TITLE"] = producto.name
+    if producto.brand:
+        datos["BRAND"] = producto.brand
+    if variante.barcode:
+        datos["GTIN"] = variante.barcode
+        datos["EAN"] = variante.barcode
+        datos["UPC"] = variante.barcode
+    return datos
+
+
 class ValidarPublicacionRequest(BaseModel):
     category_id: str
     condition: str = "new"
@@ -335,16 +368,7 @@ async def validar_publicacion_mercadolibre(
     finally:
         await adapter.aclose()
 
-    # Lo que Nexo ya sabe, mapeado a los IDs de atributo que Mercado Libre
-    # podría usar — GTIN/EAN/UPC son alias del mismo dato real (el código
-    # de barras), nunca tres datos distintos inventados.
-    datos_conocidos: dict[str, str] = {}
-    if producto.brand:
-        datos_conocidos["BRAND"] = producto.brand
-    if variante.barcode:
-        datos_conocidos["GTIN"] = variante.barcode
-        datos_conocidos["EAN"] = variante.barcode
-        datos_conocidos["UPC"] = variante.barcode
+    datos_conocidos = _datos_conocidos_ml(producto, variante)
 
     resultado = evaluar_atributos(atributos_categoria, body.condition, datos_conocidos, {})
     clasificacion = classify_product(fila, SelectionCriteria(channel="mercadolibre", require_marketplace_stock=True))
@@ -517,6 +541,10 @@ async def _resolver_recomendacion_precio(
     listing_type_pref = config_canal.listing_type_pref if config_canal else None
     precio_actual = float(variante.price) if variante.price is not None else None
     comisiones = comisiones_ml_cacheadas(db, store.id, producto, precio_actual)
+    # Mismo envío real de Mercado Libre que Rentabilidad (aplicar_envio_real_ml).
+    channel_costs_manual, _envio_ml = aplicar_envio_real_ml(
+        channel_costs_manual, publicaciones_ml_por_producto(db, store.id, [producto.id]).get(producto.id)
+    )
     channel_costs, fuente_comision_ml = resolver_costos_ml(comisiones, channel_costs_manual, listing_type_pref)
     margen_objetivo_pct = float(config_canal.target_margin_pct) if config_canal and config_canal.target_margin_pct is not None else None
     margen_minimo_pct = float(config_canal.min_margin_pct) if config_canal and config_canal.min_margin_pct is not None else None
@@ -610,6 +638,23 @@ async def decision_mercadolibre(
     recomendacion, analisis_competencia, fuente_comision_ml = await _resolver_recomendacion_precio(db, store, variante, producto)
     decision = evaluar_decision(recomendacion, analisis_competencia)
 
+    # El piso de margen configurado (ChannelCostSettings.min_margin_pct) es un
+    # gate DURO, el MISMO que corre al publicar (ver el gate de /confirmar).
+    # Tiene que decirse ACÁ, en el paso 1 ("¿Conviene?"), no recién cuando el
+    # dueño ya llenó los atributos y aprieta publicar: si el producto no
+    # alcanza el mínimo a su precio actual, "no conviene" desde el principio.
+    # `_fila` ya trae el margen neto de ML al precio real de la variante.
+    config_canal = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
+    margen_minimo_pct = float(config_canal.min_margin_pct) if config_canal and config_canal.min_margin_pct is not None else None
+    gate = classify_product(
+        _fila, SelectionCriteria(channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct)
+    )
+    decision_valor = decision.decision
+    razon_valor = decision.razon
+    if gate["clasificacion"] in ("margen_bajo", "no_rentable"):
+        decision_valor = "no_conviene"
+        razon_valor = gate["razon"]
+
     competencia_resumen = None
     if analisis_competencia is not None and analisis_competencia.hay_competencia:
         competencia_resumen = {
@@ -623,8 +668,8 @@ async def decision_mercadolibre(
         # Nunca publica, nunca modifica precio/stock — solo lectura y
         # cálculo (ver domain/decision.py).
         "tipo": "DECISION",
-        "decision": decision.decision,  # "conviene" | "revisar" | "no_conviene"
-        "razon": decision.razon,
+        "decision": decision_valor,  # "conviene" | "revisar" | "no_conviene"
+        "razon": razon_valor,
         "precioRecomendado": decision.precio_recomendado,
         "precioMinimoRentable": decision.precio_minimo_rentable,
         "gananciaEstimada": decision.ganancia_estimada,
@@ -669,11 +714,13 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
     # razón real por la que la columna "Decisión" de Oportunidades podía
     # contradecir el margen de la misma fila.
     variantes = db.query(ProductVariant).filter_by(store_id=store.id).all()
+    publicaciones_ml = publicaciones_ml_por_producto(db, store.id)
     resultado = []
     for variante in variantes:
         precio_actual = float(variante.price) if variante.price is not None else None
         comisiones = comisiones_ml_cacheadas(db, store.id, variante.product, precio_actual)
-        channel_costs, _fuente = resolver_costos_ml(comisiones, channel_costs_manual, listing_type_pref)
+        costos_con_envio, _envio_ml = aplicar_envio_real_ml(channel_costs_manual, publicaciones_ml.get(variante.product_id))
+        channel_costs, _fuente = resolver_costos_ml(comisiones, costos_con_envio, listing_type_pref)
         recomendacion = recomendar_precio(
             costo=float(variante.cost_price) if variante.cost_price is not None else None,
             channel_costs=channel_costs,
@@ -939,13 +986,7 @@ async def _resolver_publicacion(
             detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
         ) from err
 
-    datos_conocidos: dict[str, str] = {}
-    if producto.brand:
-        datos_conocidos["BRAND"] = producto.brand
-    if variante.barcode:
-        datos_conocidos["GTIN"] = variante.barcode
-        datos_conocidos["EAN"] = variante.barcode
-        datos_conocidos["UPC"] = variante.barcode
+    datos_conocidos = _datos_conocidos_ml(producto, variante)
 
     adapter = MercadoLibreAdapter(cfg)
     # ¿Esta cuenta ya está migrada al modelo User Products de Mercado
@@ -1308,6 +1349,10 @@ async def confirmar_publicacion_mercadolibre(
                 "volver a intentar, para no duplicarla."
             ),
         ) from err
+
+    # Apenas existe la publicación, se pide su costo de envío real (best
+    # effort: nunca afecta el resultado de una publicación ya creada).
+    await sincronizar_costos_envio_de_la_cuenta(db, account, get_settings(), listings=[listing])
 
     return {
         "itemId": item_id,

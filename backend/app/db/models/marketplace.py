@@ -124,6 +124,17 @@ class MarketplaceListing(Base):
     price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 14 de septiembre de 2026 — costo de envío REAL que Mercado Libre le
+    # informa al vendedor para esta publicación, más los datos de `shipping`
+    # del ítem (ver app/domain/ml_shipping.py). shipping_cost NULL = "No
+    # disponible" (motivo en shipping_cost_unavailable_reason): nunca se estima.
+    shipping_cost: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    shipping_currency_id: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    shipping_mode: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    shipping_logistic_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    shipping_free_shipping: Mapped[bool | None] = mapped_column(nullable=True)
+    shipping_cost_unavailable_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    shipping_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     account: Mapped["MarketplaceAccount"] = relationship(back_populates="listings")
     product: Mapped["Product"] = relationship(back_populates="marketplace_listings")  # noqa: F821

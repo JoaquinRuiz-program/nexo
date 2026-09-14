@@ -34,18 +34,273 @@ window.LC = window.LC || {};
     if (storeId === "usuarios") await renderUsuarios(main);
     else if (storeId === "soporte") await renderSoporte(main);
     else if (storeId && storeId.startsWith("soporte-")) await renderSoporteDetalle(main, Number(storeId.slice("soporte-".length)));
+    else if (storeId === "clientes") await renderClientes(main);
     else if (storeId) await renderDetalle(main, Number(storeId));
-    else await renderClientes(main);
+    else await renderOverview(main);
   }
 
   function tabs(activa) {
     return `
       <div class="chart-tabs mb-5">
-        <a href="#/admin" class="chart-tab ${activa === "clientes" ? "chart-tab-active" : ""}">Clientes</a>
+        <a href="#/admin" class="chart-tab ${activa === "overview" ? "chart-tab-active" : ""}">Overview</a>
+        <a href="#/admin/clientes" class="chart-tab ${activa === "clientes" ? "chart-tab-active" : ""}">Clientes</a>
         <a href="#/admin/usuarios" class="chart-tab ${activa === "usuarios" ? "chart-tab-active" : ""}">Usuarios</a>
         <a href="#/admin/soporte" class="chart-tab ${activa === "soporte" ? "chart-tab-active" : ""}">Soporte</a>
       </div>
     `;
+  }
+
+  // ==================================================================
+  // Overview — Business Intelligence global (14 de septiembre de 2026)
+  // ==================================================================
+
+  const PERIODO_LABEL = {
+    hoy: "Hoy", "7d": "Últimos 7 días", "30d": "Últimos 30 días", este_mes: "Este mes",
+    mes_anterior: "Mes anterior", "3m": "Últimos 3 meses", "6m": "Últimos 6 meses",
+    "12m": "Últimos 12 meses", todo: "Todo",
+  };
+  const CANAL_LABEL = { todos: "Todos", mercadolibre: "Mercado Libre" };
+
+  // Filtros del dashboard — se conservan entre re-renders dentro de la sesión.
+  const ovFiltros = { periodo: "30d", empresa: "", canal: "todos" };
+  let ovTopOrden = "ventas";  // columna de orden del ranking
+
+  function _fmtCompacto(v) {
+    if (v == null) return "Sin datos suficientes";
+    const abs = Math.abs(v);
+    if (abs >= 1e6) return "$" + (v / 1e6).toFixed(1).replace(".", ",") + "M";
+    if (abs >= 1e3) return "$" + Math.round(v / 1e3) + "k";
+    return formatCLPReal(v);
+  }
+
+  function _kpiDelta(pct) {
+    if (pct == null) return `<span class="kpi-delta kpi-delta--flat">— vs período anterior</span>`;
+    const up = pct >= 0;
+    return `<span class="kpi-delta kpi-delta--${up ? "up" : "down"}">${up ? "↑" : "↓"} ${Math.abs(pct)}% vs período anterior</span>`;
+  }
+
+  function _fmtFechaEje(iso, gran) {
+    const d = new Date(iso + "T00:00:00");
+    if (gran === "mes") return d.toLocaleDateString("es-CL", { month: "short" });
+    return d.toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" });
+  }
+
+  function _kpiCard(label, valor, opts) {
+    const o = opts || {};
+    const claseValor = o.muted ? "kpi-value kpi-value--muted" : "kpi-value";
+    const delta = o.delta !== undefined ? _kpiDelta(o.delta) : (o.sub ? `<span class="kpi-delta kpi-delta--flat">${escapeHtml(o.sub)}</span>` : "");
+    const hint = o.hint ? ` title="${escapeHtml(o.hint)}"` : "";
+    return `
+      <div class="kpi-card"${hint}>
+        <p class="kpi-label">${escapeHtml(label)}</p>
+        <p class="${claseValor}">${valor}</p>
+        ${delta}
+      </div>`;
+  }
+
+  async function renderOverview(main) {
+    main.innerHTML = `<div class="page-wrap app-fade">${tabs("overview")}<div class="skeleton-line h-64 w-full"></div></div>`;
+    const res = await LC.backendApi.obtenerAdminOverview(ovFiltros);
+    if (!res.ok) {
+      main.innerHTML = `<div class="page-wrap">${tabs("overview")}<div class="empty-state"><p class="empty-state-title">No pudimos cargar el panel</p><p class="empty-state-desc">${escapeHtml(res.error.mensaje)}</p></div></div>`;
+      return;
+    }
+    const d = res.data;
+    const empresasOpts = (d.topEmpresas || []).map((e) => e.storeId ? `<option value="${e.storeId}" ${String(ovFiltros.empresa) === String(e.storeId) ? "selected" : ""}>${escapeHtml(e.nombre)}</option>` : "").join("");
+
+    if (!d.hayEmpresas) {
+      main.innerHTML = `<div class="page-wrap app-fade">${tabs("overview")}
+        <div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("store")}</div>
+        <p class="empty-state-title">Todavía no hay empresas cliente</p>
+        <p class="empty-state-desc">Cuando se registre la primera empresa, acá vas a ver todo el negocio que gestiona Nexo.</p></div></div>`;
+      return;
+    }
+
+    const k = d.kpis;
+    main.innerHTML = `
+      <div class="page-wrap app-fade">
+        ${tabs("overview")}
+
+        <div class="ov-filtros">
+          <div class="ov-filtro-group">
+            <label class="ov-filtro-label">Período</label>
+            <select id="ov-periodo" class="ov-select">
+              ${Object.keys(PERIODO_LABEL).map((p) => `<option value="${p}" ${ovFiltros.periodo === p ? "selected" : ""}>${PERIODO_LABEL[p]}</option>`).join("")}
+            </select>
+          </div>
+          <div class="ov-filtro-group">
+            <label class="ov-filtro-label">Empresa</label>
+            <select id="ov-empresa" class="ov-select">
+              <option value="" ${!ovFiltros.empresa ? "selected" : ""}>Todas</option>
+              ${empresasOpts}
+            </select>
+          </div>
+          <div class="ov-filtro-group">
+            <label class="ov-filtro-label">Canal</label>
+            <select id="ov-canal" class="ov-select">
+              ${Object.keys(CANAL_LABEL).map((c) => `<option value="${c}" ${ovFiltros.canal === c ? "selected" : ""}>${CANAL_LABEL[c]}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          ${_kpiCard("Ventas gestionadas (GMV)", _fmtCompacto(k.gmv.valor), { delta: k.gmv.variacionPct, hint: "Valor total de ventas del período" })}
+          ${_kpiCard("Margen generado", _fmtCompacto(k.margenGenerado.valor), { delta: k.margenGenerado.variacionPct, hint: k.margenGenerado.parcial ? "Parcial: algunos productos no tienen costo cargado" : "Ventas menos costos y comisiones" })}
+          ${_kpiCard("Margen promedio", k.margenPromedioPct == null ? "Sin datos suficientes" : formatPct(k.margenPromedioPct), { muted: k.margenPromedioPct == null })}
+          ${_kpiCard("Ventas / pedidos", String(k.ventas.valor), { delta: k.ventas.variacionPct })}
+          ${_kpiCard("Unidades vendidas", String(k.unidades), {})}
+          ${_kpiCard("Empresas activas", String(k.empresasActivas), {})}
+          ${_kpiCard("Productos gestionados", String(k.productosGestionados), {})}
+          ${_kpiCard("Publicaciones activas", String(k.publicacionesActivas), {})}
+          ${_kpiCard("Usuarios activos", String(k.usuariosActivos), { sub: "con sesión en el período" })}
+        </div>
+
+        ${_seccionAtencion(d.atencion)}
+
+        <div class="ov-2col">
+          <div class="panel-card">
+            <h3 class="panel-title mb-1">Ventas gestionadas</h3>
+            <p class="panel-subtitle mb-4">Evolución en el período (${d.granularidad === "mes" ? "por mes" : d.granularidad === "semana" ? "por semana" : "por día"})</p>
+            ${LC.chart.lineChartSVG(d.ventasEnElTiempo, { formatValue: _fmtCompacto, formatFecha: (iso) => _fmtFechaEje(iso, d.granularidad) })}
+          </div>
+          <div class="panel-card">
+            <h3 class="panel-title mb-1">Ventas por empresa</h3>
+            <p class="panel-subtitle mb-4">Participación en el total</p>
+            ${_seccionDona(d.ventasPorEmpresa)}
+          </div>
+        </div>
+
+        ${_seccionTopEmpresas(d.topEmpresas)}
+        ${_seccionMercadoLibre(d.mercadoLibre)}
+        ${_seccionCrecimiento(d.crecimiento)}
+      </div>
+    `;
+
+    const reFetch = (campo) => (e) => { ovFiltros[campo] = e.target.value; renderOverview(main); };
+    document.getElementById("ov-periodo").addEventListener("change", reFetch("periodo"));
+    document.getElementById("ov-empresa").addEventListener("change", reFetch("empresa"));
+    document.getElementById("ov-canal").addEventListener("change", reFetch("canal"));
+
+    main.querySelectorAll("[data-ir-empresa]").forEach((el) => {
+      el.addEventListener("click", () => LC.router.navigate(`/admin/${el.dataset.irEmpresa}`));
+    });
+    main.querySelectorAll("[data-orden-top]").forEach((th) => {
+      th.addEventListener("click", () => { ovTopOrden = th.dataset.ordenTop; renderOverview(main); });
+    });
+  }
+
+  function _seccionAtencion(lista) {
+    if (!lista) return "";
+    const cuerpo = lista.length
+      ? lista.map((e) => `
+          <div class="ov-rank-row flex flex-wrap items-center gap-2 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0 cursor-pointer" data-ir-empresa="${e.storeId}">
+            <span class="font-medium mr-2">${escapeHtml(e.nombre)}</span>
+            ${e.motivos.map((m) => `<span class="reco-badge reco-atencion-${m.severidad}">${escapeHtml(m.texto)}</span>`).join("")}
+          </div>`).join("")
+      : `<p class="text-sm text-slate-400">Ninguna empresa necesita atención ahora.</p>`;
+    return `
+      <div class="panel-card mb-6">
+        <h3 class="panel-title mb-1">Clientes que necesitan atención</h3>
+        <p class="panel-subtitle mb-4">Plan vencido o por vencer, Mercado Libre desconectado, sin productos o soporte sin resolver. Hacé click en una empresa para ver su detalle.</p>
+        ${cuerpo}
+      </div>`;
+  }
+
+  function _seccionDona(ventasPorEmpresa) {
+    const total = (ventasPorEmpresa || []).reduce((s, e) => s + (e.monto || 0), 0);
+    if (!ventasPorEmpresa || !ventasPorEmpresa.length || total <= 0) {
+      return `<div class="chart-empty">Sin datos suficientes</div>`;
+    }
+    const paleta = LC.chart.PALETA;
+    const leyenda = ventasPorEmpresa.map((e, i) => `
+      <div class="ov-legend-item" ${e.storeId ? `data-ir-empresa="${e.storeId}"` : ""}>
+        <span class="ov-legend-dot" style="background:${paleta[i % paleta.length]}"></span>
+        <span class="ov-legend-name">${escapeHtml(e.nombre)}</span>
+        <span class="ov-legend-val">${e.pct}% · ${_fmtCompacto(e.monto)}</span>
+      </div>`).join("");
+    return `
+      ${LC.chart.donutChartSVG(ventasPorEmpresa, { formatValue: _fmtCompacto })}
+      <div class="ov-legend mt-4">${leyenda}</div>`;
+  }
+
+  const TOP_COLS = [
+    { key: "ventas", label: "Ventas", money: true },
+    { key: "margen", label: "Margen", money: true },
+    { key: "crecimientoPct", label: "Crecimiento", pct: true },
+    { key: "productos", label: "Productos" },
+    { key: "publicaciones", label: "Publicaciones" },
+    { key: "cantidadVentas", label: "N° ventas" },
+  ];
+
+  function _seccionTopEmpresas(top) {
+    if (!top || !top.length) return "";
+    const filas = [...top].sort((a, b) => {
+      const va = a[ovTopOrden] == null ? -Infinity : a[ovTopOrden];
+      const vb = b[ovTopOrden] == null ? -Infinity : b[ovTopOrden];
+      return vb - va;
+    });
+    const totalVentas = top.reduce((s, e) => s + (e.ventas || 0), 0);
+    return `
+      <div class="panel-card mb-6">
+        <h3 class="panel-title mb-1">Top empresas</h3>
+        <p class="panel-subtitle mb-4">Ordená por cualquier columna. Hacé click en una empresa para ver su detalle.</p>
+        <div class="table-wrap"><table class="w-full text-sm">
+          <thead><tr class="text-left border-b border-slate-200 dark:border-slate-700">
+            <th class="px-3 py-2 font-medium">Empresa</th>
+            ${TOP_COLS.map((c) => `<th class="px-3 py-2 font-medium text-right cursor-pointer ${ovTopOrden === c.key ? "text-indigo-600 dark:text-indigo-400" : ""}" data-orden-top="${c.key}">${c.label}${ovTopOrden === c.key ? " ▼" : ""}</th>`).join("")}
+          </tr></thead>
+          <tbody>
+            ${filas.map((e, i) => `
+              <tr class="ov-rank-row border-b border-slate-100 dark:border-slate-800 last:border-0" ${e.storeId ? `data-ir-empresa="${e.storeId}"` : ""}>
+                <td class="px-3 py-2.5"><span class="text-slate-400 mr-2">${i + 1}</span><span class="font-medium">${escapeHtml(e.nombre)}</span>
+                  ${totalVentas > 0 && e.ventas > 0 ? `<span class="text-xs text-slate-400 ml-2">${Math.round(e.ventas / totalVentas * 100)}%</span>` : ""}</td>
+                <td class="px-3 py-2.5 text-right font-medium">${_fmtCompacto(e.ventas)}</td>
+                <td class="px-3 py-2.5 text-right">${_fmtCompacto(e.margen)}</td>
+                <td class="px-3 py-2.5 text-right">${e.crecimientoPct == null ? "—" : `<span class="${e.crecimientoPct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}">${e.crecimientoPct >= 0 ? "↑" : "↓"} ${Math.abs(e.crecimientoPct)}%</span>`}</td>
+                <td class="px-3 py-2.5 text-right">${e.productos}</td>
+                <td class="px-3 py-2.5 text-right">${e.publicaciones}</td>
+                <td class="px-3 py-2.5 text-right">${e.cantidadVentas}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table></div>
+      </div>`;
+  }
+
+  function _seccionMercadoLibre(ml) {
+    if (!ml || Object.keys(ml).length === 0) return "";
+    const sync = ml.ultimaSincronizacion ? formatDate(new Date(ml.ultimaSincronizacion)) : "Nunca";
+    return `
+      <div class="panel-card mb-6">
+        <div class="flex items-center gap-2 mb-4">
+          <span class="reco-badge reco-rentable">Mercado Libre</span>
+          <h3 class="panel-title">Analytics del canal</h3>
+        </div>
+        <div class="kpi-grid">
+          ${_kpiCard("Ventas ML (GMV)", _fmtCompacto(ml.gmv), {})}
+          ${_kpiCard("Unidades", String(ml.unidades), {})}
+          ${_kpiCard("Comisiones", _fmtCompacto(ml.comisiones), {})}
+          ${_kpiCard("Margen ML", _fmtCompacto(ml.margen), { hint: ml.margenParcial ? "Parcial: faltan costos en algunos productos" : "" })}
+          ${_kpiCard("Publicaciones activas", String(ml.publicacionesActivas), {})}
+          ${_kpiCard("Publicaciones pausadas", String(ml.publicacionesPausadas), {})}
+          ${_kpiCard("Empresas conectadas", String(ml.empresasConectadas), { sub: ml.empresasConError ? `${ml.empresasConError} con error` : "" })}
+          ${_kpiCard("Última sincronización", sync, { muted: true })}
+        </div>
+      </div>`;
+  }
+
+  function _seccionCrecimiento(cre) {
+    if (!cre || !cre.nuevasEmpresasPorMes) return "";
+    const subs = cre.suscripcionesPorEstado || {};
+    const chips = Object.keys(subs).length
+      ? Object.keys(subs).map((estado) => `<span class="reco-badge ${SOPORTE_ESTADO_CLASE[estado] || "reco-pendiente_configuracion"}">${ESTADO_SUSCRIPCION_LABEL[estado] || estado}: ${subs[estado]}</span>`).join(" ")
+      : `<span class="text-sm text-slate-400">Sin suscripciones registradas</span>`;
+    return `
+      <div class="panel-card mb-6">
+        <h3 class="panel-title mb-1">Crecimiento de Nexo</h3>
+        <p class="panel-subtitle mb-4">${cre.totalEmpresas} ${cre.totalEmpresas === 1 ? "empresa cliente" : "empresas cliente"} · altas por mes (últimos 12)</p>
+        ${LC.chart.lineChartSVG(cre.nuevasEmpresasPorMes, { formatValue: (v) => String(Math.round(v)), formatFecha: (iso) => _fmtFechaEje(iso, "mes") })}
+        <div class="flex flex-wrap gap-2 mt-4">${chips}</div>
+      </div>`;
   }
 
   // ------------------------------------------------------------------

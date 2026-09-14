@@ -1100,6 +1100,13 @@ main::-webkit-scrollbar-track {
 .dark .reco-badge.reco-pendiente_configuracion { background: #451a03; color: #fbbf24; }
 .reco-badge.reco-suspendido { background: #fef2f2; color: #b91c1c; }
 .dark .reco-badge.reco-suspendido { background: #450a0a; color: #f87171; }
+/* "Clientes que necesitan atención" del Overview admin — severidad del motivo. */
+.reco-badge.reco-atencion-alta { background: #fef2f2; color: #b91c1c; }
+.dark .reco-badge.reco-atencion-alta { background: #450a0a; color: #f87171; }
+.reco-badge.reco-atencion-media { background: #fffbeb; color: #92400e; }
+.dark .reco-badge.reco-atencion-media { background: #451a03; color: #fbbf24; }
+.reco-badge.reco-atencion-baja { background: #f1f5f9; color: #475569; }
+.dark .reco-badge.reco-atencion-baja { background: #1e293b; color: #94a3b8; }
 
 .draft-card {
   border: 1px solid #e2e8f0;
@@ -1133,3 +1140,78 @@ main::-webkit-scrollbar-track {
 .dark .source-pill.source-pill--real { background: #064e3b; color: #34d399; }
 .source-pill.source-pill--demo { background: #fffbeb; color: #92400e; }
 .dark .source-pill.source-pill--demo { background: #451a03; color: #fbbf24; }
+
+/* ==================================================================
+   Overview del admin — Business Intelligence (14 de septiembre de 2026)
+   ================================================================== */
+
+/* Barra de filtros */
+.ov-filtros {
+  display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end;
+  margin-bottom: 1.25rem;
+}
+.ov-filtro-group { display: flex; flex-direction: column; gap: 0.3rem; }
+.ov-filtro-label {
+  font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: #94a3b8;
+}
+.ov-select {
+  font-size: 0.9rem; padding: 0.5rem 0.75rem; border-radius: 0.6rem;
+  border: 1px solid #e2e8f0; background: #fff; color: #0f172a; min-width: 9rem;
+}
+.dark .ov-select { border-color: #334155; background: #1e293b; color: #e2e8f0; }
+
+/* Tarjetas KPI */
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 1rem; margin-bottom: 1.5rem;
+}
+.kpi-card {
+  border: 1px solid #e9edf3; border-radius: 1rem; padding: 1.1rem 1.2rem;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04); transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.kpi-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(79,70,229,0.10); }
+.dark .kpi-card { border-color: #24304a; background: linear-gradient(180deg, #172033 0%, #131b2b 100%); }
+.kpi-label {
+  font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: #94a3b8; display: flex; align-items: center; gap: 0.35rem;
+}
+.kpi-value { font-size: 1.7rem; font-weight: 700; color: #0f172a; margin-top: 0.35rem; line-height: 1.1; }
+.dark .kpi-value { color: #f1f5f9; }
+.kpi-value.kpi-value--muted { color: #94a3b8; font-size: 1.05rem; font-weight: 600; }
+.kpi-delta { font-size: 0.8rem; font-weight: 600; margin-top: 0.4rem; display: inline-flex; align-items: center; gap: 0.2rem; }
+.kpi-delta--up { color: #059669; }
+.kpi-delta--down { color: #dc2626; }
+.kpi-delta--flat { color: #94a3b8; }
+
+/* Gráficos SVG */
+.chart-svg { width: 100%; height: auto; display: block; }
+.chart-donut { width: 220px; max-width: 100%; height: auto; display: block; margin: 0 auto; }
+.chart-axis-label { font-size: 10px; fill: #94a3b8; }
+.donut-num { font-size: 20px; font-weight: 700; fill: #0f172a; }
+.dark .donut-num { fill: #f1f5f9; }
+.donut-lbl { font-size: 11px; fill: #94a3b8; }
+.chart-empty {
+  display: flex; align-items: center; justify-content: center; min-height: 180px;
+  color: #94a3b8; font-size: 0.9rem;
+}
+
+/* Leyenda del pie */
+.ov-legend { display: flex; flex-direction: column; gap: 0.55rem; }
+.ov-legend-item { display: flex; align-items: center; gap: 0.6rem; font-size: 0.88rem; cursor: pointer; }
+.ov-legend-item:hover { color: #4f46e5; }
+.dark .ov-legend-item:hover { color: #a5b4fc; }
+.ov-legend-dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+.ov-legend-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-legend-val { font-variant-numeric: tabular-nums; color: #64748b; }
+.dark .ov-legend-val { color: #94a3b8; }
+
+/* Fila de dos columnas (gráfico + panel) */
+.ov-2col { display: grid; grid-template-columns: 1fr; gap: 1.25rem; margin-bottom: 1.5rem; }
+@media (min-width: 900px) { .ov-2col { grid-template-columns: 3fr 2fr; } }
+
+/* Ranking top empresas — fila clickeable */
+.ov-rank-row { cursor: pointer; }
+.ov-rank-row:hover { background: #f8fafc; }
+.dark .ov-rank-row:hover { background: #1e293b; }

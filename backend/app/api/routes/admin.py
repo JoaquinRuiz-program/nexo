@@ -28,14 +28,15 @@ cada request; esto alcanza sin ese costo.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_session, require_nexo_admin
+from app.domain.admin_overview import PERIODOS, SEVERIDAD_ORDEN, motivos_de_atencion, rango_de_periodo, serie_temporal, variacion_pct
 from app.api.routes.productos_db import build_producto_fila
 from app.db.models import (
     AdminActionLog,
@@ -43,6 +44,8 @@ from app.db.models import (
     ChannelCostSettings,
     MarketplaceAccount,
     MarketplaceListing,
+    Order,
+    OrderItem,
     Plan,
     Product,
     ProductVariant,
@@ -125,6 +128,362 @@ def listar_clientes(db: Session = Depends(get_db), _admin: User = Depends(requir
             "plan": tienda.subscription.plan.name if (tienda.subscription and tienda.subscription.plan) else None,
         })
     return filas
+
+
+# ------------------------------------------------------------------
+# Overview / Business Intelligence global (14 de septiembre de 2026).
+# GLOBAL a toda la plataforma, SOLO para is_nexo_admin (require_nexo_admin) —
+# nunca scopeado a una empresa desde afuera; el aislamiento multiempresa se
+# mantiene porque un admin de EMPRESA jamás llega a este router. Todas las
+# cifras salen de datos reales; sin datos, 0 o null (nunca inventadas).
+# ------------------------------------------------------------------
+
+CANALES_OVERVIEW = ("todos", "mercadolibre")
+# Una venta cancelada no es una venta: nunca suma al GMV ni al margen.
+_ESTADOS_VENTA_EXCLUIDOS = ("cancelado",)
+_MAX_EMPRESAS_PIE = 6  # más que esto se agrupan en "Otros" para que el pie siga legible
+
+
+def _ids_empresas_cliente(db: Session) -> list[int]:
+    """store_id de las EMPRESAS CLIENTE (dueño no-admin). La empresa propia de
+    un admin de Nexo nunca entra en las métricas de negocio."""
+    return [sid for (sid,) in db.query(Store.id).join(User, Store.owner_user_id == User.id).filter(User.is_nexo_admin.is_(False)).all()]
+
+
+def _filtros_orden(ids_cliente: list[int], desde: date | None, hasta: date, empresa_id: int | None, canal: str) -> list:
+    hasta_dt = datetime.combine(hasta + timedelta(days=1), time.min)  # fin exclusivo (todo el día `hasta`)
+    filtros = [Order.store_id.in_(ids_cliente), Order.status.notin_(_ESTADOS_VENTA_EXCLUIDOS), Order.order_date < hasta_dt]
+    if desde is not None:
+        filtros.append(Order.order_date >= datetime.combine(desde, time.min))
+    if empresa_id is not None:
+        filtros.append(Order.store_id == empresa_id)
+    if canal and canal != "todos":
+        filtros.append(Order.channel == canal)
+    return filtros
+
+
+def _metricas_ventas(db: Session, filtros: list) -> dict:
+    """GMV, comisiones, costos, margen y unidades de un conjunto de órdenes.
+    `costos` solo suma los ítems con costo conocido; `itemsSinCosto` cuenta los
+    que no lo tienen, para que el frontend pueda avisar que el margen es
+    parcial en vez de mostrarlo como si fuera exacto."""
+    gmv, num = db.query(func.coalesce(func.sum(Order.total_amount), 0.0), func.count(Order.id)).filter(*filtros).one()
+    comisiones = db.query(func.coalesce(func.sum(Order.commission_amount), 0.0)).filter(*filtros).scalar() or 0.0
+
+    item_rows = (
+        db.query(OrderItem.quantity, ProductVariant.cost_price)
+        .join(Order, OrderItem.order_id == Order.id)
+        .outerjoin(ProductVariant, OrderItem.variant_id == ProductVariant.id)
+        .filter(*filtros)
+        .all()
+    )
+    unidades = sum(q or 0 for q, _ in item_rows)
+    costos = 0.0
+    items_sin_costo = 0
+    for q, cost in item_rows:
+        if cost is None:
+            items_sin_costo += 1
+        else:
+            costos += float(cost) * (q or 0)
+
+    gmv_f = float(gmv or 0.0)
+    margen = gmv_f - float(comisiones) - costos
+    return {
+        "gmv": round(gmv_f, 2),
+        "ventas": int(num or 0),
+        "comisiones": round(float(comisiones), 2),
+        "costos": round(costos, 2),
+        "margen": round(margen, 2) if num else 0.0,
+        "unidades": int(unidades),
+        "itemsSinCosto": items_sin_costo,
+    }
+
+
+@router.get("/overview")
+def overview(
+    periodo: str = Query("30d"),
+    empresa: int | None = Query(None, description="store_id de una empresa, o vacío = todas"),
+    canal: str = Query("todos"),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_nexo_admin),
+) -> dict:
+    """Panel de Business Intelligence del admin de Nexo. Un único endpoint que
+    devuelve todo lo que pinta el Overview, ya filtrado por período/empresa/
+    canal — para que el frontend no tenga que orquestar N llamadas."""
+    if periodo not in PERIODOS:
+        raise HTTPException(status_code=400, detail=f"Período inválido. Usá uno de: {', '.join(PERIODOS)}.")
+    if canal not in CANALES_OVERVIEW:
+        raise HTTPException(status_code=400, detail=f"Canal inválido. Usá uno de: {', '.join(CANALES_OVERVIEW)}.")
+
+    hoy = date.today()
+    rango = rango_de_periodo(periodo, hoy)
+    ids_cliente = _ids_empresas_cliente(db)
+
+    # Filtro de empresa: solo vale si es una empresa cliente real.
+    empresa_id = empresa if (empresa is not None and empresa in ids_cliente) else None
+
+    if not ids_cliente:
+        # Plataforma sin ninguna empresa cliente todavía — todo en cero, honesto.
+        return {
+            "periodo": periodo, "canal": canal, "empresa": empresa_id,
+            "generadoEn": datetime.now().isoformat(),
+            "kpis": {}, "ventasPorEmpresa": [], "ventasEnElTiempo": [],
+            "topEmpresas": [], "mercadoLibre": {}, "crecimiento": {}, "atencion": [], "hayEmpresas": False,
+        }
+
+    filtros = _filtros_orden(ids_cliente, rango.desde, rango.hasta, empresa_id, canal)
+    filtros_prev = (
+        _filtros_orden(ids_cliente, rango.desde_prev, rango.hasta_prev, empresa_id, canal)
+        if rango.desde_prev is not None
+        else None
+    )
+
+    m = _metricas_ventas(db, filtros)
+    m_prev = _metricas_ventas(db, filtros_prev) if filtros_prev else None
+
+    # -------- KPIs --------
+    empresas_scope = [empresa_id] if empresa_id is not None else ids_cliente
+    productos_gestionados = db.query(func.count(Product.id)).filter(Product.store_id.in_(empresas_scope)).scalar() or 0
+    publicaciones_activas = (
+        db.query(func.count(MarketplaceListing.id))
+        .join(MarketplaceAccount, MarketplaceListing.account_id == MarketplaceAccount.id)
+        .filter(MarketplaceAccount.store_id.in_(empresas_scope), MarketplaceListing.status == "active")
+        .scalar()
+        or 0
+    )
+    # Empresas activas: cliente no suspendido (User.status != suspended).
+    empresas_activas = (
+        db.query(func.count(Store.id))
+        .join(User, Store.owner_user_id == User.id)
+        .filter(Store.id.in_(empresas_scope), User.status != "suspended")
+        .scalar()
+        or 0
+    )
+    # Usuarios activos: los que iniciaron sesión dentro del período (dato real,
+    # de AuthSession) — null si el período no tiene límite inferior ("todo").
+    if rango.desde is not None:
+        usuarios_activos = (
+            db.query(func.count(func.distinct(AuthSession.user_id)))
+            .filter(AuthSession.created_at >= datetime.combine(rango.desde, time.min))
+            .scalar()
+            or 0
+        )
+    else:
+        usuarios_activos = db.query(func.count(func.distinct(AuthSession.user_id))).scalar() or 0
+
+    margen_pct = round(m["margen"] / m["gmv"] * 100.0, 1) if m["gmv"] > 0 else None
+
+    kpis = {
+        "gmv": {"valor": m["gmv"], "variacionPct": variacion_pct(m["gmv"], m_prev["gmv"]) if m_prev else None},
+        "margenGenerado": {"valor": m["margen"], "variacionPct": variacion_pct(m["margen"], m_prev["margen"]) if m_prev and m_prev["margen"] else None, "parcial": m["itemsSinCosto"] > 0},
+        "margenPromedioPct": margen_pct,
+        "ventas": {"valor": m["ventas"], "variacionPct": variacion_pct(m["ventas"], m_prev["ventas"]) if m_prev else None},
+        "unidades": m["unidades"],
+        "empresasActivas": int(empresas_activas),
+        "productosGestionados": int(productos_gestionados),
+        "publicacionesActivas": int(publicaciones_activas),
+        "usuariosActivos": int(usuarios_activos),
+    }
+
+    # -------- Ventas por empresa (pie) --------
+    por_empresa = (
+        db.query(Order.store_id, Store.name, func.coalesce(func.sum(Order.total_amount), 0.0), func.count(Order.id))
+        .join(Store, Store.id == Order.store_id)
+        .filter(*filtros)
+        .group_by(Order.store_id, Store.name)
+        .all()
+    )
+    por_empresa = sorted(por_empresa, key=lambda r: float(r[2]), reverse=True)
+    total_ventas = sum(float(r[2]) for r in por_empresa) or 0.0
+    ventas_por_empresa: list[dict] = []
+    for store_id, nombre, monto, cnt in por_empresa[:_MAX_EMPRESAS_PIE]:
+        ventas_por_empresa.append({
+            "storeId": store_id, "nombre": nombre, "monto": round(float(monto), 2),
+            "pct": round(float(monto) / total_ventas * 100.0, 1) if total_ventas else 0.0, "cantidadVentas": int(cnt),
+        })
+    resto = por_empresa[_MAX_EMPRESAS_PIE:]
+    if resto:
+        monto_resto = sum(float(r[2]) for r in resto)
+        ventas_por_empresa.append({
+            "storeId": None, "nombre": f"Otros ({len(resto)})", "monto": round(monto_resto, 2),
+            "pct": round(monto_resto / total_ventas * 100.0, 1) if total_ventas else 0.0,
+            "cantidadVentas": sum(int(r[3]) for r in resto),
+        })
+
+    # -------- Ventas en el tiempo (línea) --------
+    puntos = [(o.order_date.date(), float(o.total_amount or 0.0)) for o in db.query(Order).filter(*filtros).all()]
+    ventas_en_el_tiempo = serie_temporal(puntos, rango.desde, rango.hasta, rango.granularidad)
+
+    # -------- Top empresas (ranking) --------
+    top_empresas = _top_empresas(db, ids_cliente, rango, empresa_id, canal)
+
+    # -------- Analytics Mercado Libre --------
+    mercado_libre = _analytics_mercadolibre(db, ids_cliente, rango, empresa_id, empresas_scope)
+
+    # -------- Crecimiento SaaS --------
+    crecimiento = _crecimiento_saas(db, ids_cliente, hoy)
+
+    return {
+        "periodo": periodo, "canal": canal, "empresa": empresa_id,
+        "granularidad": rango.granularidad,
+        "generadoEn": datetime.now().isoformat(),
+        "hayEmpresas": True,
+        "kpis": kpis,
+        "ventasPorEmpresa": ventas_por_empresa,
+        "ventasEnElTiempo": ventas_en_el_tiempo,
+        "topEmpresas": top_empresas,
+        "mercadoLibre": mercado_libre,
+        "crecimiento": crecimiento,
+        "atencion": _clientes_que_necesitan_atencion(db, empresas_scope, hoy),
+    }
+
+
+# Una solicitud de soporte "sin resolver" todavía espera algo del admin.
+_ESTADOS_TICKET_SIN_RESOLVER = ("abierto", "en_revision")
+
+
+def _clientes_que_necesitan_atencion(db: Session, empresas_scope: list[int], hoy: date) -> list[dict]:
+    """Empresas cliente con algún motivo real para que el admin las mire
+    (ver admin_overview.motivos_de_atencion). Un cliente suspendido queda
+    afuera: el admin ya actuó sobre él. Las más urgentes primero."""
+    productos = {sid: int(c) for sid, c in
+                 db.query(Product.store_id, func.count(Product.id)).filter(Product.store_id.in_(empresas_scope)).group_by(Product.store_id).all()}
+    tickets = {sid: int(c) for sid, c in
+               db.query(SupportTicket.store_id, func.count(SupportTicket.id))
+               .filter(SupportTicket.store_id.in_(empresas_scope), SupportTicket.status.in_(_ESTADOS_TICKET_SIN_RESOLVER))
+               .group_by(SupportTicket.store_id).all()}
+    tiendas = (
+        db.query(Store).join(User, Store.owner_user_id == User.id)
+        .filter(Store.id.in_(empresas_scope), User.status != "suspended").all()
+    )
+    filas = []
+    for tienda in tiendas:
+        sub = tienda.subscription
+        cuenta_ml = _cuenta_ml_de(tienda)
+        motivos = motivos_de_atencion(
+            sub_status=sub.status if sub else None,
+            current_period_end=sub.current_period_end if sub else None,
+            ml_status=cuenta_ml.status if cuenta_ml else None,
+            cantidad_productos=productos.get(tienda.id, 0),
+            tickets_sin_resolver=tickets.get(tienda.id, 0),
+            hoy=hoy,
+        )
+        if motivos:
+            severidad = min((m["severidad"] for m in motivos), key=SEVERIDAD_ORDEN.__getitem__)
+            filas.append({"storeId": tienda.id, "nombre": tienda.name, "severidad": severidad, "motivos": motivos})
+    filas.sort(key=lambda f: (SEVERIDAD_ORDEN[f["severidad"]], -len(f["motivos"]), f["nombre"]))
+    return filas
+
+
+def _top_empresas(db: Session, ids_cliente: list[int], rango, empresa_id: int | None, canal: str) -> list[dict]:
+    """Una fila por empresa cliente con sus métricas del período — el frontend
+    ordena por la columna que elija el admin. Empresas sin ventas se incluyen
+    igual (en 0): "no vendió nada" también es información."""
+    scope = [empresa_id] if empresa_id is not None else ids_cliente
+    filtros = _filtros_orden(ids_cliente, rango.desde, rango.hasta, empresa_id, canal)
+    filtros_prev = (
+        _filtros_orden(ids_cliente, rango.desde_prev, rango.hasta_prev, empresa_id, canal) if rango.desde_prev is not None else None
+    )
+
+    # Ventas y cantidad por empresa (período actual y previo).
+    ventas_act = {sid: (float(g or 0), int(c or 0)) for sid, g, c in
+                  db.query(Order.store_id, func.sum(Order.total_amount), func.count(Order.id)).filter(*filtros).group_by(Order.store_id).all()}
+    ventas_prev = {}
+    if filtros_prev:
+        ventas_prev = {sid: float(g or 0) for sid, g in
+                       db.query(Order.store_id, func.sum(Order.total_amount)).filter(*filtros_prev).group_by(Order.store_id).all()}
+
+    # Comisiones por empresa (nivel orden) y costos por empresa (nivel ítem,
+    # solo los que tienen costo conocido). Margen = venta - comisión - costo.
+    comisiones_emp = {sid: float(c or 0) for sid, c in
+                      db.query(Order.store_id, func.sum(Order.commission_amount)).filter(*filtros).group_by(Order.store_id).all()}
+    costos_emp: dict[int, float] = {}
+    for sid, qty, cost in (
+        db.query(Order.store_id, OrderItem.quantity, ProductVariant.cost_price)
+        .join(OrderItem, OrderItem.order_id == Order.id)
+        .join(ProductVariant, OrderItem.variant_id == ProductVariant.id)  # inner: solo ítems con costo real
+        .filter(*filtros)
+        .all()
+    ):
+        if cost is not None:
+            costos_emp[sid] = costos_emp.get(sid, 0.0) + float(cost) * (qty or 0)
+
+    # Productos y publicaciones activas por empresa.
+    productos = {sid: int(c) for sid, c in db.query(Product.store_id, func.count(Product.id)).filter(Product.store_id.in_(scope)).group_by(Product.store_id).all()}
+    pubs = {sid: int(c) for sid, c in
+            db.query(MarketplaceAccount.store_id, func.count(MarketplaceListing.id))
+            .join(MarketplaceListing, MarketplaceListing.account_id == MarketplaceAccount.id)
+            .filter(MarketplaceAccount.store_id.in_(scope), MarketplaceListing.status == "active")
+            .group_by(MarketplaceAccount.store_id).all()}
+
+    nombres = {sid: nombre for sid, nombre in db.query(Store.id, Store.name).filter(Store.id.in_(scope)).all()}
+
+    filas = []
+    for sid in scope:
+        gmv, cnt = ventas_act.get(sid, (0.0, 0))
+        prev = ventas_prev.get(sid, 0.0)
+        margen = round(gmv - comisiones_emp.get(sid, 0.0) - costos_emp.get(sid, 0.0), 2) if cnt else 0.0
+        filas.append({
+            "storeId": sid,
+            "nombre": nombres.get(sid, f"Empresa {sid}"),
+            "ventas": round(gmv, 2),
+            "margen": margen,
+            "cantidadVentas": cnt,
+            "productos": productos.get(sid, 0),
+            "publicaciones": pubs.get(sid, 0),
+            "crecimientoPct": variacion_pct(gmv, prev),
+        })
+    filas.sort(key=lambda f: f["ventas"], reverse=True)
+    return filas
+
+
+def _analytics_mercadolibre(db: Session, ids_cliente: list[int], rango, empresa_id: int | None, empresas_scope: list[int]) -> dict:
+    """Sección Mercado Libre — siempre sobre el canal ML, sin importar el
+    filtro de canal general (esta sección ES Mercado Libre)."""
+    filtros_ml = _filtros_orden(ids_cliente, rango.desde, rango.hasta, empresa_id, "mercadolibre")
+    m = _metricas_ventas(db, filtros_ml)
+
+    activas = (
+        db.query(func.count(MarketplaceListing.id))
+        .join(MarketplaceAccount, MarketplaceListing.account_id == MarketplaceAccount.id)
+        .filter(MarketplaceAccount.store_id.in_(empresas_scope), MarketplaceListing.status == "active").scalar() or 0
+    )
+    pausadas = (
+        db.query(func.count(MarketplaceListing.id))
+        .join(MarketplaceAccount, MarketplaceListing.account_id == MarketplaceAccount.id)
+        .filter(MarketplaceAccount.store_id.in_(empresas_scope), MarketplaceListing.status == "paused").scalar() or 0
+    )
+    cuentas = db.query(MarketplaceAccount).filter(MarketplaceAccount.store_id.in_(empresas_scope), MarketplaceAccount.marketplace == "mercadolibre").all()
+    conectadas = sum(1 for c in cuentas if c.status == "connected")
+    con_error = sum(1 for c in cuentas if c.status in ("error", "token_expired"))
+    ultimas = [c.last_checked_at for c in cuentas if c.last_checked_at is not None]
+    ultima_sync = max(ultimas).isoformat() if ultimas else None
+
+    return {
+        "gmv": m["gmv"], "ventas": m["ventas"], "unidades": m["unidades"],
+        "comisiones": m["comisiones"], "margen": m["margen"], "margenParcial": m["itemsSinCosto"] > 0,
+        "publicacionesActivas": int(activas), "publicacionesPausadas": int(pausadas),
+        "empresasConectadas": conectadas, "empresasConError": con_error,
+        "ultimaSincronizacion": ultima_sync,
+    }
+
+
+def _crecimiento_saas(db: Session, ids_cliente: list[int], hoy: date) -> dict:
+    """Cómo crece Nexo como plataforma: altas de empresas por mes (últimos 12)
+    y suscripciones por estado. Datos reales de Store/Subscription."""
+    desde = (hoy.replace(day=1) - timedelta(days=330)).replace(day=1)
+    altas = [(s.created_at.date(), 1.0) for s in db.query(Store).filter(Store.id.in_(ids_cliente), Store.created_at >= datetime.combine(desde, time.min)).all()]
+    nuevas_por_mes = serie_temporal(altas, desde, hoy, "mes")
+
+    subs_por_estado: dict[str, int] = {}
+    for estado, cnt in db.query(Subscription.status, func.count(Subscription.id)).join(Store, Subscription.store_id == Store.id).filter(Store.id.in_(ids_cliente)).group_by(Subscription.status).all():
+        subs_por_estado[estado] = int(cnt)
+
+    return {
+        "totalEmpresas": len(ids_cliente),
+        "nuevasEmpresasPorMes": nuevas_por_mes,
+        "suscripcionesPorEstado": subs_por_estado,
+    }
 
 
 @router.get("/usuarios")

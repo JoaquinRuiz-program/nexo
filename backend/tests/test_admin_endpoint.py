@@ -11,7 +11,7 @@ bloquea el login.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,14 +27,19 @@ from app.db.models import (
     ChannelCostSettings,
     MarketplaceAccount,
     MarketplaceListing,
+    Order,
+    OrderItem,
+    Plan,
     Product,
     ProductVariant,
     Store,
     StoreSettings,
+    Subscription,
     SupportTicket,
     User,
 )
 from app.db.session import get_db
+from app.domain.admin_overview import motivos_de_atencion
 from app.domain.security import hash_password
 from app.domain.token_crypto import encrypt_token
 from tests.auth_helpers import autenticar
@@ -770,3 +775,166 @@ def test_quitar_el_rol_corta_el_acceso_en_la_request_siguiente(client, db_sessio
     otro_client = TestClient(app)
     autenticar(otro_client, db_session, otro, None, ahora=NOW)
     assert otro_client.get("/api/admin/clientes").status_code == 404
+
+
+# ------------------------------------------------------------------
+# Overview / Business Intelligence (14 de septiembre de 2026). Datos reales,
+# agregados y aislados: la empresa propia del admin nunca cuenta como cliente.
+# ------------------------------------------------------------------
+
+
+def _venta(db_session, tienda, *, external, total, comision, items):
+    """items = lista de (variant, cantidad, precio_unitario)."""
+    orden = Order(store=tienda, channel="mercadolibre", external_order_id=external, order_date=NOW,
+                  status="completado", total_amount=total, commission_amount=comision, created_at=NOW, updated_at=NOW)
+    db_session.add(orden)
+    db_session.flush()
+    for variante, cant, pu in items:
+        db_session.add(OrderItem(order=orden, variant_id=variante.id if variante else None, quantity=cant, unit_price=pu, created_at=NOW))
+    db_session.commit()
+    return orden
+
+
+def _variante_de(db_session, tienda, *, sku, costo):
+    prod = Product(store=tienda, internal_sku=sku, name=f"P {sku}", product_type="simple", created_at=NOW, updated_at=NOW)
+    db_session.add(prod)
+    db_session.flush()
+    v = ProductVariant(product=prod, store_id=tienda.id, variant_sku=sku, price=10000, cost_price=costo, created_at=NOW, updated_at=NOW)
+    db_session.add(v)
+    db_session.commit()
+    return v
+
+
+def test_overview_requiere_admin(client, db_session):
+    usuario, tienda = _crear_empresa(db_session, email="x@empresa.cl", nombre_empresa="X")
+    autenticar(client, db_session, usuario, tienda, ahora=NOW)
+    assert client.get("/api/admin/overview").status_code == 404  # cliente común -> 404
+
+
+def test_overview_agrega_ventas_margen_y_participacion_reales(client, db_session):
+    _ua, tienda_a = _crear_empresa(db_session, email="a@ov.cl", nombre_empresa="Empresa A")
+    _ub, tienda_b = _crear_empresa(db_session, email="b@ov.cl", nombre_empresa="Empresa B")
+    va = _variante_de(db_session, tienda_a, sku="A1", costo=6000)
+    vb = _variante_de(db_session, tienda_b, sku="B1", costo=1000)
+    # A: dos ventas por 10.000 c/u (comisión 1.300 c/u, costo 6.000 c/u) -> margen 2*(10000-6000-1300)=5400
+    _venta(db_session, tienda_a, external="A-1", total=10000, comision=1300, items=[(va, 1, 10000)])
+    _venta(db_session, tienda_a, external="A-2", total=10000, comision=1300, items=[(va, 1, 10000)])
+    # B: una venta por 5.000
+    _venta(db_session, tienda_b, external="B-1", total=5000, comision=750, items=[(vb, 1, 5000)])
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    body = client.get("/api/admin/overview", params={"periodo": "todo"}).json()
+    assert body["kpis"]["gmv"]["valor"] == 25000.0            # 20.000 (A) + 5.000 (B)
+    assert body["kpis"]["ventas"]["valor"] == 3
+    assert body["kpis"]["empresasActivas"] == 2
+
+    por_empresa = {e["nombre"]: e for e in body["ventasPorEmpresa"]}
+    assert por_empresa["Empresa A"]["monto"] == 20000.0
+    assert por_empresa["Empresa A"]["pct"] == 80.0            # 20.000 / 25.000
+    assert por_empresa["Empresa B"]["pct"] == 20.0
+
+    top = body["topEmpresas"]
+    assert top[0]["nombre"] == "Empresa A"                    # ordenado por ventas
+    assert top[0]["margen"] == 5400.0                         # venta - costo - comisión, con costo real
+
+
+def test_overview_nunca_cuenta_la_empresa_propia_del_admin(client, db_session):
+    _ua, tienda_a = _crear_empresa(db_session, email="cli@ov.cl", nombre_empresa="Cliente real")
+    va = _variante_de(db_session, tienda_a, sku="C1", costo=100)
+    _venta(db_session, tienda_a, external="C-1", total=9000, comision=0, items=[(va, 1, 9000)])
+    # El admin TAMBIÉN tiene su propia tienda con una venta — nunca debe contar.
+    admin = _crear_admin_nexo(db_session)
+    tienda_admin = Store(owner=admin, name="Tienda del admin", created_at=NOW)
+    db_session.add(tienda_admin); db_session.commit()
+    v_admin = _variante_de(db_session, tienda_admin, sku="ADM", costo=100)
+    _venta(db_session, tienda_admin, external="ADM-1", total=999999, comision=0, items=[(v_admin, 1, 999999)])
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    body = client.get("/api/admin/overview", params={"periodo": "todo"}).json()
+    assert body["kpis"]["gmv"]["valor"] == 9000.0            # solo la venta del cliente, nunca la del admin
+    assert [e["nombre"] for e in body["topEmpresas"]] == ["Cliente real"]
+
+
+def test_overview_sin_ventas_devuelve_cero_no_inventa(client, db_session):
+    _crear_empresa(db_session, email="vacia@ov.cl", nombre_empresa="Sin ventas", con_producto=True)
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    body = client.get("/api/admin/overview", params={"periodo": "30d"}).json()
+    assert body["kpis"]["gmv"]["valor"] == 0.0
+    assert body["kpis"]["margenPromedioPct"] is None         # sin ventas no hay % que mostrar
+    assert body["ventasPorEmpresa"] == []
+    assert body["kpis"]["productosGestionados"] == 1         # el producto SÍ es real
+
+
+def test_overview_periodo_invalido_da_400(client, db_session):
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+    assert client.get("/api/admin/overview", params={"periodo": "ayer"}).status_code == 400
+
+
+# ------------------------------------------------------------------
+# Clientes que necesitan atención
+# ------------------------------------------------------------------
+
+
+def _suscripcion(db_session, tienda, *, status, vence):
+    plan = db_session.query(Plan).filter_by(code="plan-atencion").one_or_none()
+    if plan is None:
+        plan = Plan(code="plan-atencion", name="Plan de prueba", price_demo_label="Precio demo: $0")
+        db_session.add(plan)
+    db_session.add(Subscription(store=tienda, plan=plan, status=status, started_at=NOW, current_period_end=vence))
+    db_session.commit()
+
+
+def test_overview_atencion_lista_motivos_reales_y_omite_empresas_sanas(client, db_session):
+    hoy = date.today()
+    _ua, vencida = _crear_empresa(db_session, email="vencida@at.cl", nombre_empresa="Vencida")
+    _suscripcion(db_session, vencida, status="trialing", vence=hoy - timedelta(days=10))
+
+    _ub, sana = _crear_empresa(db_session, email="sana@at.cl", nombre_empresa="Sana", con_producto=True, con_ml_conectado=True)
+    _suscripcion(db_session, sana, status="active", vence=hoy + timedelta(days=30))
+
+    uc, con_problemas = _crear_empresa(db_session, email="prob@at.cl", nombre_empresa="Con problemas", con_producto=True, con_ml_conectado=True)
+    _suscripcion(db_session, con_problemas, status="trialing", vence=hoy + timedelta(days=3))
+    con_problemas.marketplace_accounts[0].status = "token_expired"
+    db_session.add(SupportTicket(store=con_problemas, user=uc, category="otro", subject="Ayuda", description="x", status="abierto", created_at=NOW, updated_at=NOW))
+    db_session.add(SupportTicket(store=con_problemas, user=uc, category="otro", subject="Viejo", description="x", status="resuelto", created_at=NOW, updated_at=NOW))
+    db_session.commit()
+
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+    atencion = client.get("/api/admin/overview", params={"periodo": "todo"}).json()["atencion"]
+
+    por_nombre = {e["nombre"]: e for e in atencion}
+    assert "Sana" not in por_nombre
+    assert {m["codigo"] for m in por_nombre["Vencida"]["motivos"]} == {"plan_vencido", "sin_mercadolibre", "sin_productos"}
+    assert por_nombre["Vencida"]["severidad"] == "alta"
+    motivos_prob = {m["codigo"]: m for m in por_nombre["Con problemas"]["motivos"]}
+    assert set(motivos_prob) == {"por_vencer", "ml_desconectado", "soporte_sin_resolver"}
+    assert motivos_prob["soporte_sin_resolver"]["texto"] == "1 solicitud de soporte sin resolver"  # la resuelta no cuenta
+    assert por_nombre["Con problemas"]["severidad"] == "alta"
+    assert [e["nombre"] for e in atencion] == ["Con problemas", "Vencida"]  # misma severidad y cantidad de motivos -> por nombre
+
+
+def test_overview_atencion_omite_clientes_suspendidos(client, db_session):
+    usuario, tienda = _crear_empresa(db_session, email="susp@at.cl", nombre_empresa="Suspendida")
+    usuario.status = "suspended"
+    db_session.commit()
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+    assert client.get("/api/admin/overview", params={"periodo": "todo"}).json()["atencion"] == []
+
+
+def test_motivos_de_atencion_gracia_y_pago_pendiente():
+    hoy = date(2026, 9, 14)
+    en_gracia = motivos_de_atencion(sub_status="trialing", current_period_end=hoy - timedelta(days=2), ml_status="connected",
+                                    cantidad_productos=3, tickets_sin_resolver=0, hoy=hoy)
+    assert en_gracia == [{"codigo": "en_gracia", "severidad": "alta", "texto": "Plan vencido: se pausa en 3 días"}]
+    pago = motivos_de_atencion(sub_status="past_due", current_period_end=hoy + timedelta(days=20), ml_status="connected",
+                               cantidad_productos=3, tickets_sin_resolver=0, hoy=hoy)
+    assert [m["codigo"] for m in pago] == ["pago_pendiente"]
+    sin_sub = motivos_de_atencion(sub_status=None, current_period_end=None, ml_status="connected",
+                                  cantidad_productos=3, tickets_sin_resolver=0, hoy=hoy)
+    assert [m["codigo"] for m in sin_sub] == ["sin_suscripcion"]

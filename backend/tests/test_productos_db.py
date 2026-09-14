@@ -305,6 +305,99 @@ def test_lote_sin_sesion_da_401(client):
     assert res.status_code == 401
 
 
+# ------------------------------------------------------------------
+# Eliminar producto (14 de septiembre de 2026)
+# ------------------------------------------------------------------
+
+
+def _variante_id(db_session, tienda):
+    return db_session.query(ProductVariant).filter_by(store_id=tienda.id).first().id
+
+
+def test_eliminar_producto_lo_saca_del_catalogo(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="DEL-1", nombre="Para borrar", precio=1000, stock=5)
+    vid = _variante_id(db_session, a_store)
+
+    res = client.delete(f"/api/productos/{vid}")
+    assert res.status_code == 200
+    assert res.json()["eliminado"] is True
+    assert db_session.query(Product).count() == 0
+    assert db_session.query(ProductVariant).count() == 0
+
+
+def test_eliminar_producto_variable_borra_todas_sus_variantes(client, db_session, a_store):
+    _producto_variable(db_session, a_store, nombre="Remera", colores_stock=[("Rojo", "R-R", 3), ("Azul", "R-A", 4)])
+    vid = _variante_id(db_session, a_store)
+
+    res = client.delete(f"/api/productos/{vid}")
+    assert res.status_code == 200
+    assert db_session.query(ProductVariant).count() == 0
+
+
+def test_eliminar_producto_publicado_en_mercadolibre_da_409(client, db_session, a_store):
+    producto = _producto_simple(db_session, a_store, sku="PUB-1", nombre="Publicado", precio=1000, stock=5)
+    cuenta = MarketplaceAccount(store=a_store, marketplace="mercadolibre", status="connected")
+    db_session.add(cuenta)
+    db_session.flush()
+    db_session.add(
+        MarketplaceListing(
+            account=cuenta, product_id=producto.id, external_listing_id="MLC1", status="active", created_at=NOW
+        )
+    )
+    db_session.commit()
+    vid = _variante_id(db_session, a_store)
+
+    res = client.delete(f"/api/productos/{vid}")
+    assert res.status_code == 409
+    assert "mercado libre" in res.json()["detail"].lower()
+    assert db_session.query(Product).count() == 1   # sigue existiendo
+
+
+def test_eliminar_producto_conserva_las_ventas_desvinculando(client, db_session, a_store):
+    """Una venta ya registrada no se pierde al borrar el producto: el
+    OrderItem se desvincula (variant_id -> None) pero conserva su SKU."""
+    from app.db.models import Order, OrderItem
+
+    producto = _producto_simple(db_session, a_store, sku="VEN-1", nombre="Vendido", precio=1000, stock=5)
+    variante = producto.variants[0]
+    orden = Order(
+        store=a_store, channel="mercadolibre", external_order_id="O-1", order_date=NOW,
+        total_amount=1000, created_at=NOW, updated_at=NOW,
+    )
+    db_session.add(orden)
+    db_session.flush()
+    db_session.add(
+        OrderItem(order=orden, variant_id=variante.id, external_item_sku="VEN-1", quantity=1, unit_price=1000, created_at=NOW)
+    )
+    db_session.commit()
+    vid = variante.id
+
+    res = client.delete(f"/api/productos/{vid}")
+    assert res.status_code == 200
+    item = db_session.query(OrderItem).one()          # la venta sigue
+    assert item.variant_id is None                    # desvinculada
+    assert item.external_item_sku == "VEN-1"          # con su SKU intacto
+
+
+def test_eliminar_producto_inexistente_da_404(client, a_store):
+    assert client.delete("/api/productos/999999").status_code == 404
+
+
+def test_no_se_puede_eliminar_producto_de_otra_empresa(client, db_session, a_store):
+    otro = User(email="otra-del@ejemplo.cl", password_hash=hash_password("x"), full_name="B", created_at=NOW, updated_at=NOW)
+    db_session.add(otro)
+    tienda_b = Store(owner=otro, name="Empresa B", created_at=NOW)
+    db_session.add(tienda_b)
+    db_session.add(StoreSettings(store=tienda_b, company_name="B", store_name="B"))
+    db_session.commit()
+    _producto_simple(db_session, tienda_b, sku="AJENO", nombre="Ajeno", precio=1000, stock=5)
+    ajena = db_session.query(ProductVariant).filter_by(store_id=tienda_b.id).one()
+
+    res = client.delete(f"/api/productos/{ajena.id}")
+    assert res.status_code == 404                      # IDOR -> 404, nunca 403
+    assert db_session.query(Product).filter_by(store_id=tienda_b.id).count() == 1
+
+
 def test_agregar_costo_a_un_producto_puntual(client, db_session, a_store):
     """Cierra el flujo de Oportunidades: completar el costo de UN producto
     sin volver a subir el catálogo entero por Excel."""

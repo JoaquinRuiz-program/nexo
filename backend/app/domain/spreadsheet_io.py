@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import csv
 import io
+from itertools import chain
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -37,6 +38,14 @@ class UnsupportedSpreadsheetFormat(ValueError):
 # deliberadamente finitos: nunca "sin límite".
 MAX_ARCHIVO_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_FILAS = 20_000
+
+# Cuántas filas del principio se miran, como mucho, buscando la fila de
+# encabezados. Muchas planillas de PyME arrancan con un título y una o dos
+# líneas de instrucciones (celdas combinadas, una sola columna) antes de la
+# tabla real — el caso del archivo "Calculadora de precios" del piloto, donde
+# los encabezados verdaderos están recién en la fila 4. El tope evita recorrer
+# una hoja enorme si por lo que sea nunca aparece una fila con pinta de tabla.
+MAX_FILAS_PREVIA_ENCABEZADO = 25
 
 MENSAJE_ARCHIVO_GRANDE = (
     f"El archivo pesa más de {MAX_ARCHIVO_BYTES // (1024 * 1024)} MB. "
@@ -84,19 +93,53 @@ def _read_csv(fileobj: BinaryIO) -> tuple[list[str], list[dict[str, Any]]]:
     return headers, rows
 
 
+def _cuenta_celdas_con_texto(fila: tuple[Any, ...] | None) -> int:
+    if fila is None:
+        return 0
+    return sum(1 for v in fila if v is not None and str(v).strip() != "")
+
+
 def _read_xlsx(fileobj: BinaryIO) -> tuple[list[str], list[dict[str, Any]]]:
     workbook = openpyxl.load_workbook(fileobj, read_only=True, data_only=True)
     sheet = workbook.active
     rows_iter = sheet.iter_rows(values_only=True)
-    try:
-        raw_header = next(rows_iter)
-    except StopIteration:
-        raise ValueError("El archivo Excel está vacío.") from None
 
+    # La fila de encabezados no es necesariamente la primera: se buffea una
+    # ventana chica del principio y se toma como encabezado la primera fila con
+    # 2 o más celdas con texto (una tabla real). Las filas de arriba (título,
+    # instrucciones, en blanco) tienen una sola celda o ninguna y se saltan.
+    # Se buffea sólo la ventana para no romper la lectura perezosa (read_only)
+    # que protege la memoria con archivos grandes.
+    ventana: list[tuple[Any, ...]] = []
+    idx_header: int | None = None
+    for fila in rows_iter:
+        ventana.append(fila)
+        if _cuenta_celdas_con_texto(fila) >= 2:
+            idx_header = len(ventana) - 1
+            break
+        if len(ventana) >= MAX_FILAS_PREVIA_ENCABEZADO:
+            break
+
+    # Si ninguna fila de la ventana tenía 2+ celdas (catálogo de una sola
+    # columna, poco habitual), cae en la primera fila con algo escrito.
+    if idx_header is None:
+        idx_header = next((i for i, f in enumerate(ventana) if _cuenta_celdas_con_texto(f) >= 1), None)
+    if idx_header is None:
+        raise ValueError("El archivo Excel está vacío.")
+
+    raw_header = ventana[idx_header]
     headers = [str(h).strip() if h is not None else f"columna_{i + 1}" for i, h in enumerate(raw_header)]
     rows: list[dict[str, Any]] = []
-    for values in rows_iter:
+    # Las filas que ya se leyeron después del encabezado se procesan primero, y
+    # después se sigue con el iterador perezoso desde donde quedó.
+    for values in chain(ventana[idx_header + 1 :], rows_iter):
         if values is None or all(v is None or str(v).strip() == "" for v in values):
+            # Una fila en blanco DESPUÉS de que ya empezó la tabla marca su
+            # final: lo que viene abajo (notas o aclaraciones al pie, como en
+            # la "Calculadora de precios" del piloto) no son productos. Antes
+            # de la primera fila de datos, las filas en blanco sólo se saltan.
+            if rows:
+                break
             continue
         # Se corta DURANTE la iteración (read_only=True es perezoso): así el
         # tope protege de verdad la memoria, en vez de comprobarlo cuando ya

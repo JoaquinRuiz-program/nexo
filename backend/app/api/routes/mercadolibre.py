@@ -82,6 +82,7 @@ from app.domain.marketplace_orders import map_ml_order
 from app.domain.marketplace_stock import MarketplaceStockError, apply_sale
 from app.domain.ml_fees import LISTING_TYPE_IDS, parse_listing_fees
 from app.domain.token_crypto import TokenEncryptionNotConfigured, decrypt_token, encrypt_token
+from app.services.ml_shipping_sync import sincronizar_costos_envio_de_la_cuenta
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +317,10 @@ async def callback(
     account.last_checked_at = now
     db.commit()
 
+    # Costo de envío real de las publicaciones que esta empresa ya tiene en
+    # Nexo (best effort: nunca rompe la conexión recién hecha).
+    await sincronizar_costos_envio_de_la_cuenta(db, account, settings)
+
     return _frontend_redirect(settings, ml="conectado")
 
 
@@ -491,11 +496,16 @@ async def importar_ventas(db: Session = Depends(get_db), store: Store = Depends(
     account.last_checked_at = ahora
     db.commit()
 
+    # Cada sincronización con Mercado Libre refresca también el costo de
+    # envío real de las publicaciones (best effort).
+    costos_envio = await sincronizar_costos_envio_de_la_cuenta(db, account, settings)
+
     return {
         "ordenesNuevas": ordenes_nuevas,
         "ordenesYaExistian": ordenes_ya_existian,
         "itemsSinSkuEnCatalogo": items_sin_sku_en_catalogo,
         "desajustesStockReservado": desajustes_stock_reservado,
+        "costosEnvio": costos_envio,
     }
 
 
@@ -622,9 +632,12 @@ async def recalcular_comisiones(db: Session = Depends(get_db), store: Store = De
     finally:
         await adapter.aclose()
 
+    costos_envio = await sincronizar_costos_envio_de_la_cuenta(db, account, settings)
+
     return {
         "productosRevisados": len(productos_con_precio),
         "productosSinCategoriaDetectada": productos_sin_categoria,
         "combinacionesComisionActualizadas": combinaciones_actualizadas,
         "combinacionesConError": combinaciones_con_error,
+        "costosEnvio": costos_envio,
     }

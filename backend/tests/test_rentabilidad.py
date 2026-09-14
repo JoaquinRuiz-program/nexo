@@ -16,7 +16,18 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
-from app.db.models import ChannelCostSettings, MercadoLibreCategoryFee, Product, ProductVariant, Store, StoreSettings, User
+from app.db.models import (
+    ChannelCostSettings,
+    MarketplaceAccount,
+    MarketplaceListing,
+    MercadoLibreCategoryFee,
+    Product,
+    ProductVariant,
+    Store,
+    StoreSettings,
+    User,
+)
+from app.domain.ml_shipping import MOTIVO_NO_PUBLICADO, MOTIVO_SIN_MERCADO_ENVIOS
 from app.db.session import get_db
 from app.domain.security import hash_password
 from tests.auth_helpers import autenticar
@@ -266,6 +277,49 @@ def test_comision_real_disponible_se_usa_en_vez_de_la_manual(client, db_session,
     assert fila["mercadoLibreConfigurado"] is True
 
 
+def _publicacion_ml(db_session, tienda, producto, *, costo_envio=None, motivo=None, status="active"):
+    cuenta = db_session.query(MarketplaceAccount).filter_by(store_id=tienda.id).first()
+    if cuenta is None:
+        cuenta = MarketplaceAccount(store=tienda, marketplace="mercadolibre", status="connected", external_account_id="999")
+        db_session.add(cuenta)
+    db_session.add(MarketplaceListing(
+        account=cuenta, product=producto, external_listing_id=f"MLC{producto.id}", status=status,
+        shipping_cost=costo_envio, shipping_cost_unavailable_reason=motivo, shipping_synced_at=NOW, created_at=NOW,
+    ))
+    db_session.commit()
+
+
+def test_costo_de_envio_real_de_ml_entra_en_el_margen_neto(client, db_session, a_store):
+    producto = _producto_con_categoria_ml(db_session, a_store, sku="ENVIO-REAL", nombre="Con envío real", precio=10000, costo=6000)
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_special", percentage_fee=12.0)
+    _configurar_canal_manual(client, commission_pct=30.0, listing_type_pref="classic")
+    _publicacion_ml(db_session, a_store, producto, costo_envio=1500)
+
+    fila = next(f for f in client.get("/api/rentabilidad").json()["productos"] if f["sku"] == "ENVIO-REAL")
+    assert fila["costoEnvioMl"] == 1500.0
+    assert fila["envioMlFuente"] == "mercadolibre"
+    # precio - costo - comisión real (12%) - envío real = 10000 - 6000 - 1200 - 1500
+    assert fila["margenMercadoLibreClp"] == 1300.0
+    assert fila["rentabilidadMlProvisional"] is False
+
+
+def test_sin_costo_de_envio_de_ml_no_se_inventa_y_la_rentabilidad_es_provisional(client, db_session, a_store):
+    _producto_con_categoria_ml(db_session, a_store, sku="SIN-PUBLICAR", nombre="Sin publicar", precio=10000, costo=6000)
+    publicado = _producto_con_categoria_ml(db_session, a_store, sku="SIN-ME2", nombre="Publicado sin Mercado Envíos", precio=10000, costo=6000)
+    _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_special", percentage_fee=12.0)
+    _configurar_canal_manual(client, commission_pct=30.0, listing_type_pref="classic")
+    _publicacion_ml(db_session, a_store, publicado, motivo=MOTIVO_SIN_MERCADO_ENVIOS)
+
+    filas = {f["sku"]: f for f in client.get("/api/rentabilidad").json()["productos"]}
+    for sku, motivo in (("SIN-PUBLICAR", MOTIVO_NO_PUBLICADO), ("SIN-ME2", MOTIVO_SIN_MERCADO_ENVIOS)):
+        fila = filas[sku]
+        assert fila["costoEnvioMl"] is None
+        assert fila["envioMlFuente"] == "no_disponible"
+        assert fila["envioMlMotivo"] == motivo
+        assert fila["margenMercadoLibreClp"] == 2800.0  # sin envío estimado: 10000 - 6000 - 1200
+        assert fila["rentabilidadMlProvisional"] is True
+
+
 def test_sin_comision_real_usa_el_fallback_manual(client, db_session, a_store):
     """Caso 3: sin comisión real cacheada, con manual configurada — el
     fallback tiene que seguir funcionando exactamente como antes."""
@@ -293,12 +347,13 @@ def test_sin_ninguna_comision_nunca_inventa_un_numero(client, db_session, a_stor
     assert fila["mercadoLibreConfigurado"] is False
 
 
-def test_comision_real_sin_listing_type_pref_configurado_no_elige_por_el_dueno(client, db_session, a_store):
-    """Con comisión real cacheada para Clásica Y Premium, pero SIN
-    listing_type_pref configurado (el default, "comparar ambas") —
-    elegir_comision_principal ya está diseñado para no elegir por el
-    dueño en ese caso; confirmamos que el fallback a manual se respeta,
-    en vez de elegir una de las dos comisiones reales arbitrariamente."""
+def test_sin_listing_type_pref_el_sistema_recomienda_clasica_automaticamente(client, db_session, a_store):
+    """14 de septiembre de 2026 — cambio de comportamiento pedido por el
+    dueño: SIN listing_type_pref manual, el sistema ya NO cae al fallback
+    manual; recomienda AUTOMÁTICAMENTE el tipo de publicación según el margen
+    (con la comisión real exacta de cada uno). Sin margen objetivo configurado
+    gana Clásica (menor comisión = más utilidad), y el margen neto usa esa
+    comisión REAL, no la manual."""
     _producto_con_categoria_ml(db_session, a_store, sku="SIN-PREF", nombre="Producto sin preferencia", precio=10000, costo=6000)
     _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_special", percentage_fee=12.0)
     _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_pro", percentage_fee=18.0)
@@ -306,8 +361,9 @@ def test_comision_real_sin_listing_type_pref_configurado_no_elige_por_el_dueno(c
 
     body = client.get("/api/rentabilidad").json()
     fila = next(f for f in body["productos"] if f["sku"] == "SIN-PREF")
-    assert fila["comisionMlFuente"] == "manual"
-    assert fila["margenMercadoLibreClp"] == 2000.0  # 10000 - 6000 - 2000 (20% manual)
+    assert fila["tipoPublicacionRecomendado"] == "classic"
+    assert fila["comisionMlFuente"] == "real"
+    assert fila["margenMercadoLibreClp"] == 2800.0  # 10000 - 6000 - 1200 (12% real Clásica, no el 20% manual)
 
 
 def test_comision_real_de_una_empresa_nunca_se_mezcla_con_otra(client, db_session, a_store):

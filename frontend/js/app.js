@@ -1143,12 +1143,13 @@ window.LC = window.LC || {};
     tbody.querySelectorAll("[data-menu]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        openRowMenu(btn, Number(btn.dataset.menu));
+        const id = Number(btn.dataset.menu);
+        openRowMenu(btn, id, pageRows.find((r) => r.id === id));
       });
     });
   }
 
-  function openRowMenu(btn, id) {
+  function openRowMenu(btn, id, row) {
     document.querySelectorAll(".row-menu").forEach((m) => m.remove());
     const menu = document.createElement("div");
     menu.className = "row-menu";
@@ -1156,11 +1157,17 @@ window.LC = window.LC || {};
       <button class="dropdown-item" data-action="ver">Ver producto</button>
       <button class="dropdown-item" data-action="detalles">Ver detalles</button>
       <button class="dropdown-item" data-action="historial">Ver historial</button>
+      <button class="dropdown-item dropdown-item--danger" data-action="eliminar">Eliminar producto</button>
     `;
     btn.parentElement.appendChild(menu);
     menu.addEventListener("click", (e) => {
       const item = e.target.closest("[data-action]");
       if (!item) return;
+      if (item.dataset.action === "eliminar") {
+        menu.remove();
+        confirmarEliminarProducto(id, row);
+        return;
+      }
       if (item.dataset.action === "historial") scrollTarget = "detail-historial";
       LC.router.navigate(`/productos/${id}`);
     });
@@ -1171,6 +1178,27 @@ window.LC = window.LC || {};
       }
     };
     setTimeout(() => document.addEventListener("click", closeOnOutside), 0);
+  }
+
+  function confirmarEliminarProducto(id, row) {
+    const nombre = (row && row.nombre) || "este producto";
+    openModal({
+      title: "Eliminar producto",
+      body: `<p>¿Seguro que querés eliminar <strong>${escapeHtml(nombre)}</strong>? Se borra del catálogo con sus variantes e imágenes. Las ventas ya registradas se conservan en el historial.</p>`,
+      primaryLabel: "Eliminar",
+      secondaryLabel: "Cancelar",
+      onPrimary: async () => {
+        const res = await LC.backendApi.eliminarProducto(id);
+        if (!res.ok) {
+          // 409 = está publicado en Mercado Libre; el backend explica que hay
+          // que despublicarlo primero (res.error.mensaje trae ese detalle).
+          toast("error", res.error.mensaje || "No pudimos eliminar el producto.");
+          return;
+        }
+        toast("success", "Producto eliminado.");
+        renderProductos(document.getElementById("main-content"));
+      },
+    });
   }
 
   // ------------------------------------------------------------------
@@ -2125,6 +2153,20 @@ window.LC = window.LC || {};
     return partes.length ? partes.join(" · ") : "—";
   }
 
+  // Costo de envío REAL de Mercado Libre (14 de septiembre de 2026) — solo
+  // el que Mercado Libre informa para la publicación; nunca estimado.
+  function celdaEnvioMl(p) {
+    if (p.envioMlFuente === "mercadolibre") {
+      return `<td class="px-3 py-2.5 text-right text-xs">
+        <span class="inline-flex items-center gap-1.5 font-medium"><span class="dot dot--green"></span>${formatCLP(p.costoEnvioMl)}</span>
+        <p class="text-slate-400 mt-0.5">Obtenido de Mercado Libre</p>
+      </td>`;
+    }
+    return `<td class="px-3 py-2.5 text-right text-xs" title="${escapeHtml(p.envioMlMotivo || "")}">
+      <span class="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400"><span class="dot dot--gray"></span>No disponible</span>
+    </td>`;
+  }
+
   const DECISION_COLUMNA_LABEL = { conviene: "Conviene", revisar: "Revisar", no_conviene: "No conviene", datos_insuficientes: "Faltan datos" };
 
   function celdaDecision(p, decisionMap) {
@@ -2171,6 +2213,7 @@ window.LC = window.LC || {};
         <td class="px-3 py-2.5 text-right font-medium ${p.margenTiendaClp != null && p.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${p.margenTiendaClp != null ? formatCLP(p.margenTiendaClp) : "—"}</td>
         <td class="px-3 py-2.5 text-right">${p.margenTiendaPct != null ? `${p.margenTiendaPct.toFixed(1)}%` : "—"}</td>
         <td class="px-3 py-2.5 text-right text-xs text-slate-500 dark:text-slate-400">${escapeHtml(comisionMlTexto(p.comisionMlReal))}</td>
+        ${celdaEnvioMl(p)}
         ${celdaDecision(p, decisionMap)}
         <td class="px-3 py-2.5">${accion}</td>
       </tr>`;
@@ -2186,6 +2229,7 @@ window.LC = window.LC || {};
           <th class="px-3 py-2 font-medium text-right">Ganancia estimada</th>
           <th class="px-3 py-2 font-medium text-right">Margen</th>
           <th class="px-3 py-2 font-medium text-right">Comisión ML real</th>
+          <th class="px-3 py-2 font-medium text-right">Costo de envío</th>
           <th class="px-3 py-2 font-medium" title="Evaluación rápida sin consultar competencia — abrí el producto para la evaluación completa.">Decisión preliminar</th>
           <th class="px-3 py-2 font-medium"></th>
         </tr>

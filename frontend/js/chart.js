@@ -109,5 +109,84 @@ window.LC = window.LC || {};
     ctx.closePath();
   }
 
-  LC.chart = { renderBarChart };
+  // ------------------------------------------------------------------
+  // 14 de septiembre de 2026 — gráficos del Overview del admin (BI). SVG
+  // devuelto como STRING para incrustar directo en el innerHTML de la página
+  // (mismo enfoque de composición que el resto del frontend), sin librería
+  // externa. Tooltips nativos vía <title>. Los colores son vivos y funcionan
+  // igual en claro/oscuro; el texto usa clases con tokens de tema.
+  // ------------------------------------------------------------------
+
+  const PALETA = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#a855f7", "#94a3b8"];
+
+  function _escapeXml(s) {
+    return String(s == null ? "" : s).replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+  }
+
+  function lineChartSVG(points, opts) {
+    const o = opts || {};
+    const fmt = o.formatValue || ((v) => String(v));
+    const fmtFecha = o.formatFecha || ((iso) => iso);
+    if (!points || !points.length) return '<div class="chart-empty">Sin datos suficientes</div>';
+
+    const W = 720, H = 240, pad = { t: 20, r: 16, b: 28, l: 16 };
+    const plotW = W - pad.l - pad.r, plotH = H - pad.t - pad.b;
+    const n = points.length;
+    const max = Math.max(1, ...points.map((p) => p.monto));
+    const x = (i) => pad.l + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+    const y = (v) => pad.t + plotH - (v / max) * (plotH - 6);
+
+    const linea = points.map((p, i) => `${x(i).toFixed(1)},${y(p.monto).toFixed(1)}`).join(" ");
+    const area = `${pad.l},${(pad.t + plotH).toFixed(1)} ${linea} ${x(n - 1).toFixed(1)},${(pad.t + plotH).toFixed(1)}`;
+    const every = n <= 8 ? 1 : n <= 16 ? 2 : Math.ceil(n / 8);
+    const labels = points.map((p, i) => (i % every === 0 || i === n - 1)
+      ? `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" class="chart-axis-label">${_escapeXml(fmtFecha(p.fecha))}</text>` : "").join("");
+    const dots = points.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.monto).toFixed(1)}" r="${n > 40 ? 0 : 2.5}" fill="#6366f1"><title>${_escapeXml(fmtFecha(p.fecha))}: ${_escapeXml(fmt(p.monto))}</title></circle>`).join("");
+
+    return `<svg viewBox="0 0 ${W} ${H}" class="chart-svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Evolución en el tiempo">
+      <defs><linearGradient id="lc-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6366f1" stop-opacity="0.22"/><stop offset="1" stop-color="#6366f1" stop-opacity="0"/></linearGradient></defs>
+      <polygon points="${area}" fill="url(#lc-area)"/>
+      <polyline points="${linea}" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${dots}${labels}
+      <text x="${pad.l}" y="12" class="chart-axis-label">máx ${_escapeXml(fmt(max))}</text>
+    </svg>`;
+  }
+
+  function _pol(cx, cy, r, a) { return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; }
+
+  function _arco(cx, cy, r, rin, a1, a2, large) {
+    const [x1, y1] = _pol(cx, cy, r, a1), [x2, y2] = _pol(cx, cy, r, a2);
+    const [x3, y3] = _pol(cx, cy, rin, a2), [x4, y4] = _pol(cx, cy, rin, a1);
+    return `M${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} L${x3.toFixed(2)},${y3.toFixed(2)} A${rin},${rin} 0 ${large} 0 ${x4.toFixed(2)},${y4.toFixed(2)} Z`;
+  }
+
+  function donutChartSVG(segments, opts) {
+    const o = opts || {};
+    const fmt = o.formatValue || ((v) => String(v));
+    const total = (segments || []).reduce((s, x) => s + (x.monto || 0), 0);
+    if (!segments || !segments.length || total <= 0) return '<div class="chart-empty">Sin datos suficientes</div>';
+
+    const cx = 110, cy = 110, r = 92, rin = 60;
+    let ang = -Math.PI / 2;
+    const arcos = segments.map((s, i) => {
+      const frac = s.monto / total;
+      const a2 = ang + frac * 2 * Math.PI;
+      const large = frac > 0.5 ? 1 : 0;
+      // Un único segmento (100%) no se puede dibujar como arco: es un anillo completo.
+      const path = frac >= 0.9999
+        ? `M${cx - r},${cy} A${r},${r} 0 1 1 ${cx + r},${cy} A${r},${r} 0 1 1 ${cx - r},${cy} M${cx - rin},${cy} A${rin},${rin} 0 1 0 ${cx + rin},${cy} A${rin},${rin} 0 1 0 ${cx - rin},${cy} Z`
+        : _arco(cx, cy, r, rin, ang, a2, large);
+      ang = a2;
+      const color = s.color || PALETA[i % PALETA.length];
+      return `<path d="${path}" fill="${color}" fill-rule="evenodd"><title>${_escapeXml(s.nombre)}: ${_escapeXml(fmt(s.monto))} (${s.pct}%)</title></path>`;
+    }).join("");
+
+    return `<svg viewBox="0 0 220 220" class="chart-donut" role="img" aria-label="Distribución por empresa">
+      ${arcos}
+      <text x="110" y="106" text-anchor="middle" class="donut-num">${_escapeXml(fmt(total))}</text>
+      <text x="110" y="126" text-anchor="middle" class="donut-lbl">total</text>
+    </svg>`;
+  }
+
+  LC.chart = { renderBarChart, lineChartSVG, donutChartSVG, PALETA };
 })();

@@ -214,6 +214,40 @@ def test_analizar_xlsx_real_funciona_igual_que_csv(client, a_store):
     assert body["resumen"]["totalFilas"] == 1
 
 
+def test_analizar_xlsx_con_titulo_arriba_y_notas_abajo(client, a_store):
+    """Planilla estilo 'Calculadora de precios' del piloto: título e
+    instrucciones antes de la tabla, y notas al pie después. El encabezado
+    real está varias filas abajo y no en la primera fila."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Calculadora de precio de venta en Mercado Libre"])   # título (1 celda)
+    ws.append(["Completá las columnas azules por producto."])        # instrucción (1 celda)
+    ws.append([])                                                    # fila en blanco
+    ws.append(["Producto", "SKU / Código", "Costo de compra (CLP)", "Precio de venta sugerido (CLP)"])  # encabezado real
+    ws.append(["Cien años de soledad", "LIB-001", 6000, 8000])
+    ws.append(["Cuaderno universitario", "ESC-014", 900, 1200])
+    ws.append([])                                                    # separación
+    ws.append(["Cómo se calcula el precio sugerido:"])               # nota al pie (basura)
+    ws.append(["Celda amarilla = dato que confirmás vos."])          # nota al pie (basura)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    res = client.post(
+        "/api/catalogo/importar/analizar",
+        files={"file": ("calculadora.xlsx", buffer, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["mapeoPropuesto"]["nombre"] == "Producto"
+    assert body["mapeoPropuesto"]["sku"] == "SKU / Código"
+    assert body["mapeoPropuesto"]["precio"] == "Precio de venta sugerido (CLP)"
+    assert body["mapeoPropuesto"]["costo"] == "Costo de compra (CLP)"
+    # Las 2 filas de la tabla, sin las notas al pie de abajo.
+    assert body["resumen"]["totalFilas"] == 2
+
+
 def test_formato_no_soportado_devuelve_400(client, a_store):
     archivo = io.BytesIO(b"esto no es una planilla")
     res = client.post("/api/catalogo/importar/analizar", files={"file": ("archivo.pdf", archivo, "application/pdf")})

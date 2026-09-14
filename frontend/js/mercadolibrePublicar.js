@@ -294,6 +294,21 @@ window.LC = window.LC || {};
   // resolver_costos_ml en el backend), el precio/margen mostrados arriba
   // se calcularon con esa; si no, con la comisión manual configurada a
   // mano. Nunca se oculta cuál de las dos se usó.
+  // Costo de envío (14 de septiembre de 2026) — solo el REAL que informa
+  // Mercado Libre para la publicación. Sin ese dato: "No disponible" y la
+  // ganancia en Mercado Libre queda marcada como provisional.
+  function etiquetaEnvioMl(r) {
+    if (!r || !r.envioMlFuente) return "";
+    const origen = r.envioMlFuente === "mercadolibre"
+      ? `<p class="flex items-center gap-1.5"><span class="dot dot--green"></span>Costo de envío: ${formatCLPReal(r.costoEnvioMl)} · Obtenido de Mercado Libre</p>`
+      : `<p class="flex items-center gap-1.5"><span class="dot dot--gray"></span>Costo de envío: No disponible</p>
+         ${r.envioMlMotivo ? `<p class="text-slate-400 mt-1">${escapeHtml(r.envioMlMotivo)}</p>` : ""}`;
+    const provisional = r.rentabilidadMlProvisional
+      ? `<p class="text-amber-600 dark:text-amber-400 mt-1">Rentabilidad provisional: todavía no incluye el costo de envío real de Mercado Libre${r.envioMlManualAplicado ? ` (se usó el envío manual de Configuración, ${formatCLPReal(r.envioMlManualAplicado)})` : ""}.</p>`
+      : "";
+    return `<div class="text-xs text-slate-600 dark:text-slate-300 mb-3">${origen}${provisional}</div>`;
+  }
+
   function etiquetaComisionMl(fuente) {
     if (fuente === "real") {
       return `<p class="text-xs text-emerald-600 dark:text-emerald-400 mb-3 flex items-center gap-1">${icon("checkCircle")} Comisión Mercado Libre: Real</p>`;
@@ -362,6 +377,7 @@ window.LC = window.LC || {};
           <div><p class="stat-label">Margen en Mercado Libre</p><p class="font-medium mt-1">${formatPct(p.rentabilidad.margenMercadoLibrePct)}</p></div>
         </div>
         ${etiquetaComisionMl(p.rentabilidad.comisionMlFuente)}
+        ${etiquetaEnvioMl(p.rentabilidad)}
         <p class="text-xs text-slate-400 dark:text-slate-500">El precio se lee de tu producto en Nexo — para cambiarlo, editá el producto.</p>
       </div>
 

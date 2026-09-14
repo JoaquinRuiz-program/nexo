@@ -22,13 +22,30 @@ una tabla con márgenes inventados.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_store
-from app.db.models import ChannelCostSettings, MercadoLibreCategoryFee, Product, ProductVariant, Store
+from app.db.models import (
+    ChannelCostSettings,
+    MarketplaceAccount,
+    MarketplaceListing,
+    MercadoLibreCategoryFee,
+    Product,
+    ProductVariant,
+    Store,
+)
+from app.domain.ml_shipping import MOTIVO_NO_CONSULTADO, MOTIVO_NO_PUBLICADO
 from app.db.session import get_db
-from app.domain.ml_fees import LISTING_TYPE_IDS, ListingFee, elegir_comision_principal
+from app.domain.ml_fees import (
+    LISTING_TYPE_IDS,
+    TIPO_PUBLICACION_LABEL,
+    ListingFee,
+    elegir_comision_principal,
+    recomendar_tipo_publicacion,
+)
 from app.domain.profitability import ChannelCosts, gross_margin, gross_margin_pct, net_margin, net_margin_pct
 
 router = APIRouter(prefix="/api/rentabilidad", tags=["rentabilidad"])
@@ -67,6 +84,55 @@ def comisiones_ml_cacheadas(db: Session, store_id: int, producto: Product, preci
             sale_fee_amount=float(fila.sale_fee_amount),
         )
     return comisiones
+
+
+_ESTADOS_PUBLICACION_VIVA = ("active", "paused")
+
+
+def publicaciones_ml_por_producto(db: Session, store_id: int, product_ids: list[int] | None = None) -> dict[int, MarketplaceListing]:
+    """Publicación viva de Mercado Libre de cada producto de ESTA empresa
+    (como máximo una por producto, ver uq_listing_account_product)."""
+    consulta = (
+        db.query(MarketplaceListing)
+        .join(MarketplaceAccount, MarketplaceAccount.id == MarketplaceListing.account_id)
+        .filter(
+            MarketplaceAccount.store_id == store_id,
+            MarketplaceAccount.marketplace == CHANNEL_MERCADO_LIBRE,
+            MarketplaceListing.status.in_(_ESTADOS_PUBLICACION_VIVA),
+        )
+    )
+    if product_ids is not None:
+        consulta = consulta.filter(MarketplaceListing.product_id.in_(product_ids))
+    return {p.product_id: p for p in consulta.all()}
+
+
+def aplicar_envio_real_ml(costos: ChannelCosts, publicacion: MarketplaceListing | None) -> tuple[ChannelCosts, dict]:
+    """14 de septiembre de 2026 — costo de envío del cálculo de rentabilidad
+    de Mercado Libre: el REAL que informó Mercado Libre para la publicación
+    (ver services/ml_shipping_sync.py). Sin ese dato no se estima nada: queda
+    el envío manual de Configuración si el dueño lo cargó (o $0), el origen
+    es "no_disponible" y quien muestra el margen lo marca como provisional.
+    Devuelve los costos a usar + los campos de envío para la respuesta."""
+    if publicacion is not None and publicacion.shipping_cost is not None:
+        real = float(publicacion.shipping_cost)
+        return replace(costos, shipping_cost=real), {
+            "costoEnvioMl": real,
+            "envioMlFuente": "mercadolibre",
+            "envioMlMotivo": None,
+            "envioMlManualAplicado": None,
+            "envioMlActualizadoEn": publicacion.shipping_synced_at.isoformat() if publicacion.shipping_synced_at else None,
+        }
+    if publicacion is None:
+        motivo = MOTIVO_NO_PUBLICADO
+    else:
+        motivo = publicacion.shipping_cost_unavailable_reason or MOTIVO_NO_CONSULTADO
+    return costos, {
+        "costoEnvioMl": None,
+        "envioMlFuente": "no_disponible",
+        "envioMlMotivo": motivo,
+        "envioMlManualAplicado": costos.shipping_cost or None,
+        "envioMlActualizadoEn": publicacion.shipping_synced_at.isoformat() if publicacion is not None and publicacion.shipping_synced_at else None,
+    }
 
 
 def _comision_ml_real(comisiones: dict[str, ListingFee], costo: float | None, precio: float | None, costos_manual: ChannelCosts) -> dict | None:
@@ -143,12 +209,43 @@ def resolver_costos_ml(
     return costos_manual, "manual"
 
 
-def _fila(db: Session, store_id: int, producto: Product, variante: ProductVariant, costos_ml_manual: ChannelCosts, listing_type_pref: str | None) -> dict:
+def _fila(
+    db: Session,
+    store_id: int,
+    producto: Product,
+    variante: ProductVariant,
+    costos_ml_manual: ChannelCosts,
+    listing_type_pref: str | None,
+    target_margin_pct: float | None = None,
+    publicacion_ml: MarketplaceListing | None = None,
+) -> dict:
     precio = float(variante.price) if variante.price is not None else None
     costo = float(variante.cost_price) if variante.cost_price is not None else None
 
     comisiones = comisiones_ml_cacheadas(db, store_id, producto, precio)
-    costos_ml_efectivos, fuente_comision_ml = resolver_costos_ml(comisiones, costos_ml_manual, listing_type_pref)
+    costos_ml_manual, envio_ml = aplicar_envio_real_ml(costos_ml_manual, publicacion_ml)
+
+    # Elección AUTOMÁTICA del tipo de publicación (14 de septiembre de 2026):
+    # si el dueño no fijó una preferencia manual, el sistema recomienda solo
+    # Clásica o Premium según el margen de ESTE producto, con la comisión
+    # exacta de cada tipo (ver ml_fees.recomendar_tipo_publicacion). Ese tipo
+    # recomendado pasa a ser la preferencia efectiva, así el margen neto usa
+    # la comisión real elegida en vez del fallback manual.
+    recomendacion = None
+    pref_efectiva = listing_type_pref
+    if listing_type_pref is None and precio is not None and costo is not None:
+        recomendacion = recomendar_tipo_publicacion(
+            precio,
+            costo,
+            comisiones,
+            shipping_cost=costos_ml_manual.shipping_cost or 0.0,
+            other_fixed_cost=costos_ml_manual.other_fixed_cost or 0.0,
+            target_margin_pct=target_margin_pct,
+        )
+        if recomendacion is not None:
+            pref_efectiva = recomendacion.tipo
+
+    costos_ml_efectivos, fuente_comision_ml = resolver_costos_ml(comisiones, costos_ml_manual, pref_efectiva)
     ml_configurado = costos_ml_efectivos.is_configured()
 
     return {
@@ -167,6 +264,13 @@ def _fila(db: Session, store_id: int, producto: Product, variante: ProductVarian
         "mercadoLibreConfigurado": ml_configurado,
         "margenMercadoLibreClp": net_margin(precio, costo, costos_ml_efectivos),
         "margenMercadoLibrePct": net_margin_pct(precio, costo, costos_ml_efectivos),
+        # Costo de envío real de Mercado Libre y su origen ("mercadolibre" |
+        # "no_disponible"), ver aplicar_envio_real_ml. Sin envío real, el
+        # margen de Mercado Libre de arriba es PROVISIONAL.
+        **envio_ml,
+        "rentabilidadMlProvisional": (
+            net_margin(precio, costo, costos_ml_efectivos) is not None and envio_ml["envioMlFuente"] != "mercadolibre"
+        ),
         # 31 de agosto de 2026 — de qué fuente sale la comisión usada en
         # margenMercadoLibreClp/Pct de ARRIBA ("real"|"manual"), None si no
         # hay ninguna. Nunca confundir con comisionMlReal de abajo, que es
@@ -180,6 +284,12 @@ def _fila(db: Session, store_id: int, producto: Product, variante: ProductVarian
         # POST /api/mercadolibre/comisiones/recalcular; nunca se calcula acá
         # con un valor estimado.
         "comisionMlReal": _comision_ml_real(comisiones, costo, precio, costos_ml_manual),
+        # Tipo de publicación que el sistema recomienda para ESTE producto
+        # (Clásica/Premium), elegido solo por margen con la comisión exacta —
+        # None si hay preferencia manual o si no hay comisión real todavía.
+        "tipoPublicacionRecomendado": recomendacion.tipo if recomendacion else None,
+        "tipoPublicacionRecomendadoLabel": TIPO_PUBLICACION_LABEL.get(recomendacion.tipo) if recomendacion else None,
+        "tipoPublicacionRazon": recomendacion.razon if recomendacion else None,
         "mlCategoriaId": producto.ml_category_id,
         "mlCategoriaNombre": producto.ml_category_name,
     }
@@ -205,9 +315,13 @@ def build_profitability_rows(db: Session, store: Store) -> tuple[list[dict], boo
     ml_configurado = costos_ml.is_configured()
 
     listing_type_pref = config_ml.listing_type_pref if config_ml else None
+    target_margin_pct = (
+        float(config_ml.target_margin_pct) if config_ml and config_ml.target_margin_pct is not None else None
+    )
     productos = db.query(Product).filter_by(store_id=store.id).order_by(Product.name).all()
+    publicaciones_ml = publicaciones_ml_por_producto(db, store.id)
     filas = [
-        _fila(db, store.id, producto, variante, costos_ml, listing_type_pref)
+        _fila(db, store.id, producto, variante, costos_ml, listing_type_pref, target_margin_pct, publicaciones_ml.get(producto.id))
         for producto in productos
         for variante in producto.variants
     ]

@@ -29,7 +29,16 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_store
 from app.config import get_settings
-from app.db.models import MarketplaceAccount, MarketplaceListing, Product, ProductImage, ProductVariant, Store
+from app.db.models import (
+    MarketplaceAccount,
+    MarketplaceListing,
+    OrderItem,
+    Product,
+    ProductImage,
+    ProductVariant,
+    StockMovement,
+    Store,
+)
 from app.db.session import get_db
 from app.domain.image_storage import (
     MAX_IMAGENES_POR_PRODUCTO,
@@ -158,6 +167,66 @@ def listar_productos(db: Session = Depends(get_db), store: Store = Depends(get_c
 def obtener_producto(variant_id: int, db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> dict:
     variante = _variante_de_la_tienda(db, store, variant_id)
     return build_producto_fila(variante.product, variante)
+
+
+@router.delete("/{variant_id}")
+def eliminar_producto(
+    variant_id: int, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> dict:
+    """Elimina el PRODUCTO completo (todas sus variantes) al que pertenece
+    esta fila.
+
+    No se puede si está publicado en Mercado Libre (activa o pausada): hay
+    que despublicarlo primero, porque borrarlo acá dejaría una publicación
+    viva en Mercado Libre imposible de gestionar desde Nexo.
+
+    Las ventas ya registradas NO se pierden: cada OrderItem se DESVINCULA
+    (variant_id -> None) conservando su SKU externo — el mismo estado que
+    tiene un pedido que llegó con un producto que no está en el catálogo. El
+    log interno de movimientos de stock (auditoría propia, no ventas) sí se
+    borra junto con el producto."""
+    variante = _variante_de_la_tienda(db, store, variant_id)
+    producto = variante.product
+    producto_id = producto.id
+
+    publicada = (
+        db.query(MarketplaceListing)
+        .join(MarketplaceAccount, MarketplaceListing.account_id == MarketplaceAccount.id)
+        .filter(
+            MarketplaceAccount.store_id == store.id,
+            MarketplaceListing.product_id == producto_id,
+            MarketplaceListing.status.in_(["active", "paused"]),
+        )
+        .first()
+    )
+    if publicada is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Este producto está publicado en Mercado Libre. Despublicalo primero para poder eliminarlo.",
+        )
+
+    variant_ids = [v.id for v in producto.variants]
+    # Ventas: no se borran, se desvinculan (conservan external_item_sku).
+    db.query(OrderItem).filter(OrderItem.variant_id.in_(variant_ids)).update(
+        {OrderItem.variant_id: None}, synchronize_session=False
+    )
+    # Movimientos de stock: FK NOT NULL a la variante; es auditoría interna,
+    # se elimina con el producto.
+    db.query(StockMovement).filter(StockMovement.variant_id.in_(variant_ids)).delete(synchronize_session=False)
+    # Publicaciones cerradas / nunca publicadas (las activas/pausadas ya se
+    # descartaron arriba). Borrarlas arrastra sus listing_variants (cascade).
+    for listing in list(producto.marketplace_listings):
+        db.delete(listing)
+
+    settings = get_settings()
+    for imagen in producto.images:
+        eliminar_archivo_si_es_local(
+            imagen.url, uploads_dir=Path(settings.uploads_dir), backend_public_base_url=settings.backend_public_base_url
+        )
+
+    db.delete(producto)  # cascade: variantes + imágenes
+    db.commit()
+    return {"eliminado": True, "productoId": producto_id}
 
 
 class MarketplaceStockLoteUpdate(BaseModel):

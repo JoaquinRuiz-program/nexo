@@ -192,6 +192,13 @@ window.LC = window.LC || {};
     return request(`/api/productos/${id}`);
   }
 
+  // 14 de septiembre de 2026 — eliminar un producto del catálogo (todas sus
+  // variantes). El backend responde 409 si está publicado en Mercado Libre:
+  // hay que despublicarlo primero.
+  async function eliminarProducto(id) {
+    return request(`/api/productos/${id}`, { method: "DELETE" });
+  }
+
   // Cierra el flujo de Oportunidades: completar el costo de UN producto
   // puntual sin volver a subir el catálogo entero (PUT /api/productos/:id/costo).
   async function actualizarCostoProducto(id, costo) {
@@ -413,6 +420,17 @@ window.LC = window.LC || {};
   // app/api/deps.py::require_nexo_admin).
   // ------------------------------------------------------------------
 
+  // 14 de septiembre de 2026 — Overview / Business Intelligence del admin.
+  // filtros: { periodo, empresa, canal }. Todo sale de datos reales del backend.
+  async function obtenerAdminOverview(filtros = {}) {
+    const params = new URLSearchParams();
+    if (filtros.periodo) params.set("periodo", filtros.periodo);
+    if (filtros.empresa) params.set("empresa", filtros.empresa);
+    if (filtros.canal) params.set("canal", filtros.canal);
+    const query = params.toString();
+    return request(`/api/admin/overview${query ? `?${query}` : ""}`);
+  }
+
   async function listarClientesAdmin() {
     return request("/api/admin/clientes");
   }
@@ -547,6 +565,7 @@ window.LC = window.LC || {};
     fetchDashboardResumen,
     fetchProductos,
     fetchProductoDetalle,
+    eliminarProducto,
     actualizarCostoProducto,
     actualizarStockProducto,
     reservarStockMlEnLote,
@@ -587,6 +606,7 @@ window.LC = window.LC || {};
     guardarDatosGenerales,
     cambiarPassword,
     configurarCanal,
+    obtenerAdminOverview,
     listarClientesAdmin,
     detalleClienteAdmin,
     actualizarEstadoClienteAdmin,

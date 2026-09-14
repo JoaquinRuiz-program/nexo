@@ -333,6 +333,15 @@ class MercadoLibreAdapter:
         quien llama decide si sincroniza la base local con esto."""
         return await self._get_with_retry(f"/items/{item_id}", access_token)
 
+    async def get_seller_shipping_cost(self, access_token: str, user_id: str, item_id: str) -> dict[str, Any]:
+        """GET /users/{user_id}/shipping_options/free?item_id=... — costo de
+        envío que Mercado Libre le informa al VENDEDOR para una publicación
+        existente y activa (`coverage.all_country.list_cost`, 14 de septiembre
+        de 2026, doc oficial "Management of shipping fees"). Con `item_id` no
+        hacen falta dimensiones. La interpretación vive en domain/ml_shipping.py."""
+        query = urlencode({"item_id": item_id, "verbose": "true"})
+        return await self._get_with_retry(f"/users/{user_id}/shipping_options/free?{query}", access_token)
+
     async def update_item_status(self, access_token: str, item_id: str, status: str) -> dict[str, Any]:
         """PUT /items/{id} con {"status": ...} — pausar ("paused"),
         reactivar ("active") o cerrar ("closed", el equivalente real de

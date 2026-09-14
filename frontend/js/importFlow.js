@@ -45,7 +45,10 @@ window.LC = window.LC || {};
       mapeo: null,
       confirmarResultado: null,
       seleccion: null,
-      seleccionCriterios: { canal: "tienda", requiereStock: false, orden: "margenTiendaClp" },
+      // Canal "mercadolibre": la recomendación se evalúa sobre el margen NETO
+      // de ML (comisión real exacta por producto + envío), no sobre el bruto
+      // de tienda. El sistema recomienda solo Clásica/Premium según el margen.
+      seleccionCriterios: { canal: "mercadolibre", requiereStock: false, orden: "margenMercadoLibreClp" },
       seleccionadosIds: new Set(),
       preparacion: null,
       error: null,
@@ -352,12 +355,26 @@ window.LC = window.LC || {};
     no_seleccionado: "— Fuera del cupo",
   };
 
+  // Margen a MOSTRAR: el neto de Mercado Libre (comisión real + envío) cuando
+  // existe; si no (ML no configurado, o categoría sin comisión todavía), cae
+  // al bruto de tienda para no dejar la celda vacía.
+  function margenClpDe(p) {
+    return p.margenMercadoLibreClp != null ? p.margenMercadoLibreClp : p.margenTiendaClp;
+  }
+  function margenPctDe(p) {
+    return p.margenMercadoLibrePct != null ? p.margenMercadoLibrePct : p.margenTiendaPct;
+  }
+
   function filasOrdenadas() {
     const { orden } = state.seleccionCriterios;
     const filas = [...state.seleccion.productos];
-    const claves = { margenTiendaClp: "margenTiendaClp", margenTiendaPct: "margenTiendaPct", precio: "precio", stock: "marketplaceStock" };
-    const clave = claves[orden] || "margenTiendaClp";
-    return filas.sort((a, b) => (b[clave] ?? -Infinity) - (a[clave] ?? -Infinity));
+    const claves = {
+      margenMercadoLibreClp: margenClpDe, margenMercadoLibrePct: margenPctDe,
+      margenTiendaClp: (p) => p.margenTiendaClp, margenTiendaPct: (p) => p.margenTiendaPct,
+      precio: (p) => p.precio, stock: (p) => p.marketplaceStock,
+    };
+    const valor = claves[orden] || margenClpDe;
+    return filas.sort((a, b) => (valor(b) ?? -Infinity) - (valor(a) ?? -Infinity));
   }
 
   function renderPasoOportunidades() {
@@ -368,7 +385,7 @@ window.LC = window.LC || {};
     return `
       <div class="panel-card mb-5">
         <h2 class="panel-title mb-1">Estas son las oportunidades que encontramos</h2>
-        <p class="panel-subtitle mb-5">Calculado con tus costos y precios reales — sin asumir ninguna comisión que no hayas confirmado.</p>
+        <p class="panel-subtitle mb-5">Margen NETO de Mercado Libre — ya descontada la comisión real de cada producto. El sistema recomienda solo Clásica o Premium según el margen. El costo de envío solo se descuenta cuando Mercado Libre lo informa para una publicación real; mientras tanto el margen es provisional.</p>
         <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div class="stat-card"><p class="stat-label">Total</p><p class="stat-value stat-value--sm">${resumen.total}</p></div>
           <div class="stat-card"><p class="stat-label">Recomendados</p><p class="stat-value stat-value--sm stat-value--success">${resumen.rentables}</p></div>
@@ -388,8 +405,8 @@ window.LC = window.LC || {};
           <div class="flex items-center gap-2 text-sm">
             <label class="text-slate-500 dark:text-slate-400">Ordenar por</label>
             <select id="orden-select" class="text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5">
-              <option value="margenTiendaClp" ${state.seleccionCriterios.orden === "margenTiendaClp" ? "selected" : ""}>Mayor utilidad</option>
-              <option value="margenTiendaPct" ${state.seleccionCriterios.orden === "margenTiendaPct" ? "selected" : ""}>Mayor margen</option>
+              <option value="margenMercadoLibreClp" ${state.seleccionCriterios.orden === "margenMercadoLibreClp" ? "selected" : ""}>Mayor utilidad (neta ML)</option>
+              <option value="margenMercadoLibrePct" ${state.seleccionCriterios.orden === "margenMercadoLibrePct" ? "selected" : ""}>Mayor margen (neto ML)</option>
               <option value="precio" ${state.seleccionCriterios.orden === "precio" ? "selected" : ""}>Mayor precio</option>
               <option value="stock" ${state.seleccionCriterios.orden === "stock" ? "selected" : ""}>Mayor stock reservado</option>
             </select>
@@ -404,8 +421,9 @@ window.LC = window.LC || {};
                 <th class="px-3 py-2 font-medium">Producto</th>
                 <th class="px-3 py-2 font-medium text-right">Precio</th>
                 <th class="px-3 py-2 font-medium text-right">Costo</th>
-                <th class="px-3 py-2 font-medium text-right">Utilidad</th>
-                <th class="px-3 py-2 font-medium text-right">Margen</th>
+                <th class="px-3 py-2 font-medium text-right">Utilidad neta</th>
+                <th class="px-3 py-2 font-medium text-right">Margen neto</th>
+                <th class="px-3 py-2 font-medium">Publicar como</th>
                 <th class="px-3 py-2 font-medium">Recomendación</th>
               </tr>
             </thead>
@@ -419,8 +437,13 @@ window.LC = window.LC || {};
                   </td>
                   <td class="px-3 py-2.5 text-right">${formatCLPReal(p.precio)}</td>
                   <td class="px-3 py-2.5 text-right">${formatCLPReal(p.costo)}</td>
-                  <td class="px-3 py-2.5 text-right font-medium ${p.margenTiendaClp != null && p.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${formatCLPReal(p.margenTiendaClp)}</td>
-                  <td class="px-3 py-2.5 text-right">${formatPct(p.margenTiendaPct)}</td>
+                  <td class="px-3 py-2.5 text-right font-medium ${margenClpDe(p) != null && margenClpDe(p) < 0 ? "text-red-600 dark:text-red-400" : ""}">${formatCLPReal(margenClpDe(p))}${p.rentabilidadMlProvisional ? `<p class="text-xs font-normal text-slate-400" title="${escapeHtml(p.envioMlMotivo || "")}">Provisional · envío no disponible</p>` : ""}</td>
+                  <td class="px-3 py-2.5 text-right">${formatPct(margenPctDe(p))}</td>
+                  <td class="px-3 py-2.5">
+                    ${p.tipoPublicacionRecomendadoLabel
+                      ? `<span class="badge badge-simple" title="${escapeHtml(p.tipoPublicacionRazon || "")}">${escapeHtml(p.tipoPublicacionRecomendadoLabel)}</span>`
+                      : `<span class="text-xs text-slate-400" title="Falta la categoría de Mercado Libre para calcular la comisión exacta">—</span>`}
+                  </td>
                   <td class="px-3 py-2.5">
                     <span class="reco-badge reco-${p.clasificacion}" title="${escapeHtml(p.razon || "")}">${RECO_LABEL[p.clasificacion] || p.clasificacion}</span>
                   </td>

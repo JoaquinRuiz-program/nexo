@@ -2467,3 +2467,32 @@ def test_confirmar_una_tienda_nunca_se_ve_afectada_por_el_limite_de_otra(client,
     )
 
     assert res.status_code == 200, res.text
+
+
+# ------------------------------------------------------------------
+# Auto-relleno de atributos de ML (14 de septiembre de 2026): lo que Nexo ya
+# sabe del catálogo no se le vuelve a pedir al dueño al publicar.
+# ------------------------------------------------------------------
+
+
+def test_datos_conocidos_ml_autocompleta_titulo_y_codigo():
+    from app.api.routes.publicaciones import _datos_conocidos_ml
+
+    producto = Product(store_id=1, name="Cien años de soledad", brand="Sudamericana", product_type="simple", created_at=NOW, updated_at=NOW)
+    variante = ProductVariant(store_id=1, variant_sku="LIB-1", barcode="9780307474728", created_at=NOW, updated_at=NOW)
+
+    datos = _datos_conocidos_ml(producto, variante)
+    assert datos["BOOK_TITLE"] == "Cien años de soledad"   # Título del libro <- nombre
+    assert datos["BRAND"] == "Sudamericana"
+    # ISBN en libros es el GTIN; un mismo dato real, no tres inventados.
+    assert datos["GTIN"] == datos["EAN"] == datos["UPC"] == "9780307474728"
+
+
+def test_datos_conocidos_ml_sin_codigo_ni_marca_solo_titulo():
+    from app.api.routes.publicaciones import _datos_conocidos_ml
+
+    producto = Product(store_id=1, name="Producto suelto", product_type="simple", created_at=NOW, updated_at=NOW)
+    variante = ProductVariant(store_id=1, variant_sku="X", created_at=NOW, updated_at=NOW)
+
+    datos = _datos_conocidos_ml(producto, variante)
+    assert datos == {"BOOK_TITLE": "Producto suelto"}  # sin barcode no se inventa GTIN
