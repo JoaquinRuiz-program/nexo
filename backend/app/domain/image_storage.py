@@ -85,17 +85,28 @@ def guardar_imagen(contenido: bytes, *, uploads_dir: Path, store_id: int) -> tup
     return ruta_relativa, nombre_archivo
 
 
-def eliminar_archivo_si_es_local(url: str, *, uploads_dir: Path, backend_public_base_url: str) -> None:
-    """Borra el archivo físico cuando la imagen eliminada es una que Nexo
-    guardó (nunca toca nada si la URL es externa, ej. una cargada por URL
-    de un CDN de terceros — no hay ningún archivo propio que borrar)."""
+CONTENT_TYPE_POR_EXTENSION = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+
+
+def ruta_local_de_imagen(url: str, *, uploads_dir: Path, backend_public_base_url: str) -> Path | None:
+    """Archivo físico de una imagen que Nexo guardó, o None si la URL es
+    externa (ej. un CDN de terceros) o apunta fuera de uploads_dir."""
     prefijo = f"{backend_public_base_url}/uploads/"
     if not url.startswith(prefijo):
-        return
+        return None
     ruta_relativa = url[len(prefijo):]
     # Nunca sigue ".." fuera de uploads_dir, aunque `ruta_relativa` viniera
     # manipulada — resuelve y verifica que el resultado siga adentro.
     destino = (uploads_dir / ruta_relativa).resolve()
     if uploads_dir.resolve() not in destino.parents:
-        return
-    destino.unlink(missing_ok=True)
+        return None
+    return destino
+
+
+def eliminar_archivo_si_es_local(url: str, *, uploads_dir: Path, backend_public_base_url: str) -> None:
+    """Borra el archivo físico cuando la imagen eliminada es una que Nexo
+    guardó (nunca toca nada si la URL es externa, ej. una cargada por URL
+    de un CDN de terceros — no hay ningún archivo propio que borrar)."""
+    destino = ruta_local_de_imagen(url, uploads_dir=uploads_dir, backend_public_base_url=backend_public_base_url)
+    if destino is not None:
+        destino.unlink(missing_ok=True)

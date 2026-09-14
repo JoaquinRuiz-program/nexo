@@ -8,6 +8,7 @@ toca nexo.db, WooCommerce ni Mercado Libre).
 from __future__ import annotations
 
 import io
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -21,9 +22,23 @@ from sqlalchemy.pool import StaticPool
 
 from app.config import Settings
 from app.db.base import Base
-from app.db.models import MarketplaceAccount, MarketplaceListing, Product, ProductImage, ProductVariant, Store, StoreSettings, User
+import httpx
+import respx
+
+from app.db.models import (
+    MarketplaceAccount,
+    MarketplaceListing,
+    MarketplaceListingVariant,
+    Product,
+    ProductImage,
+    ProductVariant,
+    Store,
+    StoreSettings,
+    User,
+)
 from app.db.session import get_db
 from app.domain.security import hash_password
+from app.domain.token_crypto import encrypt_token
 from tests.auth_helpers import autenticar
 from app.main import app
 
@@ -87,6 +102,62 @@ def a_store(client, db_session):
     db_session.commit()
     autenticar(client, db_session, usuario, tienda, ahora=NOW)
     return tienda
+
+
+_TEST_KEY = "1zjb1QwlLnRZVODeUOZ7dEP9CzO2gxIx3vT-YQEbG9E="
+_SETTINGS_ML = Settings(
+    mercadolibre_client_id="test-client-id",
+    mercadolibre_client_secret="test-client-secret",
+    mercadolibre_redirect_uri="http://localhost:8000/api/mercadolibre/callback",
+    token_encryption_key=_TEST_KEY,
+)
+
+
+def _variante_publicada_en_ml(db_session, tienda, *, sku, item_id, stock_ml):
+    producto = Product(store=tienda, internal_sku=sku, name=f"Producto {sku}", product_type="simple", created_at=NOW, updated_at=NOW)
+    variante = ProductVariant(product=producto, store_id=tienda.id, variant_sku=sku, price=10000, marketplace_stock=stock_ml, created_at=NOW, updated_at=NOW)
+    cuenta = db_session.query(MarketplaceAccount).filter_by(store_id=tienda.id).first() or MarketplaceAccount(
+        store=tienda, marketplace="mercadolibre", status="connected", external_account_id="555", external_account_site_id="MLC",
+        access_token_encrypted=encrypt_token("token-de-prueba", _TEST_KEY), refresh_token_encrypted=encrypt_token("refresh", _TEST_KEY),
+        token_expires_at=datetime(2027, 1, 1),
+    )
+    listing = MarketplaceListing(account=cuenta, product=producto, external_listing_id=item_id, status="paused", created_at=NOW)
+    db_session.add_all([producto, variante, cuenta, listing])
+    db_session.flush()
+    db_session.add(MarketplaceListingVariant(listing=listing, variant=variante, stock_quantity=stock_ml))
+    db_session.commit()
+    return variante.id
+
+
+@respx.mock
+def test_cambiar_stock_ml_de_un_producto_publicado_actualiza_la_publicacion_real(client, db_session, a_store, monkeypatch):
+    """14 de septiembre de 2026 — caso real: el stock reservado cambiaba en
+    Nexo pero la publicación de Mercado Libre seguía con el viejo."""
+    monkeypatch.setattr("app.api.routes.productos_db.get_settings", lambda: _SETTINGS_ML)
+    variant_id = _variante_publicada_en_ml(db_session, a_store, sku="PUB-1", item_id="MLC2244564341", stock_ml=5)
+    ruta = respx.put("https://api.mercadolibre.com/items/MLC2244564341").mock(return_value=httpx.Response(200, json={"id": "MLC2244564341", "available_quantity": 8}))
+
+    res = client.put(f"/api/productos/{variant_id}/stock-mercadolibre", json={"cantidad": 8})
+
+    assert res.status_code == 200, res.text
+    assert res.json()["sincronizacionMl"] == {"publicacionesActualizadas": 1, "conError": 0}
+    assert json.loads(ruta.calls[0].request.content) == {"available_quantity": 8}
+    assert db_session.query(MarketplaceListingVariant).one().stock_quantity == 8
+
+
+@respx.mock
+def test_stock_ml_en_lote_actualiza_publicaciones_y_un_error_de_ml_no_deshace_nexo(client, db_session, a_store, monkeypatch):
+    monkeypatch.setattr("app.api.routes.productos_db.get_settings", lambda: _SETTINGS_ML)
+    ok_id = _variante_publicada_en_ml(db_session, a_store, sku="PUB-OK", item_id="MLC1", stock_ml=1)
+    falla_id = _variante_publicada_en_ml(db_session, a_store, sku="PUB-FALLA", item_id="MLC2", stock_ml=1)
+    respx.put("https://api.mercadolibre.com/items/MLC1").mock(return_value=httpx.Response(200, json={"id": "MLC1"}))
+    respx.put("https://api.mercadolibre.com/items/MLC2").mock(return_value=httpx.Response(400, json={"message": "item.available_quantity.invalid"}))
+
+    res = client.put("/api/productos/stock-mercadolibre/lote", json={"variantIds": None, "cantidad": 3})
+
+    assert res.status_code == 200, res.text
+    assert res.json()["sincronizacionMl"] == {"publicacionesActualizadas": 1, "conError": 1}
+    assert {v.id: v.marketplace_stock for v in db_session.query(ProductVariant).all()} == {ok_id: 3, falla_id: 3}
 
 
 def _producto_simple(db_session, tienda, *, sku, nombre, precio, stock):

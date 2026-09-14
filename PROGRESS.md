@@ -88,6 +88,41 @@ catálogo (52).
    Ojo datos: en Empresa Demo hay productos "Ej: ..." (LIB-001, ESC-014) que parecen filas de
    ejemplo de la plantilla importadas como productos.
 
+10. **Imágenes: subida directa a Mercado Libre** (14 sept 2026, sin commitear) — caso real
+    MLC2244564341: Nexo mandaba `source: http://localhost:8000/uploads/...`, ML no pudo
+    descargarla y pausó la publicación (`sub_status: picture_download_pending`). Ahora, al
+    confirmar, una imagen guardada en Nexo se sube con sus bytes (`POST /pictures/items/upload`,
+    doc oficial "Pictures") y se publica por `id`; una URL externa se manda igual. Archivo
+    perdido -> 400 sin publicar. Validado en vivo: ML rechazó la foto del volante por medir
+    290 × 290 px (pide al menos 500 px en un lado, sin bordes blancos). Ahora Nexo lo avisa
+    antes de llamar a ML, con las medidas, y traduce ese rechazo de ML (nunca "probá JPG/PNG").
+    MLC2244564341 quedó `inactive` en ML: la API no permite cerrarla
+    (`item.status.not_modifiable`). Con fotos nuevas (500 × 499 y 399 × 501 px) el volante se
+    republicó en vivo: MLC4479906612 `active`, sin sub_status, 2 fotos subidas por `id`
+    (mlstatic), 4 unidades, envío real $7.200. Minutos después llegó desde la UI un segundo
+    "Eliminar publicación" y la cerró (`closed`, terminal en ML): Nexo guarda UNA fila de
+    publicación por producto, así que el botón ya apuntaba a la nueva. Pendiente: confirmar
+    con el dueño si fue a propósito antes de volver a publicar.
+12. **Oportunidades separa lo ya publicado** (14 sept 2026, sin commitear) — los productos con
+    publicación activa/pausada van a "Publicados en Mercado Libre" (con su estado y aviso si el
+    margen con envío real quedó bajo el mínimo), no a los grupos de oportunidad; los contadores
+    solo cuentan lo que falta publicar. Campo nuevo `publicacionMlEstado` en la fila de
+    rentabilidad. Productos: sin stock de tienda pero con unidades para ML muestra
+    "N para Mercado Libre" en vez de "Sin stock".
+13. **Importador: "Precio de Compra" / "Precio de Venta Recomendado"** (14 sept 2026, sin
+    commitear) — caso real (Inventario_200_Productos_V2.xlsx): el matching parcial de
+    "precio" tomaba el precio de COMPRA como precio de venta y el costo quedaba vacío (sin
+    margen posible). `catalog_import.py`: sinónimos "preciodecompra"/"compra" y
+    "precioventa"/"venta" + regla de intención (un encabezado de compra/costo nunca es precio,
+    uno de venta nunca es costo). Los 20 productos DEP- ya guardados mal en Empresa Demo se
+    corrigieron reimportándolos (actualiza por SKU). Los otros 180 no entran: la tienda está
+    en 200/200 productos del plan Básico.
+11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
+    reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
+    `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas
+    (`services/ml_stock_sync.py`, best effort, doc oficial "Distributed Stock": sin
+    multi-origen). Detalle de producto: nuevo campo "Unidades para Mercado Libre".
+
 ## En progreso
 - Nada a medias. El Admin BI cubre lo pedido (secciones 1–8); ver `TODO.md` para las
   extensiones opcionales que quedaron fuera de alcance a propósito.

@@ -216,6 +216,12 @@ window.LC = window.LC || {};
     return request("/api/productos/stock-mercadolibre/lote", { method: "PUT", body: { variantIds, cantidad } });
   }
 
+  // Unidades para Mercado Libre de UN producto. Si ya está publicado, el
+  // backend también actualiza el stock de la publicación real.
+  async function configurarStockMercadoLibre(id, cantidad) {
+    return request(`/api/productos/${id}/stock-mercadolibre`, { method: "PUT", body: { cantidad } });
+  }
+
   async function actualizarStockProducto(id, cantidad) {
     return request(`/api/productos/${id}/stock`, { method: "PUT", body: { cantidad } });
   }
@@ -569,6 +575,7 @@ window.LC = window.LC || {};
     actualizarCostoProducto,
     actualizarStockProducto,
     reservarStockMlEnLote,
+    configurarStockMercadoLibre,
     agregarImagenProducto,
     eliminarImagenProducto,
     reordenarImagenesProducto,

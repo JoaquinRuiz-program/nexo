@@ -714,6 +714,135 @@ def test_confirmar_publica_arma_el_payload_correcto_y_persiste_item_id_y_user_pr
 
 
 @respx.mock
+def test_confirmar_sube_la_imagen_guardada_en_nexo_y_publica_por_id(client, db_session, a_store, cuenta_ml_conectada, monkeypatch, tmp_path):
+    """14 de septiembre de 2026 — caso real MLC2244564341: con la URL de
+    localhost Mercado Libre no pudo descargar la foto y pausó la publicación
+    (picture_download_pending). Una imagen propia de Nexo se sube con sus
+    bytes y se publica por `id`."""
+    settings = CONFIGURED_SETTINGS.model_copy(update={"uploads_dir": str(tmp_path), "backend_public_base_url": "http://localhost:8000"})
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: settings)
+    variant_id = _producto_publicable(db_session, a_store, sku="CONF-IMG", barcode="7891234567895", con_imagen=False)
+    from PIL import Image
+
+    carpeta = tmp_path / "product_images" / str(a_store.id)
+    carpeta.mkdir(parents=True)
+    Image.new("RGB", (600, 600), "navy").save(carpeta / "foto.png")
+    producto = db_session.query(ProductVariant).filter_by(id=variant_id).one().product
+    db_session.add(ProductImage(product=producto, url=f"http://localhost:8000/uploads/product_images/{a_store.id}/foto.png", source="upload", position=0, created_at=NOW))
+    db_session.commit()
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    ruta_subida = respx.post("https://api.mercadolibre.com/pictures/items/upload").mock(
+        return_value=httpx.Response(201, json={"id": "873208-MLC117661908577_092026", "max_size": "500x500"})
+    )
+    ruta_items = respx.post("https://api.mercadolibre.com/items").mock(return_value=httpx.Response(201, json={"id": "MLC777"}))
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+
+    assert res.status_code == 200, res.text
+    assert b"\x89PNG" in ruta_subida.calls[0].request.content  # los bytes reales del archivo
+    payload_enviado = json.loads(ruta_items.calls[0].request.content)
+    assert payload_enviado["pictures"] == [{"id": "873208-MLC117661908577_092026"}]  # nunca la URL de localhost
+
+
+@respx.mock
+def test_confirmar_con_archivo_de_imagen_perdido_no_publica(client, db_session, a_store, cuenta_ml_conectada, monkeypatch, tmp_path):
+    settings = CONFIGURED_SETTINGS.model_copy(update={"uploads_dir": str(tmp_path), "backend_public_base_url": "http://localhost:8000"})
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: settings)
+    variant_id = _producto_publicable(db_session, a_store, sku="CONF-SIN-ARCHIVO", barcode="7891234567895", con_imagen=False)
+    producto = db_session.query(ProductVariant).filter_by(id=variant_id).one().product
+    db_session.add(ProductImage(product=producto, url=f"http://localhost:8000/uploads/product_images/{a_store.id}/no-existe.png", source="upload", position=0, created_at=NOW))
+    db_session.commit()
+
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+    ruta_items = respx.post("https://api.mercadolibre.com/items")  # sin .mock(): si se llamara, el test falla
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+
+    assert res.status_code == 400
+    assert "imágenes" in res.json()["detail"]
+    assert not ruta_items.called
+    assert db_session.query(MarketplaceListing).count() == 0
+
+
+def _imagen_local(db_session, tienda, variant_id, tmp_path, *, lado):
+    from PIL import Image
+
+    carpeta = tmp_path / "product_images" / str(tienda.id)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (lado, lado), "navy").save(carpeta / f"foto-{lado}.png")
+    producto = db_session.query(ProductVariant).filter_by(id=variant_id).one().product
+    db_session.add(ProductImage(product=producto, url=f"http://localhost:8000/uploads/product_images/{tienda.id}/foto-{lado}.png", source="upload", position=0, created_at=NOW))
+    db_session.commit()
+
+
+def _mocks_hasta_imagenes():
+    _mock_users_me()
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_CUADERNOS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*").mock(return_value=httpx.Response(200, json=FEES_CUADERNOS))
+
+
+@respx.mock
+def test_confirmar_con_imagen_chica_explica_el_tamano_y_no_llama_a_ml(client, db_session, a_store, cuenta_ml_conectada, monkeypatch, tmp_path):
+    """Caso real (volante, 14/09/2026): foto de 290 x 290 px. Se avisa con las
+    medidas reales, sin subir nada ni publicar."""
+    settings = CONFIGURED_SETTINGS.model_copy(update={"uploads_dir": str(tmp_path), "backend_public_base_url": "http://localhost:8000"})
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: settings)
+    variant_id = _producto_publicable(db_session, a_store, sku="CONF-IMG-CHICA", barcode="7891234567895", con_imagen=False)
+    _imagen_local(db_session, a_store, variant_id, tmp_path, lado=290)
+    _mocks_hasta_imagenes()
+    ruta_subida = respx.post("https://api.mercadolibre.com/pictures/items/upload")  # sin .mock(): no debe llamarse
+    ruta_items = respx.post("https://api.mercadolibre.com/items")
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+
+    assert res.status_code == 400
+    assert "290 × 290 px" in res.json()["detail"] and "500 px" in res.json()["detail"]
+    assert not ruta_subida.called and not ruta_items.called
+    assert db_session.query(MarketplaceListing).count() == 0
+
+
+@respx.mock
+def test_confirmar_con_imagen_rechazada_por_ml_por_tamano_avisa_claro_y_no_publica(client, db_session, a_store, cuenta_ml_conectada, monkeypatch, tmp_path):
+    """ML recorta bordes blancos antes de medir: una foto de 600 px puede
+    igual quedar chica. Respuesta real de la API (400, cause vacío)."""
+    settings = CONFIGURED_SETTINGS.model_copy(update={"uploads_dir": str(tmp_path), "backend_public_base_url": "http://localhost:8000"})
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: settings)
+    variant_id = _producto_publicable(db_session, a_store, sku="CONF-IMG-BORDES", barcode="7891234567895", con_imagen=False)
+    _imagen_local(db_session, a_store, variant_id, tmp_path, lado=600)
+    _mocks_hasta_imagenes()
+    respx.post("https://api.mercadolibre.com/pictures/items/upload").mock(return_value=httpx.Response(400, json={
+        "message": "Asegúrate de que la imagen tenga como mínimo 500 píxeles en uno de los lados. La imagen subida, procesados los bordes blancos, tiene un tamaño de 290px x 290px",
+        "error": "bad_request", "status": 400, "cause": [],
+    }))
+    ruta_items = respx.post("https://api.mercadolibre.com/items")
+
+    res = client.post(
+        f"/api/publicaciones/{variant_id}/mercadolibre/confirmar",
+        json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic", "attributes": {"COLOR": "Azul"}},
+    )
+
+    assert res.status_code == 400
+    assert "tamaño" in res.json()["detail"] and "bordes blancos" in res.json()["detail"]
+    assert "Asegúrate" not in res.json()["detail"]  # nunca el texto crudo de Mercado Libre
+    assert not ruta_items.called
+    assert db_session.query(MarketplaceListing).count() == 0
+
+
+@respx.mock
 def test_confirmar_con_premium_resuelve_listing_type_id_por_nombre_no_por_constante(
     client, db_session, a_store, cuenta_ml_conectada, monkeypatch
 ):

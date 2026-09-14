@@ -301,6 +301,7 @@ def test_costo_de_envio_real_de_ml_entra_en_el_margen_neto(client, db_session, a
     # precio - costo - comisión real (12%) - envío real = 10000 - 6000 - 1200 - 1500
     assert fila["margenMercadoLibreClp"] == 1300.0
     assert fila["rentabilidadMlProvisional"] is False
+    assert fila["publicacionMlEstado"] == "active"
 
 
 def test_sin_costo_de_envio_de_ml_no_se_inventa_y_la_rentabilidad_es_provisional(client, db_session, a_store):
@@ -325,6 +326,9 @@ def test_sin_costo_de_envio_de_ml_no_se_inventa_y_la_rentabilidad_es_provisional
         assert fila["envioMlMotivo"] == motivo
         assert fila["margenMercadoLibreClp"] == 2800.0  # sin envío estimado: 10000 - 6000 - 1200
         assert fila["rentabilidadMlProvisional"] is True
+    assert filas["SIN-PUBLICAR"]["publicacionMlEstado"] is None
+    assert filas["SIN-ME2"]["publicacionMlEstado"] == "active"
+    assert filas["CERRADA"]["publicacionMlEstado"] == "closed"
 
 
 def test_sin_comision_real_usa_el_fallback_manual(client, db_session, a_store):

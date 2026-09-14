@@ -903,6 +903,13 @@ window.LC = window.LC || {};
   // ------------------------------------------------------------------
 
   function stockIndicator(row) {
+    // 14 de septiembre de 2026 — un producto que se vende por Mercado Libre
+    // sin llevar stock de tienda no está "sin stock" si tiene unidades
+    // reservadas para Mercado Libre (caso real: volante publicado con 4 u.).
+    const sinStockDeTienda = row.gestionaStock ? !(row.stockQuantity > 0) : row.estadoStock !== "instock";
+    if (sinStockDeTienda && row.marketplaceStock > 0) {
+      return { dotClass: "dot--green", label: `${row.marketplaceStock} para Mercado Libre` };
+    }
     if (!row.gestionaStock) {
       if (row.estadoStock === "instock") return { dotClass: "dot--green", label: "En stock" };
       if (row.estadoStock === "outofstock") return { dotClass: "dot--red", label: "Sin stock" };
@@ -1323,16 +1330,29 @@ window.LC = window.LC || {};
   // abrirEditorCosto: un Excel real normalmente no trae columna de stock, asi
   // que tiene que poder cargarse desde aca. Vaciar el campo = "no gestiona
   // stock", que no es lo mismo que 0.
+  // Resultado de mandar el stock a las publicaciones reales de Mercado Libre
+  // (14 de septiembre de 2026) -> [tipo, mensaje] para toast().
+  function mensajeStockMl(base, s) {
+    if (s === null) return ["info", `${base} No pudimos actualizar Mercado Libre ahora — probá de nuevo más tarde.`];
+    if (!s) return ["success", base];
+    const partes = [base];
+    if (s.publicacionesActualizadas) partes.push(`${s.publicacionesActualizadas} publicación(es) de Mercado Libre actualizada(s).`);
+    if (s.conError) partes.push(`${s.conError} no se pudo actualizar en Mercado Libre.`);
+    return [s.conError ? "info" : "success", partes.join(" ")];
+  }
+
   function abrirEditorStock(producto, onGuardado) {
     const root = document.getElementById("modal-root");
     root.innerHTML = `
       <div class="modal-overlay fixed inset-0 bg-slate-900/50 dark:bg-slate-950/70 flex items-center justify-center z-[60] p-4">
         <div class="modal-card bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-sm w-full p-6">
-          <h3 class="text-lg font-semibold mb-1">${producto.stock == null ? "Agregar stock" : "Editar stock"}</h3>
+          <h3 class="text-lg font-semibold mb-1">${producto.mercadoLibre ? "Unidades para Mercado Libre" : producto.stock == null ? "Agregar stock" : "Editar stock"}</h3>
           <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">${escapeHtml(producto.nombre)}</p>
           <label class="form-label" for="stock-input">Unidades disponibles</label>
           <input id="stock-input" type="number" min="0" step="1" inputmode="numeric" class="form-input" placeholder="0" value="${producto.stock ?? ""}" />
-          <p class="text-xs text-slate-400 mt-1.5">Dejalo vacio si este producto no lleva control de stock. Esto no cambia las unidades reservadas para Mercado Libre.</p>
+          <p class="text-xs text-slate-400 mt-1.5">${producto.mercadoLibre
+            ? "Cuántas unidades ofrecés en Mercado Libre. Si el producto ya está publicado, también se actualiza la publicación."
+            : "Dejalo vacio si este producto no lleva control de stock. Esto no cambia las unidades reservadas para Mercado Libre."}</p>
           <p id="stock-feedback" class="text-sm mt-2 min-h-[1.25rem]"></p>
           <div class="flex justify-end gap-3 mt-3">
             <button id="stock-cancelar" class="btn-secondary">Cancelar</button>
@@ -1364,7 +1384,9 @@ window.LC = window.LC || {};
       btn.textContent = "Guardando…";
       feedback.textContent = "";
 
-      const res = await LC.backendApi.actualizarStockProducto(producto.id, cantidad);
+      const res = producto.mercadoLibre
+        ? await LC.backendApi.configurarStockMercadoLibre(producto.id, cantidad)
+        : await LC.backendApi.actualizarStockProducto(producto.id, cantidad);
       if (!res.ok) {
         btn.disabled = false;
         btn.textContent = "Guardar";
@@ -1373,7 +1395,8 @@ window.LC = window.LC || {};
         return;
       }
       btn.textContent = "✓ Stock actualizado";
-      toast("success", "Stock actualizado.");
+      if (producto.mercadoLibre) toast(...mensajeStockMl("Unidades para Mercado Libre actualizadas.", res.data.sincronizacionMl));
+      else toast("success", "Stock actualizado.");
       setTimeout(() => {
         close();
         onGuardado();
@@ -1635,6 +1658,11 @@ window.LC = window.LC || {};
               <p class="text-lg font-semibold mt-1">${row.stockQuantity ?? "Sin registrar"}</p>
               <button id="detail-editar-stock" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline mt-0.5">${row.stockQuantity == null ? "Agregar stock" : "Editar"}</button>
             </div>
+            <div>
+              <p class="stat-label">Unidades para Mercado Libre</p>
+              <p class="text-lg font-semibold mt-1">${row.marketplaceStock ?? "Sin definir"}</p>
+              <button id="detail-editar-stock-ml" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline mt-0.5">${row.marketplaceStock == null ? "Definir" : "Editar"}</button>
+            </div>
             <div><p class="stat-label">Categoría</p><p class="text-lg font-semibold mt-1">${escapeHtml(row.categoria || "—")}</p></div>
             <div><p class="stat-label">Creado</p><p class="text-lg font-semibold mt-1">${formatDate(creado)}</p></div>
           </div>
@@ -1684,6 +1712,12 @@ window.LC = window.LC || {};
     if (editarStockBtn) {
       editarStockBtn.addEventListener("click", () => {
         abrirEditorStock({ id: row.id, nombre: row.nombre, stock: row.stockQuantity }, () => rerenderActual());
+      });
+    }
+    const editarStockMlBtn = document.getElementById("detail-editar-stock-ml");
+    if (editarStockMlBtn) {
+      editarStockMlBtn.addEventListener("click", () => {
+        abrirEditorStock({ id: row.id, nombre: row.nombre, stock: row.marketplaceStock, mercadoLibre: true }, () => rerenderActual());
       });
     }
     const agregarCostoBtn = document.getElementById("detail-agregar-costo");
@@ -2172,6 +2206,16 @@ window.LC = window.LC || {};
   const DECISION_COLUMNA_LABEL = { conviene: "Conviene", revisar: "Revisar", no_conviene: "No conviene", datos_insuficientes: "Faltan datos" };
 
   function celdaDecision(p, decisionMap) {
+    // Ya publicado: el estado real reemplaza a la "decisión" de publicar; si
+    // el margen quedó bajo el mínimo (ej. con el envío real), se avisa.
+    if (p.publicacionMlEstado === "active" || p.publicacionMlEstado === "paused") {
+      const aviso = (p.clasificacion === "margen_bajo" || p.clasificacion === "no_rentable") && p.razon
+        ? `<p class="text-xs text-amber-600 dark:text-amber-400 mt-1 max-w-[220px]">${escapeHtml(p.razon)}</p>` : "";
+      return `<td class="px-3 py-2.5">
+        <span class="reco-badge ${p.publicacionMlEstado === "active" ? "reco-conviene" : "reco-revisar"} !text-xs !py-1">${p.publicacionMlEstado === "active" ? "Publicado" : "Pausado"}</span>
+        ${aviso}
+      </td>`;
+    }
     const d = decisionMap && decisionMap.get(p.id);
     if (!d) return `<td class="px-3 py-2.5"><span class="text-xs text-slate-400">—</span></td>`;
     const visual = d.decision === "revisar" && d.faltantes && d.faltantes.length ? "datos_insuficientes" : d.decision;
@@ -2244,6 +2288,11 @@ window.LC = window.LC || {};
     const [modo, data] = await Promise.all([LC.dataSource.getModo(), LC.dataSource.getOportunidades()]);
     const esReal = modo === "real";
     const productos = [...(data.productos || [])].sort((a, b) => (b.margenMercadoLibreClp ?? -Infinity) - (a.margenMercadoLibreClp ?? -Infinity));
+    // Ya publicados en Mercado Libre: sección propia, nunca como "oportunidad"
+    // (caso real: el volante recién publicado aparecía en "No conviene").
+    const publicados = productos.filter((p) => p.publicacionMlEstado === "active" || p.publicacionMlEstado === "paused");
+    const porPublicar = productos.filter((p) => !publicados.includes(p));
+    const cuentaPorPublicar = (clasificacion) => porPublicar.filter((p) => p.clasificacion === clasificacion).length;
     const r = data.resumen || {};
 
     // Comisión REAL de Mercado Libre (29 de agosto de 2026) — el botón
@@ -2322,16 +2371,27 @@ window.LC = window.LC || {};
 
         <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
           <div class="stat-card"><p class="stat-label">Total</p><p class="stat-value stat-value--sm">${r.total ?? productos.length}</p></div>
-          <div class="stat-card"><p class="stat-label">Buenas oportunidades</p><p class="stat-value stat-value--sm stat-value--success">${r.rentables ?? 0}</p></div>
-          <div class="stat-card"><p class="stat-label">Margen bajo</p><p class="stat-value stat-value--sm stat-value--warning">${r.margenBajo ?? 0}</p></div>
-          <div class="stat-card"><p class="stat-label">No conviene</p><p class="stat-value stat-value--sm stat-value--danger">${r.noRentables ?? 0}</p></div>
-          <div class="stat-card"><p class="stat-label">Falta información</p><p class="stat-value stat-value--sm">${r.sinDatos ?? 0}</p></div>
+          <div class="stat-card"><p class="stat-label">Buenas oportunidades</p><p class="stat-value stat-value--sm stat-value--success">${cuentaPorPublicar("rentable")}</p></div>
+          <div class="stat-card"><p class="stat-label">Margen bajo</p><p class="stat-value stat-value--sm stat-value--warning">${cuentaPorPublicar("margen_bajo")}</p></div>
+          <div class="stat-card"><p class="stat-label">No conviene</p><p class="stat-value stat-value--sm stat-value--danger">${cuentaPorPublicar("no_rentable")}</p></div>
+          <div class="stat-card"><p class="stat-label">Ya publicados</p><p class="stat-value stat-value--sm">${publicados.length}</p></div>
         </div>
+
+        ${publicados.length ? `
+        <div class="panel-card mb-5">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="dot dot--blue"></span>
+            <h3 class="panel-title">Publicados en Mercado Libre</h3>
+            <span class="text-sm text-slate-400">(${publicados.length})</span>
+          </div>
+          <p class="panel-subtitle mb-4">Ya están a la venta. La ganancia incluye el costo de envío real que informa Mercado Libre.</p>
+          ${tablaOportunidades(publicados, decisionPorVariante)}
+        </div>` : ""}
 
         ${
           productos.length
             ? GRUPOS_OPORTUNIDAD.map((g) => {
-                const items = productos.filter((p) => g.clasificaciones.includes(p.clasificacion));
+                const items = porPublicar.filter((p) => g.clasificaciones.includes(p.clasificacion));
                 if (!items.length) return "";
                 return `
                 <div class="panel-card mb-5">
@@ -2382,7 +2442,7 @@ window.LC = window.LC || {};
           toast("error", res.error.mensaje);
           return;
         }
-        toast("success", `Stock reservado en ${res.data.actualizados} producto(s).`);
+        toast(...mensajeStockMl(`Stock reservado en ${res.data.actualizados} producto(s).`, res.data.sincronizacionMl));
         rerenderActual();
       });
     }

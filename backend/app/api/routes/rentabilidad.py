@@ -275,6 +275,10 @@ def _fila(
         # "no_disponible"), ver aplicar_envio_real_ml. Sin envío real, el
         # margen de Mercado Libre de arriba es PROVISIONAL.
         **envio_ml,
+        # Estado de la publicación de Mercado Libre de este producto
+        # ("active" | "paused" | "closed" | None = nunca publicado): Oportunidades
+        # muestra los ya publicados en su propia sección, no como oportunidad.
+        "publicacionMlEstado": publicacion_ml.status if publicacion_ml is not None else ("closed" if publicacion_ml_cerrada else None),
         "rentabilidadMlProvisional": (
             net_margin(precio, costo, costos_ml_efectivos) is not None and envio_ml["envioMlFuente"] != "mercadolibre"
         ),

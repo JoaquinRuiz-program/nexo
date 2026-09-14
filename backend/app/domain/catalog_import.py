@@ -47,19 +47,31 @@ _FIELD_SYNONYMS: dict[str, list[str]] = {
     "nombre": ["nombre", "producto", "descripcioncorta", "articulo", "titulo", "name"],
     "marca": ["marca", "fabricante", "brand"],
     "categoria": ["categoria", "category", "rubro", "tipo", "familia"],
-    "precio": ["precio", "preciodeventa", "valor", "price", "pvp"],
+    "precio": ["precio", "preciodeventa", "precioventa", "valor", "price", "pvp", "venta"],
     # "preciocompra"/"preciocosto" tienen que estar acá (no solo
     # "costo"/"costodecompra"): un header como "Precio compra" es costo, no
     # precio de venta, aunque empiece con la palabra "precio" — ver
     # IMPORT_FIELDS más abajo, que procesa "costo" antes que "precio" para
     # que estos sinónimos se reclamen primero y no se los coma el matching
     # parcial (substring) de "precio".
-    "costo": ["costo", "costodecompra", "preciocosto", "preciocompra", "cost", "costocompra"],
+    "costo": ["costo", "costodecompra", "preciocosto", "preciocompra", "preciodecompra", "cost", "costocompra", "compra"],
     "stock": ["stock", "cantidad", "existencia", "existencias", "qty", "unidades"],
     "descripcion": ["descripcion", "description", "detalle", "observacion"],
     "imagen_url": ["imagen", "image", "foto", "picture", "imagenurl", "urlimagen"],
     "codigo_barras": ["codigodebarras", "codigobarras", "ean", "upc", "gtin", "barcode"],
 }
+
+
+def _contradice_intencion(field_name: str, header_normalizado: str) -> bool:
+    """14 de septiembre de 2026 — caso real ("Precio de Compra" + "Precio de
+    Venta Recomendado"): la coincidencia parcial de "precio" tomaba el precio
+    de COMPRA como precio de venta. Un encabezado que habla de compra/costo
+    nunca es el precio de venta, y uno que habla de venta nunca es el costo."""
+    if field_name == "precio":
+        return "compra" in header_normalizado or "costo" in header_normalizado
+    if field_name == "costo":
+        return "venta" in header_normalizado
+    return False
 
 
 def _normalize_header(header: str) -> str:
@@ -112,7 +124,10 @@ def detect_columns(headers: list[str], rows: list[dict[str, Any]] | None = None)
                 break
         if not match:
             for syn in synonyms:
-                match = next((h for h, norm in normalized if h not in used and syn in norm), None)
+                match = next(
+                    (h for h, norm in normalized if h not in used and syn in norm and not _contradice_intencion(field_name, norm)),
+                    None,
+                )
                 if match:
                     break
         result[field_name] = match

@@ -56,6 +56,32 @@ def test_cuando_hay_dos_columnas_candidatas_gana_el_sinonimo_mas_especifico():
     assert mapping.get("codigo_barras") == "EAN"
 
 
+def test_precio_de_compra_es_costo_y_precio_de_venta_recomendado_es_precio():
+    """Caso real (Inventario_200_Productos_V2.xlsx, 14/09/2026): antes el
+    precio de COMPRA quedaba como precio de venta y el costo vacío, así que
+    no se podía calcular ningún margen."""
+    from app.domain.catalog_import import build_rows, detect_columns
+
+    headers = ["Nombre", "SKU", "Precio de Compra", "Precio de Venta Recomendado"]
+    filas = [{"Nombre": "Zapatilla adidas F50 Club Suela IN/Sala", "SKU": "DEP-001", "Precio de Compra": 45000.0, "Precio de Venta Recomendado": 74990.0}]
+
+    mapping = detect_columns(headers, filas)
+
+    assert mapping.get("costo") == "Precio de Compra"
+    assert mapping.get("precio") == "Precio de Venta Recomendado"
+    fila = build_rows(filas, mapping)[0]
+    assert (fila.costo, fila.precio) == (45000.0, 74990.0)
+    assert "Falta costo de compra" not in fila.problemas
+
+
+def test_encabezados_simples_de_venta_y_compra():
+    from app.domain.catalog_import import detect_columns
+
+    mapping = detect_columns(["Producto", "Código", "Valor venta", "Valor compra"])
+    assert mapping.get("precio") == "Valor venta"
+    assert mapping.get("costo") == "Valor compra"
+
+
 def test_columna_ya_usada_no_se_reutiliza_para_otro_campo():
     # "id" podría matchear sku, pero si ya hay una columna "SKU" explícita,
     # "id" no debería robarle el lugar a otro campo por casualidad.

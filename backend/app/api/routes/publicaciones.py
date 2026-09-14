@@ -817,6 +817,81 @@ class _RespuestaMercadoLibreSinItemId(Exception):
     trata como éxito ni se persiste nada con este dato faltante."""
 
 
+# Doc oficial "Pictures" + error real de la API: al menos 500 px en uno de
+# los lados (Mercado Libre además recorta los bordes blancos antes de medir).
+_MIN_LADO_IMAGEN_ML = 500
+
+
+async def _subir_imagenes_locales(adapter: MercadoLibreAdapter, access_token: str, pictures: list[dict]) -> list[dict]:
+    """14 de septiembre de 2026 — caso real (MLC2244564341): Nexo mandaba
+    `{"source": "http://localhost:8000/uploads/..."}`, Mercado Libre no puede
+    descargar de localhost y pausó la publicación con sub_status
+    `picture_download_pending`. Una imagen que Nexo guardó en su disco se
+    sube ahora con sus bytes (POST /pictures/items/upload) y se publica por
+    `id`; una URL externa (ej. un CDN) se sigue mandando tal cual."""
+    from pathlib import Path
+
+    from PIL import Image, UnidentifiedImageError
+
+    from app.domain.image_storage import CONTENT_TYPE_POR_EXTENSION, ruta_local_de_imagen
+
+    settings = get_settings()
+    resultado: list[dict] = []
+    for picture in pictures:
+        url = picture.get("source")
+        ruta = ruta_local_de_imagen(url, uploads_dir=Path(settings.uploads_dir), backend_public_base_url=settings.backend_public_base_url) if url else None
+        if ruta is None:
+            resultado.append(picture)
+            continue
+        if not ruta.is_file():
+            raise HTTPException(
+                status_code=400,
+                detail="No encontramos el archivo de una de las imágenes del producto. Volvé a subirla e intentá de nuevo.",
+            )
+        # Caso real (volante, 14/09/2026): foto de 290 x 290 px rechazada por
+        # Mercado Libre ("como mínimo 500 píxeles en uno de los lados"). Se
+        # avisa antes de llamar a Mercado Libre, con las medidas reales.
+        try:
+            with Image.open(ruta) as img:
+                ancho, alto = img.size
+        except (UnidentifiedImageError, OSError) as err:
+            raise HTTPException(
+                status_code=400,
+                detail="No pudimos abrir una de las imágenes del producto. Volvé a subirla e intentá de nuevo.",
+            ) from err
+        if max(ancho, alto) < _MIN_LADO_IMAGEN_ML:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"La imagen del producto mide {ancho} × {alto} px y Mercado Libre pide al menos "
+                    f"{_MIN_LADO_IMAGEN_ML} px en uno de los lados (ideal 1200 × 1200). Subí una foto más grande en el producto."
+                ),
+            )
+        try:
+            subida = await adapter.upload_picture(
+                access_token, ruta.read_bytes(), ruta.name, CONTENT_TYPE_POR_EXTENSION.get(ruta.suffix.lower(), "image/jpeg")
+            )
+        except (MercadoLibreAuthError, MercadoLibreRequestError) as err:
+            logger.error("Mercado Libre rechazó la subida de la imagen %s: %s", ruta.name, err)
+            mensaje_ml = str((getattr(err, "response_body", None) or {}).get("message") or "").lower()
+            if err.status is not None and err.status < 500 and ("píxel" in mensaje_ml or "pixel" in mensaje_ml):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Mercado Libre rechazó la imagen por tamaño: tiene que medir al menos {_MIN_LADO_IMAGEN_ML} px "
+                        "en uno de los lados, sin contar los bordes blancos (ideal 1200 × 1200). Subí una foto más grande en el producto."
+                    ),
+                ) from err
+            raise HTTPException(
+                status_code=400 if err.status is not None and err.status < 500 else 502,
+                detail="Mercado Libre no aceptó una de las imágenes. Revisá la foto del producto e intentá de nuevo.",
+            ) from err
+        if not subida.get("id"):
+            raise HTTPException(status_code=502, detail="Mercado Libre no aceptó una de las imágenes. Intentá de nuevo más tarde.")
+        resultado.append({"id": subida["id"]})
+    return resultado
+
+
 async def _ejecutar_publicacion_real(adapter: MercadoLibreAdapter, access_token: str, payload: dict) -> dict:
     """ÚNICA función de todo el backend que ejecuta el POST /items real —
     el punto auditable: validaciones -> construir payload -> [ACÁ] ->
@@ -1234,6 +1309,11 @@ async def confirmar_publicacion_mercadolibre(
     payload = resolucion.resultado_payload.payload
 
     try:
+        # Imágenes guardadas en Nexo: se suben los bytes directo a Mercado
+        # Libre y se publican por `id` (ver _subir_imagenes_locales). Solo acá,
+        # en la publicación real — nunca en /confirmar/preview.
+        payload["pictures"] = await _subir_imagenes_locales(adapter, access_token, payload["pictures"])
+
         # ---- ejecución real, después de todas las validaciones ----
         try:
             respuesta = await _ejecutar_publicacion_real(adapter, access_token, payload)

@@ -48,6 +48,7 @@ from app.domain.image_storage import (
 )
 from app.domain.listing_validation import gtin_checksum_valido
 from app.domain.marketplace_stock import set_manual_stock
+from app.services.ml_stock_sync import sincronizar_stock_ml
 
 router = APIRouter(prefix="/api/productos", tags=["productos-bd"])
 
@@ -236,7 +237,7 @@ class MarketplaceStockLoteUpdate(BaseModel):
 
 
 @router.put("/stock-mercadolibre/lote")
-def configurar_stock_mercado_libre_en_lote(
+async def configurar_stock_mercado_libre_en_lote(
     body: MarketplaceStockLoteUpdate,
     db: Session = Depends(get_db),
     store: Store = Depends(get_current_store),
@@ -264,11 +265,13 @@ def configurar_stock_mercado_libre_en_lote(
     for v in variantes:
         v.marketplace_stock = valor
     db.commit()
-    return {"actualizados": len(variantes)}
+    # Las que ya están publicadas reciben el mismo stock en Mercado Libre.
+    sincronizacion = await sincronizar_stock_ml(db, store, variantes, get_settings())
+    return {"actualizados": len(variantes), "sincronizacionMl": sincronizacion}
 
 
 @router.put("/{variant_id}/stock-mercadolibre")
-def configurar_stock_mercado_libre(
+async def configurar_stock_mercado_libre(
     variant_id: int,
     body: MarketplaceStockUpdate,
     db: Session = Depends(get_db),
@@ -286,8 +289,10 @@ def configurar_stock_mercado_libre(
         raise HTTPException(status_code=400, detail=str(err)) from err
 
     db.commit()
+    # Si ya está publicado, el stock de la publicación real también cambia.
+    sincronizacion = await sincronizar_stock_ml(db, store, [variante], get_settings())
     db.refresh(variante)
-    return build_producto_fila(variante.product, variante)
+    return {**build_producto_fila(variante.product, variante), "sincronizacionMl": sincronizacion}
 
 
 @router.put("/{variant_id}/costo")

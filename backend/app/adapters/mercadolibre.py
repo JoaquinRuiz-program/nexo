@@ -342,6 +342,30 @@ class MercadoLibreAdapter:
         query = urlencode({"item_id": item_id, "verbose": "true"})
         return await self._get_with_retry(f"/users/{user_id}/shipping_options/free?{query}", access_token)
 
+    async def update_item_available_quantity(self, access_token: str, item_id: str, cantidad: int) -> dict[str, Any]:
+        """PUT /items/{id} con {"available_quantity": n} — stock de una
+        publicación ya creada. Doc oficial "Distributed Stock" (verificada el
+        14 de septiembre de 2026): para un vendedor SIN multi-origen es el
+        camino correcto, y Mercado Libre sincroniza solo todos los ítems del
+        mismo user_product_id. Con multi-origen (tag warehouse_management) el
+        stock va por /user-products/{id}/stock — no soportado todavía."""
+        url = f"{API_BASE_URL}/items/{item_id}"
+        response = await self._request_with_retry("PUT", url, access_token, json_body={"available_quantity": cantidad})
+        return response.json()
+
+    async def upload_picture(self, access_token: str, contenido: bytes, nombre_archivo: str, content_type: str) -> dict[str, Any]:
+        """POST /pictures/items/upload (multipart, campo `file`) — sube los
+        bytes de la imagen directo a Mercado Libre y devuelve su `id` (doc
+        oficial "Pictures", verificada el 14 de septiembre de 2026). Así una
+        publicación no depende de que Mercado Libre pueda descargar una URL de
+        Nexo: con una URL de localhost la publicación queda pausada con
+        sub_status `picture_download_pending` (caso real, MLC2244564341)."""
+        url = f"{API_BASE_URL}/pictures/items/upload"
+        response = await self._request_with_retry(
+            "POST", url, access_token, files={"file": (nombre_archivo, contenido, content_type)}
+        )
+        return response.json()
+
     async def update_item_status(self, access_token: str, item_id: str, status: str) -> dict[str, Any]:
         """PUT /items/{id} con {"status": ...} — pausar ("paused"),
         reactivar ("active") o cerrar ("closed", el equivalente real de
@@ -371,6 +395,7 @@ class MercadoLibreAdapter:
         form_data: Optional[dict[str, str]] = None,
         json_body: Optional[dict[str, Any]] = None,
         retry_on_failure: bool = True,
+        files: Optional[dict[str, Any]] = None,
     ) -> httpx.Response:
         headers = {"Accept": "application/json"}
         if access_token:
@@ -393,6 +418,9 @@ class MercadoLibreAdapter:
                     # de PUT en este adaptador. Igual que create_item: JSON
                     # real, nunca form-urlencoded.
                     response = await self._client.put(url, json=json_body, headers=headers, timeout=self._cfg.timeout_s)
+                elif files is not None:
+                    # Subida multipart real (ver upload_picture) — único uso.
+                    response = await self._client.post(url, files=files, headers=headers, timeout=self._cfg.timeout_s)
                 elif json_body is not None:
                     # POST con cuerpo JSON real (ej. crear una publicación,
                     # ver create_item) — distinto de form_data, que es
