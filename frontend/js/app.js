@@ -2248,6 +2248,19 @@ window.LC = window.LC || {};
           </div>
         </div>` : ""}
 
+        ${esReal && productos.length ? `
+        <div class="panel-card mb-6">
+          <h3 class="panel-title mb-1">Reservar stock para Mercado Libre en lote</h3>
+          <p class="panel-subtitle mb-4">Sin unidades reservadas, un producto no se puede publicar. Fijá una cantidad por defecto para <strong>todos</strong> tus productos de una vez — después la ajustás por producto si hace falta.</p>
+          <div class="flex flex-wrap items-end gap-3">
+            <div>
+              <label class="form-label" for="lote-stock-input">Unidades por producto</label>
+              <input id="lote-stock-input" type="number" min="0" step="1" inputmode="numeric" class="form-input w-32" placeholder="Ej: 5" />
+            </div>
+            <button id="lote-stock-btn" class="btn-primary">Aplicar a todos</button>
+          </div>
+        </div>` : ""}
+
         ${
           esReal
             ? `<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
@@ -2302,6 +2315,31 @@ window.LC = window.LC || {};
     main.querySelectorAll("[data-ir-configuracion]").forEach((btn) => {
       btn.addEventListener("click", () => LC.router.navigate("/configuracion"));
     });
+
+    const loteStockBtn = document.getElementById("lote-stock-btn");
+    if (loteStockBtn) {
+      loteStockBtn.addEventListener("click", async () => {
+        const valor = document.getElementById("lote-stock-input").value.trim();
+        const cantidad = valor === "" ? null : Number(valor);
+        if (cantidad !== null && (!Number.isInteger(cantidad) || cantidad < 0)) {
+          toast("error", "Ingresá un número entero de 0 o más.");
+          return;
+        }
+        loteStockBtn.disabled = true;
+        const textoOrig = loteStockBtn.textContent;
+        loteStockBtn.textContent = "Aplicando…";
+        // variantIds=null -> todos los productos de la tienda.
+        const res = await LC.backendApi.reservarStockMlEnLote(null, cantidad);
+        loteStockBtn.disabled = false;
+        loteStockBtn.textContent = textoOrig;
+        if (!res.ok) {
+          toast("error", res.error.mensaje);
+          return;
+        }
+        toast("success", `Stock reservado en ${res.data.actualizados} producto(s).`);
+        rerenderActual();
+      });
+    }
 
     const recalcularBtn = document.getElementById("recalcular-comisiones-btn");
     if (recalcularBtn) {

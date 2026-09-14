@@ -202,6 +202,13 @@ window.LC = window.LC || {};
   // los Excel reales solo traen codigo, nombre, costo y precio, asi que sin
   // esto el stock quedaba vacio para siempre. `cantidad: null` = este
   // producto no gestiona stock (distinto de 0 = sin unidades).
+  // 14 de septiembre de 2026 — reservar unidades para Mercado Libre en
+  // MUCHOS productos de una vez (el dato que más frena publicar). variantIds
+  // null = todos los productos de la tienda.
+  async function reservarStockMlEnLote(variantIds, cantidad) {
+    return request("/api/productos/stock-mercadolibre/lote", { method: "PUT", body: { variantIds, cantidad } });
+  }
+
   async function actualizarStockProducto(id, cantidad) {
     return request(`/api/productos/${id}/stock`, { method: "PUT", body: { cantidad } });
   }
@@ -542,6 +549,7 @@ window.LC = window.LC || {};
     fetchProductoDetalle,
     actualizarCostoProducto,
     actualizarStockProducto,
+    reservarStockMlEnLote,
     agregarImagenProducto,
     eliminarImagenProducto,
     reordenarImagenesProducto,

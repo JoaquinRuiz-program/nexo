@@ -160,6 +160,44 @@ def obtener_producto(variant_id: int, db: Session = Depends(get_db), store: Stor
     return build_producto_fila(variante.product, variante)
 
 
+class MarketplaceStockLoteUpdate(BaseModel):
+    # None = todos los productos de la tienda; una lista = solo esos.
+    variantIds: list[int] | None = None
+    cantidad: int | None = None
+
+
+@router.put("/stock-mercadolibre/lote")
+def configurar_stock_mercado_libre_en_lote(
+    body: MarketplaceStockLoteUpdate,
+    db: Session = Depends(get_db),
+    store: Store = Depends(get_current_store),
+) -> dict:
+    """14 de septiembre de 2026 — reservar unidades para Mercado Libre en
+    MUCHOS productos de una sola vez, en vez de uno por uno. Es el dato que
+    hoy más frena publicar: sin él, un producto no se puede subir. Con esto
+    el dueño fija un stock por defecto (ej. 5) para todo lo seleccionado y
+    listo, sin tener que cargarlo producto por producto.
+
+    Mismo criterio de aislamiento que el resto: solo toca variantes de ESTA
+    tienda (nunca un variantId de otra empresa, aunque venga en el body).
+    `variantIds=None` aplica a todos los productos de la tienda."""
+    try:
+        valor = set_manual_stock(body.cantidad)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+    q = db.query(ProductVariant).filter(ProductVariant.store_id == store.id)
+    if body.variantIds is not None:
+        if not body.variantIds:
+            return {"actualizados": 0}
+        q = q.filter(ProductVariant.id.in_(body.variantIds))
+    variantes = q.all()
+    for v in variantes:
+        v.marketplace_stock = valor
+    db.commit()
+    return {"actualizados": len(variantes)}
+
+
 @router.put("/{variant_id}/stock-mercadolibre")
 def configurar_stock_mercado_libre(
     variant_id: int,

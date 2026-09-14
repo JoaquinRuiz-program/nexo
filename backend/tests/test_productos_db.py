@@ -243,6 +243,68 @@ def test_configurar_stock_ml_de_producto_inexistente_devuelve_404(client, a_stor
     assert res.status_code == 404
 
 
+# ------------------------------------------------------------------
+# PUT /stock-mercadolibre/lote — reservar en muchos a la vez (14 sep 2026).
+# ------------------------------------------------------------------
+
+
+def test_reservar_stock_ml_en_lote_a_todos(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="L1", nombre="A", precio=1000, stock=5)
+    _producto_simple(db_session, a_store, sku="L2", nombre="B", precio=2000, stock=5)
+    _producto_simple(db_session, a_store, sku="L3", nombre="C", precio=3000, stock=5)
+
+    res = client.put("/api/productos/stock-mercadolibre/lote", json={"variantIds": None, "cantidad": 7})
+    assert res.status_code == 200
+    assert res.json()["actualizados"] == 3
+    for v in db_session.query(ProductVariant).all():
+        assert v.marketplace_stock == 7
+
+
+def test_reservar_stock_ml_en_lote_solo_a_los_indicados(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="L1", nombre="A", precio=1000, stock=5)
+    _producto_simple(db_session, a_store, sku="L2", nombre="B", precio=2000, stock=5)
+    ids = [v.id for v in db_session.query(ProductVariant).order_by(ProductVariant.id).all()]
+
+    res = client.put("/api/productos/stock-mercadolibre/lote", json={"variantIds": [ids[0]], "cantidad": 9})
+    assert res.json()["actualizados"] == 1
+    v0 = db_session.get(ProductVariant, ids[0])
+    v1 = db_session.get(ProductVariant, ids[1])
+    assert v0.marketplace_stock == 9
+    assert v1.marketplace_stock is None
+
+
+def test_lote_nunca_toca_productos_de_otra_empresa(client, db_session, a_store):
+    """Aislamiento: aunque el body mande el variantId de OTRA empresa, no se
+    toca — solo variantes de la tienda de la sesión."""
+    _producto_simple(db_session, a_store, sku="MIO", nombre="Mío", precio=1000, stock=5)
+    otro_usuario = User(email="otra-lote@ejemplo.cl", password_hash=hash_password("x"), full_name="Dueño B", created_at=NOW, updated_at=NOW)
+    db_session.add(otro_usuario)
+    tienda_b = Store(owner=otro_usuario, name="Empresa B", created_at=NOW)
+    db_session.add(tienda_b)
+    db_session.add(StoreSettings(store=tienda_b, company_name="Empresa B", store_name="Empresa B"))
+    db_session.commit()
+    _producto_simple(db_session, tienda_b, sku="AJENO", nombre="Ajeno", precio=1000, stock=5)
+    ajena = db_session.query(ProductVariant).filter_by(store_id=tienda_b.id).one()
+
+    res = client.put("/api/productos/stock-mercadolibre/lote", json={"variantIds": [ajena.id], "cantidad": 50})
+    assert res.status_code == 200
+    assert res.json()["actualizados"] == 0          # el id ajeno no matchea
+    db_session.refresh(ajena)
+    assert ajena.marketplace_stock is None          # intacto
+
+
+def test_lote_stock_negativo_da_400(client, db_session, a_store):
+    _producto_simple(db_session, a_store, sku="L1", nombre="A", precio=1000, stock=5)
+    res = client.put("/api/productos/stock-mercadolibre/lote", json={"variantIds": None, "cantidad": -3})
+    assert res.status_code == 400
+
+
+def test_lote_sin_sesion_da_401(client):
+    # `client` sin autenticar: no se llamó a `a_store` que pone la cookie.
+    res = client.put("/api/productos/stock-mercadolibre/lote", json={"variantIds": None, "cantidad": 5})
+    assert res.status_code == 401
+
+
 def test_agregar_costo_a_un_producto_puntual(client, db_session, a_store):
     """Cierra el flujo de Oportunidades: completar el costo de UN producto
     sin volver a subir el catálogo entero por Excel."""
