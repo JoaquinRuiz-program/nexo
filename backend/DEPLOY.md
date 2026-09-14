@@ -251,11 +251,38 @@ a nivel de base de datos, ver `ADMIN_NEXO.md`).
 | 9 | Panel `/api/admin` protegido, sin fugas de secretos | ✅ Ya cumplido |
 | 10 | Sin `debug=True` / stack traces crudos | ✅ Ya cumplido |
 | 11 | CSRF | ✅ Ya cumplido — `SameSite=Lax` + `HttpOnly` alcanza con el diseño actual (todo endpoint mutante es POST/PUT) |
-| 12 | Rate limiting en login/registro | ⚠️ **No bloqueante para el primer cliente** (ver razonamiento abajo) — hacerlo inmediatamente después de este lanzamiento, antes de un segundo cliente o de que la URL se difunda más. |
+| 12 | Rate limiting en login/cambiar-contraseña | ✅ Ya cumplido (13/09/2026, `app/domain/rate_limit.py`) — 5 fallos por email / 20 por IP en 15 min. Vive en memoria del proceso: **otra razón para `--workers 1`** |
 | 13 | `MERCADOPAGO_WEBHOOK_SECRET` configurada antes de cobrar a un cliente real | Sin esto, `/api/pagos/webhook` rechaza todo — no hay forma de activar un plan pagado por error sin la firma verificada |
 | 14 | Nexo nunca ve/toca un número de tarjeta | ✅ Ya cumplido por diseño — el pago se hace en el checkout hosteado de Mercado Pago (`init_point`), nunca en un formulario propio |
+| 15 | Cabeceras de seguridad HTTP | ✅ Ya cumplido (13/09/2026, `app/main.py`) — `X-Frame-Options: DENY`, CSP, `X-Content-Type-Options`, `Referrer-Policy`; `Strict-Transport-Security` se activa solo con `SESSION_COOKIE_SECURE=true` |
+| 16 | Dependencias sin vulnerabilidades conocidas | ✅ Verificado 13/09/2026 con `pip-audit` (0 hallazgos tras subir Pillow a 12.3.0). **Volver a correrlo antes de cada despliegue** |
 
-**Rate limiting — por qué no bloquea hoy**: el mensaje de login ya es idéntico para "email no existe" y "contraseña incorrecta" (sin enumeración de usuarios), la URL de producción va a ser nueva y desconocida, y hay un solo cliente conocido — el vector de fuerza bruta no tiene a quién apuntar todavía. En cuanto exista un segundo cliente, o la URL deje de ser nueva/desconocida, pasa a ser prioritario.
+### Pentest — antes de exponer, y después de desplegar
+
+El **13 de septiembre de 2026** se corrió un pentest manual contra una instancia
+sembrada con dos empresas y un admin (39 pruebas). **Cero vulnerabilidades
+reales.** Aguantaron: IDOR entre empresas (lectura y escritura), escalada a
+admin, mass-assignment (`is_nexo_admin`/`store_id` inyectados), falsificación de
+sesión, spoofing del webhook de pago, SQLi (→422), path traversal en `/uploads/`,
+enumeración de usuarios, y reutilización de cookie tras logout.
+
+Eso cubre la **lógica de la aplicación**. Lo que un pentest manual local NO puede
+ver, y hay que verificar **una vez desplegado** (con la URL pública y HTTPS
+reales): configuración de TLS, cabeceras en producción, comportamiento del proxy,
+CSRF en un navegador real, y timing attacks.
+
+Herramienta recomendada para esa pasada — **Strix** (agente de pentest con IA,
+https://github.com/usestrix/strix). Necesita Docker y una API key de un LLM (costo
+por uso, unos pocos USD por escaneo). Contra el backend desplegado:
+
+```bash
+strix --target https://api.tudominio.cl --instruction "API REST de un SaaS multiempresa. Login POST /api/auth/login con JSON {email,password}, devuelve cookie de sesion. Credenciales de dos empresas distintas y un admin: <email:clave>. Priorizar: acceso cruzado entre empresas, escalamiento a administrador, contexto ver-como-empresa en /api/admin/clientes/{id}/entrar, y spoofing del webhook /api/pagos/webhook."
+```
+
+> ⚠️ El rate-limit (ítem 12) le va a estorbar a cualquier escáner: tras 20 logins
+> fallidos por IP, todo da 429 por 15 minutos. Para una pasada autenticada, subir
+> temporalmente los límites en `app/domain/rate_limit.py` **solo en la instancia de
+> prueba**, nunca en la de clientes reales, y revertir al terminar.
 
 ---
 
