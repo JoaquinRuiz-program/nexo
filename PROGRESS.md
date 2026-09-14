@@ -101,8 +101,8 @@ catálogo (52).
     republicó en vivo: MLC4479906612 `active`, sin sub_status, 2 fotos subidas por `id`
     (mlstatic), 4 unidades, envío real $7.200. Minutos después llegó desde la UI un segundo
     "Eliminar publicación" y la cerró (`closed`, terminal en ML): Nexo guarda UNA fila de
-    publicación por producto, así que el botón ya apuntaba a la nueva. Pendiente: confirmar
-    con el dueño si fue a propósito antes de volver a publicar.
+    publicación por producto, así que el botón ya apuntaba a la nueva. El dueño confirmó que
+    la eliminó a propósito (era de prueba): no se republica.
 12. **Oportunidades separa lo ya publicado** (14 sept 2026, sin commitear) — los productos con
     publicación activa/pausada van a "Publicados en Mercado Libre" (con su estado y aviso si el
     margen con envío real quedó bajo el mínimo), no a los grupos de oportunidad; los contadores
@@ -124,6 +124,12 @@ catálogo (52).
     200 -> 1.000 productos, Nexo Pro 1.000 -> 5.000 (publicaciones sin cambios: 150 / 800).
     `plans.py` + migración de datos `c9e1a3b5d7f2` (ensure_default_plans solo crea, nunca
     actualiza; la migración solo toca planes que siguen con el valor viejo).
+15. **Admin Overview: evolución del margen** (14 sept 2026, sin commitear) — serie
+    `margenEnElTiempo` (venta − comisión − costo conocido por orden, mismo cálculo que el
+    KPI `margenGenerado`) + `margenEnElTiempoParcial` si algún ítem vendido no tiene costo.
+    Panel "Evolución del margen" en el Overview. `chart.js::lineChartSVG` ahora soporta
+    valores negativos (escala desde min(0, valores), línea de cero); con valores >= 0 el
+    gráfico de ventas queda idéntico.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

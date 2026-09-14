@@ -133,11 +133,16 @@ window.LC = window.LC || {};
     const plotW = W - pad.l - pad.r, plotH = H - pad.t - pad.b;
     const n = points.length;
     const max = Math.max(1, ...points.map((p) => p.monto));
+    // 14 de septiembre de 2026 — la serie de margen puede ser negativa (se
+    // vendió a pérdida): la escala va de min(0, valores) a max. Con valores
+    // >= 0 (ventas) min es 0 y el gráfico queda exactamente igual que antes.
+    const min = Math.min(0, ...points.map((p) => p.monto));
     const x = (i) => pad.l + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
-    const y = (v) => pad.t + plotH - (v / max) * (plotH - 6);
+    const y = (v) => pad.t + plotH - ((v - min) / (max - min)) * (plotH - 6);
 
     const linea = points.map((p, i) => `${x(i).toFixed(1)},${y(p.monto).toFixed(1)}`).join(" ");
-    const area = `${pad.l},${(pad.t + plotH).toFixed(1)} ${linea} ${x(n - 1).toFixed(1)},${(pad.t + plotH).toFixed(1)}`;
+    const base = min < 0 ? y(0) : pad.t + plotH;  // el área se rellena contra el cero
+    const area = `${x(0).toFixed(1)},${base.toFixed(1)} ${linea} ${x(n - 1).toFixed(1)},${base.toFixed(1)}`;
     const every = n <= 8 ? 1 : n <= 16 ? 2 : Math.ceil(n / 8);
     const labels = points.map((p, i) => (i % every === 0 || i === n - 1)
       ? `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" class="chart-axis-label">${_escapeXml(fmtFecha(p.fecha))}</text>` : "").join("");
@@ -149,6 +154,8 @@ window.LC = window.LC || {};
       <polyline points="${linea}" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
       ${dots}${labels}
       <text x="${pad.l}" y="12" class="chart-axis-label">máx ${_escapeXml(fmt(max))}</text>
+      ${min < 0 ? `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" stroke="#94a3b8" stroke-dasharray="4 4" stroke-width="1"/>
+      <text x="${W - pad.r}" y="12" text-anchor="end" class="chart-axis-label">mín ${_escapeXml(fmt(min))}</text>` : ""}
     </svg>`;
   }
 

@@ -3,23 +3,21 @@
 Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
 
 ## Inmediato
-- [ ] **Commitear las 5 features de esta sesión** (están sin commitear). Sugerencia de
-      commits separados: (1) importador encabezados, (2) eliminar producto, (3) margen
-      neto + recomendación de tipo de publicación, (4) rentabilidad en paso 1 +
-      auto-relleno de atributos, (5) Admin BI dashboard. Luego `git push`.
-      Recordar: no commitear sin confirmación del usuario.
+- [x] Commitear y pushear las features de la sesión — hecho 14 sept 2026 (commits
+      9b3e066 … 8351227 en origin/master).
 
 ## Mercado Libre / rentabilidad
 - [x] **Costo de envío real por publicación** — hecho 14 sept 2026 (ver PROGRESS.md),
       sin peso ni medidas. Pendiente: verlo en pantalla logueado.
-- [ ] **Autor y Editorial** al publicar libros: no están en el catálogo. Definir si se
-      importan como columnas del Excel o se dejan manuales en la revisión.
+- [x] **Autor y Editorial** al publicar libros — resuelto 14 sept 2026 sin columnas nuevas:
+      `/validar` los sugiere desde el catálogo real de ML, precargados "Por confirmar".
 - [ ] Dato del usuario: corregir "repiza de habitacion" → "repisa" para que ML le
       encuentre categoría al recalcular comisiones.
 
 ## Admin BI — extensiones opcionales (el spec original quedó cortado en la sección 8)
-- [ ] Gráfico dedicado de **evolución del margen** en el tiempo (hoy hay serie de ventas
-      + KPIs de margen, no una serie temporal de margen).
+- [x] Gráfico dedicado de **evolución del margen** en el tiempo — hecho 14 sept 2026
+      (`margenEnElTiempo` en /api/admin/overview + panel en el Overview). Falta verlo
+      logueado como admin con ventas reales (hoy hay 0 órdenes).
 - [x] Sección **"Clientes que necesitan atención"** — hecha 14 sept 2026 (ver PROGRESS.md).
       Falta solo verla logueado como admin en el navegador.
 - [ ] Devoluciones/errores de sincronización por empresa: hoy no hay modelo de errores

@@ -227,7 +227,7 @@ def overview(
         return {
             "periodo": periodo, "canal": canal, "empresa": empresa_id,
             "generadoEn": datetime.now().isoformat(),
-            "kpis": {}, "ventasPorEmpresa": [], "ventasEnElTiempo": [],
+            "kpis": {}, "ventasPorEmpresa": [], "ventasEnElTiempo": [], "margenEnElTiempo": [], "margenEnElTiempoParcial": False,
             "topEmpresas": [], "mercadoLibre": {}, "crecimiento": {}, "atencion": [], "hayEmpresas": False,
         }
 
@@ -314,6 +314,26 @@ def overview(
     puntos = [(o.order_date.date(), float(o.total_amount or 0.0)) for o in db.query(Order).filter(*filtros).all()]
     ventas_en_el_tiempo = serie_temporal(puntos, rango.desde, rango.hasta, rango.granularidad)
 
+    # -------- Margen en el tiempo (línea) --------
+    # Mismo cálculo que el KPI margenGenerado (_metricas_ventas): venta -
+    # comisión - costo de los ítems con costo conocido, por orden. Si algún
+    # ítem vendido no tiene costo, la serie es parcial (igual que el KPI).
+    costo_por_orden: dict[int, float] = {}
+    for order_id, cantidad, costo in (
+        db.query(OrderItem.order_id, OrderItem.quantity, ProductVariant.cost_price)
+        .join(Order, OrderItem.order_id == Order.id)
+        .outerjoin(ProductVariant, OrderItem.variant_id == ProductVariant.id)
+        .filter(*filtros)
+        .all()
+    ):
+        if costo is not None:
+            costo_por_orden[order_id] = costo_por_orden.get(order_id, 0.0) + float(costo) * (cantidad or 0)
+    puntos_margen = [
+        (fecha.date(), float(total or 0.0) - float(comision or 0.0) - costo_por_orden.get(order_id, 0.0))
+        for order_id, fecha, total, comision in db.query(Order.id, Order.order_date, Order.total_amount, Order.commission_amount).filter(*filtros).all()
+    ]
+    margen_en_el_tiempo = serie_temporal(puntos_margen, rango.desde, rango.hasta, rango.granularidad)
+
     # -------- Top empresas (ranking) --------
     top_empresas = _top_empresas(db, ids_cliente, rango, empresa_id, canal)
 
@@ -331,6 +351,8 @@ def overview(
         "kpis": kpis,
         "ventasPorEmpresa": ventas_por_empresa,
         "ventasEnElTiempo": ventas_en_el_tiempo,
+        "margenEnElTiempo": margen_en_el_tiempo,
+        "margenEnElTiempoParcial": m["itemsSinCosto"] > 0,
         "topEmpresas": top_empresas,
         "mercadoLibre": mercado_libre,
         "crecimiento": crecimiento,

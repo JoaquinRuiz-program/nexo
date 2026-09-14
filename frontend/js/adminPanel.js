@@ -170,6 +170,12 @@ window.LC = window.LC || {};
           </div>
         </div>
 
+        <div class="panel-card mb-6">
+          <h3 class="panel-title mb-1">Evolución del margen</h3>
+          <p class="panel-subtitle mb-4">Margen generado: ventas − comisiones − costo de lo vendido (${d.granularidad === "mes" ? "por mes" : d.granularidad === "semana" ? "por semana" : "por día"})${d.margenEnElTiempoParcial ? " · Parcial: algunos productos vendidos no tienen costo cargado" : ""}</p>
+          ${LC.chart.lineChartSVG(d.margenEnElTiempo || [], { formatValue: _fmtCompacto, formatFecha: (iso) => _fmtFechaEje(iso, d.granularidad) })}
+        </div>
+
         ${_seccionTopEmpresas(d.topEmpresas)}
         ${_seccionMercadoLibre(d.mercadoLibre)}
         ${_seccionCrecimiento(d.crecimiento)}

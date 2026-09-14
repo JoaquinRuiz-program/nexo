@@ -868,6 +868,26 @@ def test_overview_sin_ventas_devuelve_cero_no_inventa(client, db_session):
     assert body["kpis"]["productosGestionados"] == 1         # el producto SÍ es real
 
 
+def test_overview_margen_en_el_tiempo_suma_el_margen_real_y_avisa_si_es_parcial(client, db_session):
+    _ua, tienda_a = _crear_empresa(db_session, email="ma@ov.cl", nombre_empresa="Empresa MA")
+    va = _variante_de(db_session, tienda_a, sku="MA1", costo=6000)
+    # 10.000 - comisión 1.300 - costo 6.000 = 2.700 por venta, dos ventas
+    _venta(db_session, tienda_a, external="MA-1", total=10000, comision=1300, items=[(va, 1, 10000)])
+    _venta(db_session, tienda_a, external="MA-2", total=10000, comision=1300, items=[(va, 1, 10000)])
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    body = client.get("/api/admin/overview", params={"periodo": "todo"}).json()
+    assert round(sum(p["monto"] for p in body["margenEnElTiempo"]), 2) == 5400.0  # mismo número que el KPI
+    assert body["kpis"]["margenGenerado"]["valor"] == 5400.0
+    assert body["margenEnElTiempoParcial"] is False
+
+    # Una venta con un ítem sin costo cargado: la serie pasa a ser parcial.
+    _venta(db_session, tienda_a, external="MA-3", total=5000, comision=500, items=[(None, 1, 5000)])
+    body = client.get("/api/admin/overview", params={"periodo": "todo"}).json()
+    assert body["margenEnElTiempoParcial"] is True
+
+
 def test_overview_periodo_invalido_da_400(client, db_session):
     admin = _crear_admin_nexo(db_session)
     autenticar(client, db_session, admin, None, ahora=NOW)
