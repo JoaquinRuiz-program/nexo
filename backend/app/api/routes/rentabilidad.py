@@ -37,7 +37,7 @@ from app.db.models import (
     ProductVariant,
     Store,
 )
-from app.domain.ml_shipping import MOTIVO_NO_CONSULTADO, MOTIVO_NO_PUBLICADO
+from app.domain.ml_shipping import MOTIVO_NO_CONSULTADO, MOTIVO_NO_PUBLICADO, MOTIVO_PUBLICACION_CERRADA
 from app.db.session import get_db
 from app.domain.ml_fees import (
     LISTING_TYPE_IDS,
@@ -89,7 +89,9 @@ def comisiones_ml_cacheadas(db: Session, store_id: int, producto: Product, preci
 _ESTADOS_PUBLICACION_VIVA = ("active", "paused")
 
 
-def publicaciones_ml_por_producto(db: Session, store_id: int, product_ids: list[int] | None = None) -> dict[int, MarketplaceListing]:
+def publicaciones_ml_por_producto(
+    db: Session, store_id: int, product_ids: list[int] | None = None, estados: tuple[str, ...] = _ESTADOS_PUBLICACION_VIVA
+) -> dict[int, MarketplaceListing]:
     """Publicación viva de Mercado Libre de cada producto de ESTA empresa
     (como máximo una por producto, ver uq_listing_account_product)."""
     consulta = (
@@ -98,7 +100,7 @@ def publicaciones_ml_por_producto(db: Session, store_id: int, product_ids: list[
         .filter(
             MarketplaceAccount.store_id == store_id,
             MarketplaceAccount.marketplace == CHANNEL_MERCADO_LIBRE,
-            MarketplaceListing.status.in_(_ESTADOS_PUBLICACION_VIVA),
+            MarketplaceListing.status.in_(estados),
         )
     )
     if product_ids is not None:
@@ -106,7 +108,9 @@ def publicaciones_ml_por_producto(db: Session, store_id: int, product_ids: list[
     return {p.product_id: p for p in consulta.all()}
 
 
-def aplicar_envio_real_ml(costos: ChannelCosts, publicacion: MarketplaceListing | None) -> tuple[ChannelCosts, dict]:
+def aplicar_envio_real_ml(
+    costos: ChannelCosts, publicacion: MarketplaceListing | None, publicacion_cerrada: bool = False
+) -> tuple[ChannelCosts, dict]:
     """14 de septiembre de 2026 — costo de envío del cálculo de rentabilidad
     de Mercado Libre: el REAL que informó Mercado Libre para la publicación
     (ver services/ml_shipping_sync.py). Sin ese dato no se estima nada: queda
@@ -123,7 +127,9 @@ def aplicar_envio_real_ml(costos: ChannelCosts, publicacion: MarketplaceListing 
             "envioMlActualizadoEn": publicacion.shipping_synced_at.isoformat() if publicacion.shipping_synced_at else None,
         }
     if publicacion is None:
-        motivo = MOTIVO_NO_PUBLICADO
+        # Sin publicación viva: distinguir "nunca se publicó" de "existe pero
+        # está cerrada en Mercado Libre" (solo cambia el texto, no el costo).
+        motivo = MOTIVO_PUBLICACION_CERRADA if publicacion_cerrada else MOTIVO_NO_PUBLICADO
     else:
         motivo = publicacion.shipping_cost_unavailable_reason or MOTIVO_NO_CONSULTADO
     return costos, {
@@ -218,12 +224,13 @@ def _fila(
     listing_type_pref: str | None,
     target_margin_pct: float | None = None,
     publicacion_ml: MarketplaceListing | None = None,
+    publicacion_ml_cerrada: bool = False,
 ) -> dict:
     precio = float(variante.price) if variante.price is not None else None
     costo = float(variante.cost_price) if variante.cost_price is not None else None
 
     comisiones = comisiones_ml_cacheadas(db, store_id, producto, precio)
-    costos_ml_manual, envio_ml = aplicar_envio_real_ml(costos_ml_manual, publicacion_ml)
+    costos_ml_manual, envio_ml = aplicar_envio_real_ml(costos_ml_manual, publicacion_ml, publicacion_ml_cerrada)
 
     # Elección AUTOMÁTICA del tipo de publicación (14 de septiembre de 2026):
     # si el dueño no fijó una preferencia manual, el sistema recomienda solo
@@ -320,8 +327,12 @@ def build_profitability_rows(db: Session, store: Store) -> tuple[list[dict], boo
     )
     productos = db.query(Product).filter_by(store_id=store.id).order_by(Product.name).all()
     publicaciones_ml = publicaciones_ml_por_producto(db, store.id)
+    publicaciones_ml_cerradas = publicaciones_ml_por_producto(db, store.id, estados=("closed",))
     filas = [
-        _fila(db, store.id, producto, variante, costos_ml, listing_type_pref, target_margin_pct, publicaciones_ml.get(producto.id))
+        _fila(
+            db, store.id, producto, variante, costos_ml, listing_type_pref, target_margin_pct,
+            publicaciones_ml.get(producto.id), producto.id in publicaciones_ml_cerradas,
+        )
         for producto in productos
         for variante in producto.variants
     ]

@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any
 
 MOTIVO_NO_PUBLICADO = "El producto todavía no está publicado en Mercado Libre."
+MOTIVO_PUBLICACION_CERRADA = "La publicación de este producto está cerrada en Mercado Libre."
 MOTIVO_NO_CONSULTADO = "Todavía no se consultó el costo de envío en Mercado Libre."
 MOTIVO_SIN_MERCADO_ENVIOS = "La publicación no usa Mercado Envíos: Mercado Libre no informa un costo de envío para el vendedor."
 MOTIVO_SIN_COSTO_VALIDO = "Mercado Libre no entregó un costo de envío válido para esta publicación."

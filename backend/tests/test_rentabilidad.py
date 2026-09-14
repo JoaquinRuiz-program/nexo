@@ -27,7 +27,7 @@ from app.db.models import (
     StoreSettings,
     User,
 )
-from app.domain.ml_shipping import MOTIVO_NO_PUBLICADO, MOTIVO_SIN_MERCADO_ENVIOS
+from app.domain.ml_shipping import MOTIVO_NO_PUBLICADO, MOTIVO_PUBLICACION_CERRADA, MOTIVO_SIN_MERCADO_ENVIOS
 from app.db.session import get_db
 from app.domain.security import hash_password
 from tests.auth_helpers import autenticar
@@ -306,12 +306,19 @@ def test_costo_de_envio_real_de_ml_entra_en_el_margen_neto(client, db_session, a
 def test_sin_costo_de_envio_de_ml_no_se_inventa_y_la_rentabilidad_es_provisional(client, db_session, a_store):
     _producto_con_categoria_ml(db_session, a_store, sku="SIN-PUBLICAR", nombre="Sin publicar", precio=10000, costo=6000)
     publicado = _producto_con_categoria_ml(db_session, a_store, sku="SIN-ME2", nombre="Publicado sin Mercado Envíos", precio=10000, costo=6000)
+    cerrado = _producto_con_categoria_ml(db_session, a_store, sku="CERRADA", nombre="Publicación cerrada en ML", precio=10000, costo=6000)
     _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_special", percentage_fee=12.0)
     _configurar_canal_manual(client, commission_pct=30.0, listing_type_pref="classic")
     _publicacion_ml(db_session, a_store, publicado, motivo=MOTIVO_SIN_MERCADO_ENVIOS)
+    # Cerrada en ML: aunque tenga un costo guardado, no cuenta y el texto lo dice (no "sin publicar").
+    _publicacion_ml(db_session, a_store, cerrado, costo_envio=3400, status="closed")
 
     filas = {f["sku"]: f for f in client.get("/api/rentabilidad").json()["productos"]}
-    for sku, motivo in (("SIN-PUBLICAR", MOTIVO_NO_PUBLICADO), ("SIN-ME2", MOTIVO_SIN_MERCADO_ENVIOS)):
+    for sku, motivo in (
+        ("SIN-PUBLICAR", MOTIVO_NO_PUBLICADO),
+        ("SIN-ME2", MOTIVO_SIN_MERCADO_ENVIOS),
+        ("CERRADA", MOTIVO_PUBLICACION_CERRADA),
+    ):
         fila = filas[sku]
         assert fila["costoEnvioMl"] is None
         assert fila["envioMlFuente"] == "no_disponible"
