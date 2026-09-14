@@ -28,7 +28,7 @@ def seleccionar_productos(
     margen_minimo_clp: Optional[float] = Query(None, description='"Ganancia superior a $X"'),
     margen_minimo_pct: Optional[float] = Query(None, description='"Margen superior a X%"'),
     top: Optional[int] = Query(None, ge=1, description='"Los N productos más rentables"'),
-    requiere_stock: bool = Query(True, description="Exigir marketplaceStock > 0 para considerarlo publicable"),
+    requiere_stock: bool = Query(False, description="El stock NO afecta la rentabilidad (solo margen monetario); dejar en False salvo un caso especial"),
     db: Session = Depends(get_db),
     store: Store = Depends(get_current_store),
 ) -> dict:

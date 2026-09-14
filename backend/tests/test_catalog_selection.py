@@ -38,14 +38,22 @@ def test_producto_con_costo_pero_sin_precio_es_sin_datos_no_rentable():
     assert resultado["clasificacion"] == "sin_datos"
 
 
-def test_producto_sin_stock_reservado_es_sin_stock():
+def test_sin_stock_NO_afecta_la_rentabilidad_por_defecto():
+    """13 de septiembre de 2026 — pedido del dueño: rentable/no rentable se
+    juzga SOLO por el margen monetario. Sin stock, un producto rentable
+    sigue siendo rentable (el stock se completa aparte, en la revisión)."""
     resultado = classify_product(_row(marketplaceStock=0), SelectionCriteria())
-    assert resultado["clasificacion"] == "sin_stock"
-
-
-def test_se_puede_desactivar_el_requisito_de_stock():
-    resultado = classify_product(_row(marketplaceStock=None), SelectionCriteria(require_marketplace_stock=False))
     assert resultado["clasificacion"] == "rentable"
+
+    resultado = classify_product(_row(marketplaceStock=None), SelectionCriteria())
+    assert resultado["clasificacion"] == "rentable"
+
+
+def test_el_requisito_de_stock_sigue_disponible_si_se_pide_explicito():
+    """El gate de publicar NO lo usa más (chequea el stock aparte), pero la
+    opción sigue existiendo para un caso especial."""
+    resultado = classify_product(_row(marketplaceStock=0), SelectionCriteria(require_marketplace_stock=True))
+    assert resultado["clasificacion"] == "sin_stock"
 
 
 def test_margen_negativo_es_no_rentable_con_razon_explicita():
@@ -97,7 +105,7 @@ def test_resumen_cuenta_cada_clasificacion():
         [
             _row(id=1, margenTiendaClp=9000),
             _row(id=2, tieneCosto=False),
-            _row(id=3, marketplaceStock=0),
+            _row(id=3, marketplaceStock=0),   # sin stock YA NO afecta: es rentable
             _row(id=4, margenTiendaClp=-500),
         ],
         SelectionCriteria(),
@@ -105,10 +113,10 @@ def test_resumen_cuenta_cada_clasificacion():
     resumen = summarize_selection(rows)
     assert resumen == {
         "total": 4,
-        "rentables": 1,
+        "rentables": 2,          # el sin-stock (id 3) ahora cuenta como rentable
         "margenBajo": 0,
         "noRentables": 1,
-        "sinStock": 1,
+        "sinStock": 0,
         "sinDatos": 1,
         "noSeleccionados": 0,
     }

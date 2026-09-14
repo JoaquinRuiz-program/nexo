@@ -25,8 +25,13 @@ class SelectionCriteria:
     # cuál (o ambos) aplican; ninguno es la definición "correcta" de rentable.
     min_margin_clp: Optional[float] = None
     min_margin_pct: Optional[float] = None
-    # Si además hace falta que haya unidades reservadas para vender por ML.
-    require_marketplace_stock: bool = True
+    # 13 de septiembre de 2026 — el stock YA NO decide si algo es rentable.
+    # "Rentable o no" se juzga SOLO por el margen monetario (pedido del
+    # dueño). El stock es una cosa aparte, que se completa/pregunta en la
+    # revisión, nunca oculta si el producto deja plata. Por eso el default
+    # es False; el gate de publicar (que sí necesita stock real para vender)
+    # lo chequea por su cuenta, con un mensaje propio.
+    require_marketplace_stock: bool = False
     # "tienda" (margen bruto) o "mercadolibre" (margen neto del canal).
     channel: str = "tienda"
 

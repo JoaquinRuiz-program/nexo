@@ -104,7 +104,7 @@ def _build_one(db: Session, store: Store, variant_id: int, criteria: SelectionCr
 def obtener_borrador(
     variant_id: int,
     canal: str = "tienda",
-    requiere_stock: bool = True,
+    requiere_stock: bool = False,
     db: Session = Depends(get_db),
     store: Store = Depends(get_current_store),
 ) -> dict:
@@ -118,7 +118,7 @@ def obtener_borrador(
 class PrepararRequest(BaseModel):
     variant_ids: list[int]
     canal: str = "tienda"
-    requiere_stock: bool = True
+    requiere_stock: bool = False
 
 
 @router.post("/preparar")
@@ -845,13 +845,24 @@ async def _resolver_publicacion(
     # bloqueando únicamente por margen negativo, igual que siempre.
     config_canal_gate = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
     margen_minimo_pct = float(config_canal_gate.min_margin_pct) if config_canal_gate and config_canal_gate.min_margin_pct is not None else None
+    # 13 de septiembre de 2026 — rentabilidad y stock son dos gates
+    # SEPARADOS, con mensajes distintos. Antes se pedía stock DENTRO de
+    # classify_product, así que un producto sin stock se rechazaba con "no
+    # es rentable", que confunde: el problema no es la plata, es que falta
+    # decir cuántas unidades vender. Ahora la rentabilidad se juzga solo por
+    # el margen, y el stock se pregunta aparte.
     clasificacion = classify_product(
-        fila, SelectionCriteria(channel="mercadolibre", require_marketplace_stock=True, min_margin_pct=margen_minimo_pct)
+        fila, SelectionCriteria(channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct)
     )
     if clasificacion["clasificacion"] != "rentable":
         raise HTTPException(
             status_code=400,
             detail=f"Este producto no es rentable para publicar en Mercado Libre: {clasificacion['razon']}",
+        )
+    if not variante.marketplace_stock:
+        raise HTTPException(
+            status_code=400,
+            detail="Definí cuántas unidades ofrecer en Mercado Libre antes de publicar (el stock reservado para el canal).",
         )
 
     if variante.price is None:

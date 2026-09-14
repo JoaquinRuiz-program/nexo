@@ -80,7 +80,7 @@ class ColumnMapping:
         return self.mapping.get(field_name)
 
 
-def detect_columns(headers: list[str]) -> ColumnMapping:
+def detect_columns(headers: list[str], rows: list[dict[str, Any]] | None = None) -> ColumnMapping:
     """Propone, para cada campo conocido, cuál columna del archivo lo
     representa — sin exigir que el nombre coincida exactamente.
 
@@ -90,7 +90,15 @@ def detect_columns(headers: list[str]) -> ColumnMapping:
     en orden ("sku" antes que "codigo") buscando una coincidencia EXACTA en
     todos los encabezados antes de pasar al siguiente sinónimo, y solo si
     ninguno matcheó exacto se prueba coincidencia parcial (substring) con el
-    mismo orden de prioridad."""
+    mismo orden de prioridad.
+
+    13 de septiembre de 2026 — segunda pasada por CONTENIDO. Si se pasan las
+    filas (`rows`), para cada campo que el nombre no logró mapear se mira qué
+    tipo de dato tiene cada columna todavía libre (URLs -> imagen, códigos de
+    12-14 dígitos -> código de barras, números tipo precio -> precio/costo,
+    etc.). Así un Excel con encabezados crípticos ("Col1, Col2...") o sin
+    encabezado útil igual se mapea solo. Nunca pisa un match por nombre: el
+    nombre siempre gana, el contenido solo completa lo que faltó."""
     normalized = [(h, _normalize_header(h)) for h in headers]
     used: set[str] = set()
     result: dict[str, str | None] = {}
@@ -111,7 +119,107 @@ def detect_columns(headers: list[str]) -> ColumnMapping:
         if match:
             used.add(match)
 
+    if rows:
+        _detectar_por_contenido(headers, rows, result, used)
+
     return ColumnMapping(mapping=result)
+
+
+# ------------------------------------------------------------------
+# Detección por contenido (fallback) — 13 de septiembre de 2026.
+# ------------------------------------------------------------------
+
+_RE_URL = re.compile(r"^https?://", re.IGNORECASE)
+_RE_SOLO_DIGITOS = re.compile(r"^\d+$")
+
+
+def _muestras(rows: list[dict[str, Any]], header: str, limite: int = 30) -> list[str]:
+    """Hasta `limite` valores NO vacíos de una columna, como texto."""
+    vals: list[str] = []
+    for row in rows:
+        v = row.get(header)
+        if v is None:
+            continue
+        t = str(v).strip()
+        if t:
+            vals.append(t)
+        if len(vals) >= limite:
+            break
+    return vals
+
+
+def _proporcion(vals: list[str], predicado) -> float:  # noqa: ANN001
+    if not vals:
+        return 0.0
+    return sum(1 for v in vals if predicado(v)) / len(vals)
+
+
+def _parece_url(v: str) -> bool:
+    return bool(_RE_URL.match(v))
+
+
+def _parece_codigo_barras(v: str) -> bool:
+    return bool(_RE_SOLO_DIGITOS.match(v)) and 8 <= len(v) <= 14
+
+
+def _parece_numero(v: str) -> bool:
+    return _to_number(v) is not None
+
+
+def _valor_numerico(vals: list[str]) -> list[float]:
+    nums = [_to_number(v) for v in vals]
+    return [n for n in nums if n is not None]
+
+
+def _detectar_por_contenido(
+    headers: list[str],
+    rows: list[dict[str, Any]],
+    result: dict[str, str | None],
+    used: set[str],
+) -> None:
+    """Completa por CONTENIDO solo los campos donde el dato es inequívoco:
+    imagen (URLs), código de barras (8-14 dígitos) y nombre (la columna de
+    texto más descriptiva). Modifica `result` y `used` in place.
+
+    Precio, costo y stock NO se adivinan por contenido a propósito: son
+    todos columnas de números y confundir cuál es cuál corrompería el
+    catálogo entero (importar la columna de stock como precio, por ejemplo).
+    Si el nombre de la columna no los identificó, quedan sin mapear y se
+    completan a mano en la revisión — "si una no está, se pregunta"."""
+    libres = [h for h in headers if h not in used]
+    muestras = {h: _muestras(rows, h) for h in libres}
+
+    def reclamar(campo: str, header: str) -> None:
+        result[campo] = header
+        used.add(header)
+        libres.remove(header)
+
+    # Imagen: la mayoría de los valores son URLs.
+    if result.get("imagen_url") is None:
+        cand = [h for h in libres if _proporcion(muestras[h], _parece_url) >= 0.6]
+        if cand:
+            reclamar("imagen_url", cand[0])
+
+    # Código de barras: la mayoría son códigos de 8 a 14 dígitos.
+    if result.get("codigo_barras") is None:
+        cand = [h for h in libres if _proporcion(muestras[h], _parece_codigo_barras) >= 0.6]
+        if cand:
+            reclamar("codigo_barras", cand[0])
+
+    # Nombre: la columna de texto más larga en promedio. "Texto" = tiene
+    # letras (no basta con "no ser número": "Cuaderno 100 hojas" tiene un
+    # número adentro pero es claramente un nombre). Un mínimo de largo
+    # promedio evita tomar una columna de códigos cortos como si fuera el
+    # nombre del producto.
+    if result.get("nombre") is None:
+        texto = [h for h in libres if muestras[h] and _proporcion(muestras[h], _tiene_letras) >= 0.6]
+        texto.sort(key=lambda h: sum(len(v) for v in muestras[h]) / max(1, len(muestras[h])), reverse=True)
+        if texto and (sum(len(v) for v in muestras[texto[0]]) / max(1, len(muestras[texto[0]]))) >= 6:
+            reclamar("nombre", texto[0])
+
+
+def _tiene_letras(v: str) -> bool:
+    return bool(re.search(r"[a-zA-ZáéíóúñÁÉÍÓÚÑ]", v))
 
 
 def _sin_separador_de_miles(cuerpo: str, separador: str) -> str:
@@ -221,7 +329,6 @@ def build_rows(raw_rows: list[dict[str, Any]], mapping: ColumnMapping) -> list[R
 
         precio_valido = True
         costo_valido = True
-        stock_valido = True
 
         precio = None
         if precio_raw:
@@ -233,10 +340,14 @@ def build_rows(raw_rows: list[dict[str, Any]], mapping: ColumnMapping) -> list[R
             costo = _to_number(costo_raw)
             costo_valido = costo is not None
 
+        # 13 de septiembre de 2026 — el stock NUNCA bloquea la importación.
+        # Un valor no numérico se ignora (se trata como "sin stock") en vez
+        # de marcar la fila como error: la mayoría de los Excel no traen
+        # stock, y si lo traen mal no es motivo para no importar el producto.
+        # El stock se completa/pregunta a mano en la revisión.
         stock: int | None = None
         if stock_raw:
             stock_num = _to_number(stock_raw)
-            stock_valido = stock_num is not None
             if stock_num is not None:
                 stock = int(stock_num)
 
@@ -247,8 +358,6 @@ def build_rows(raw_rows: list[dict[str, Any]], mapping: ColumnMapping) -> list[R
             problemas.append(f"Precio no válido ({precio_raw!r})")
         if not costo_valido:
             problemas.append(f"Costo no válido ({costo_raw!r})")
-        if not stock_valido:
-            problemas.append(f"Stock no válido ({stock_raw!r})")
         if not sku:
             problemas.append("Falta SKU")
         if not imagen_url:
@@ -258,7 +367,7 @@ def build_rows(raw_rows: list[dict[str, Any]], mapping: ColumnMapping) -> list[R
         if not precio_raw:
             problemas.append("Falta precio de venta")
         if stock is None:
-            problemas.append("Falta stock")
+            problemas.append("Completá el stock al revisar")
         # 13 de septiembre de 2026 — categoría y descripción YA NO se marcan
         # como problema: Nexo las resuelve solo más adelante (la categoría la
         # predice Mercado Libre a partir del nombre, ver
@@ -278,7 +387,11 @@ def build_rows(raw_rows: list[dict[str, Any]], mapping: ColumnMapping) -> list[R
         # mano. Faltar SKU/categoría/descripción/imagen/costo es "revisar
         # después", no "no se puede importar" — coherente con que el modelo
         # de datos ya acepta productos sin SKU (WooCommerce real los trae así).
-        bloqueante = not nombre or not precio_valido or not costo_valido or not stock_valido
+        # El stock quedó fuera de "bloqueante" a propósito (13 de septiembre
+        # de 2026): sin stock el producto se importa igual y se completa al
+        # revisar. Solo bloquea lo que de verdad impide crear el producto:
+        # sin nombre, o un precio/costo escrito que no es un número.
+        bloqueante = not nombre or not precio_valido or not costo_valido
 
         results.append(
             RowResult(

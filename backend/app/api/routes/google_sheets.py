@@ -457,7 +457,7 @@ async def analizar_hoja(
     "volver a sincronizar" sin repetir nada)."""
     hoja_usada, headers, raw_rows = await _leer_filas_de_google(db, store, body.hoja)
 
-    mapping = detect_columns(headers)
+    mapping = detect_columns(headers, raw_rows)
     rows = build_rows(raw_rows, mapping)
 
     account = _get_account(db, store)

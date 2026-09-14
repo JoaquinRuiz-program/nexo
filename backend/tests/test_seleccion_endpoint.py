@@ -97,10 +97,12 @@ def test_clasifica_rentable_no_rentable_sin_stock_y_sin_datos(client, db_session
 
     body = client.get("/api/seleccion").json()
     por_sku = {p["sku"]: p["clasificacion"] for p in body["productos"]}
-    assert por_sku == {"A": "rentable", "B": "no_rentable", "C": "sin_stock", "D": "sin_datos"}
+    # 13 de septiembre de 2026 — la rentabilidad se juzga SOLO por el margen;
+    # el sin-stock (C) ahora es rentable (el stock se completa en la revisión).
+    assert por_sku == {"A": "rentable", "B": "no_rentable", "C": "rentable", "D": "sin_datos"}
     assert body["resumen"] == {
-        "total": 4, "rentables": 1, "margenBajo": 0, "noRentables": 1,
-        "sinStock": 1, "sinDatos": 1, "noSeleccionados": 0,
+        "total": 4, "rentables": 2, "margenBajo": 0, "noRentables": 1,
+        "sinStock": 0, "sinDatos": 1, "noSeleccionados": 0,
     }
 
 
@@ -126,11 +128,14 @@ def test_filtro_top_n(client, db_session, a_store):
     assert por_sku["C"] == "no_seleccionado"
 
 
-def test_requiere_stock_se_puede_desactivar(client, db_session, a_store):
+def test_por_defecto_el_stock_no_afecta_la_rentabilidad(client, db_session, a_store):
+    """13 de septiembre de 2026 — por defecto un producto sin stock es
+    rentable (solo cuenta el margen). El requisito de stock solo se aplica
+    si se pide explícito (?requiere_stock=true), para un caso especial."""
     _producto(db_session, a_store, sku="A", precio=20000, costo=5000, marketplace_stock=None)
 
-    con_requisito = client.get("/api/seleccion").json()
-    sin_requisito = client.get("/api/seleccion", params={"requiere_stock": "false"}).json()
+    por_defecto = client.get("/api/seleccion").json()
+    con_requisito = client.get("/api/seleccion", params={"requiere_stock": "true"}).json()
 
+    assert por_defecto["productos"][0]["clasificacion"] == "rentable"
     assert con_requisito["productos"][0]["clasificacion"] == "sin_stock"
-    assert sin_requisito["productos"][0]["clasificacion"] == "rentable"

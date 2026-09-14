@@ -101,14 +101,14 @@ def test_excel_real_minimo_no_se_queja_de_lo_que_nexo_resuelve_solo():
     assert "Falta descripción" not in rows[0].problemas
     # Lo que si requiere accion humana
     assert "Falta imagen" in rows[0].problemas
-    assert "Falta stock" in rows[0].problemas
+    assert "Completá el stock al revisar" in rows[0].problemas
 
 
 def test_stock_cero_no_es_un_stock_faltante():
     mapping = detect_columns(["Nombre", "Precio", "Stock"])
     rows = build_rows([{"Nombre": "Producto", "Precio": "1000", "Stock": "0"}], mapping)
     assert rows[0].stock == 0
-    assert "Falta stock" not in rows[0].problemas
+    assert "Completá el stock al revisar" not in rows[0].problemas
 
 
 def test_falta_sku_no_es_bloqueante_solo_revision():
@@ -209,3 +209,70 @@ def test_resumen_cuenta_por_estado():
     assert resumen["totalFilas"] == 2
     assert resumen["errores"] == 1
     assert resumen["revision"] == 1
+
+
+# ------------------------------------------------------------------
+# El stock NUNCA bloquea la importación — 13 de septiembre de 2026.
+# ------------------------------------------------------------------
+
+
+def test_sin_columna_de_stock_el_producto_se_importa_igual():
+    mapping = detect_columns(["Nombre", "Precio"])
+    rows = build_rows([{"Nombre": "Producto", "Precio": "2000"}], mapping)
+    assert rows[0].estado != "error"
+    assert rows[0].stock is None
+    assert "Completá el stock al revisar" in rows[0].problemas
+
+
+def test_stock_no_numerico_no_bloquea_se_ignora():
+    mapping = detect_columns(["Nombre", "Precio", "Stock"])
+    rows = build_rows([{"Nombre": "Producto", "Precio": "2000", "Stock": "no-es-numero"}], mapping)
+    assert rows[0].estado != "error"     # antes era "error"
+    assert rows[0].stock is None         # el valor basura se ignora
+
+
+def test_stock_cero_sigue_siendo_cero_no_falta():
+    mapping = detect_columns(["Nombre", "Precio", "Stock"])
+    rows = build_rows([{"Nombre": "Producto", "Precio": "2000", "Stock": "0"}], mapping)
+    assert rows[0].stock == 0
+    assert "Completá el stock al revisar" not in rows[0].problemas
+
+
+# ------------------------------------------------------------------
+# Detección de columnas por CONTENIDO — 13 de septiembre de 2026.
+# ------------------------------------------------------------------
+
+
+def test_detecta_imagen_y_codigo_de_barras_por_contenido_con_encabezados_cripticos():
+    headers = ["A", "B", "C", "D"]
+    rows = [
+        {"A": "Cuaderno universitario 100 hojas", "B": "2990", "C": "https://cdn.x/a.jpg", "D": "7801234567890"},
+        {"A": "Lápiz grafito HB caja x12", "B": "990", "C": "https://cdn.x/b.jpg", "D": "7801234567891"},
+        {"A": "Goma de borrar blanca", "B": "690", "C": "https://cdn.x/c.jpg", "D": "7801234567892"},
+    ]
+    m = detect_columns(headers, rows)
+    assert m.get("imagen_url") == "C"       # URLs
+    assert m.get("codigo_barras") == "D"    # 13 dígitos
+    assert m.get("nombre") == "A"           # texto largo con letras
+
+
+def test_precio_y_costo_NO_se_adivinan_por_contenido():
+    """Confundir cuál columna numérica es el precio corrompería el catálogo:
+    esas quedan sin mapear (se preguntan en la revisión)."""
+    headers = ["X", "Y"]
+    rows = [{"X": "1000", "Y": "2500"}, {"X": "1200", "Y": "3000"}]
+    m = detect_columns(headers, rows)
+    assert m.get("precio") is None
+    assert m.get("costo") is None
+
+
+def test_el_nombre_por_sinonimo_gana_sobre_el_contenido():
+    m = detect_columns(["Producto", "Foto"], [{"Producto": "Algo", "Foto": "https://x/a.jpg"}])
+    assert m.get("nombre") == "Producto"
+    assert m.get("imagen_url") == "Foto"
+
+
+def test_sin_filas_la_deteccion_por_contenido_no_corre():
+    # Solo por nombre; un encabezado críptico queda sin mapear.
+    m = detect_columns(["A", "B"])
+    assert m.get("nombre") is None

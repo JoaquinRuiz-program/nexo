@@ -63,7 +63,7 @@ async def analizar_archivo(file: UploadFile, store: Store = Depends(get_current_
     contenido = await file.read()
     headers, raw_rows = _read_uploaded_rows(file, contenido)
 
-    mapping = detect_columns(headers)
+    mapping = detect_columns(headers, raw_rows)
     rows = build_rows(raw_rows, mapping)
 
     return {
