@@ -627,6 +627,7 @@ async def _resolver_recomendacion_precio(
         margen_objetivo_pct=margen_objetivo_pct,
         margen_minimo_pct=margen_minimo_pct,
         analisis_competencia=analisis_competencia,
+        ganancia_minima_clp=float(config_canal.min_profit_clp) if config_canal and config_canal.min_profit_clp is not None else None,
     )
     return recomendacion, analisis_competencia, fuente_comision_ml
 
@@ -693,7 +694,11 @@ async def decision_mercadolibre(
     config_canal = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
     margen_minimo_pct = float(config_canal.min_margin_pct) if config_canal and config_canal.min_margin_pct is not None else None
     gate = classify_product(
-        _fila, SelectionCriteria(channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct)
+        _fila,
+        SelectionCriteria(
+            channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct,
+            ganancia_minima_clp=float(config_canal.min_profit_clp) if config_canal and config_canal.min_profit_clp is not None else None,
+        ),
     )
     decision_valor = decision.decision
     razon_valor = decision.razon
@@ -765,7 +770,10 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
     # la columna "Decisión preliminar" podía decir "Conviene" en una fila que
     # Oportunidades y "¿Conviene?" marcan como que no conviene.
     filas_por_variante = {f["id"]: f for f in build_profitability_rows(db, store)[0]}
-    criterios_gate = SelectionCriteria(channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct)
+    ganancia_minima_clp = float(config_canal.min_profit_clp) if config_canal and config_canal.min_profit_clp is not None else None
+    criterios_gate = SelectionCriteria(
+        channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct, ganancia_minima_clp=ganancia_minima_clp,
+    )
     resultado = []
     for variante in variantes:
         precio_actual = float(variante.price) if variante.price is not None else None
@@ -778,6 +786,7 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
             margen_objetivo_pct=margen_objetivo_pct,
             margen_minimo_pct=margen_minimo_pct,
             analisis_competencia=None,
+            ganancia_minima_clp=ganancia_minima_clp,
         )
         decision = evaluar_decision(recomendacion, analisis_competencia=None)
         decision_valor, razon_valor = decision.decision, decision.razon
@@ -1031,7 +1040,11 @@ async def _resolver_publicacion(
     # decir cuántas unidades vender. Ahora la rentabilidad se juzga solo por
     # el margen, y el stock se pregunta aparte.
     clasificacion = classify_product(
-        fila, SelectionCriteria(channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct)
+        fila,
+        SelectionCriteria(
+            channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct,
+            ganancia_minima_clp=float(config_canal_gate.min_profit_clp) if config_canal_gate and config_canal_gate.min_profit_clp is not None else None,
+        ),
     )
     if clasificacion["clasificacion"] != "rentable":
         raise HTTPException(

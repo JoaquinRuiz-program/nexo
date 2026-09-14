@@ -72,6 +72,7 @@ def recomendar_precio(
     margen_objetivo_pct: Optional[float],
     margen_minimo_pct: Optional[float] = None,
     analisis_competencia: Optional[AnalisisCompetencia] = None,
+    ganancia_minima_clp: Optional[float] = None,
 ) -> RecomendacionPrecio:
     """`channel_costs` y `margen_objetivo_pct` vienen de
     ChannelCostSettings (ver app/api/routes/configuracion.py) — nunca un
@@ -92,6 +93,8 @@ def recomendar_precio(
         faltantes.append("margen objetivo del canal (no puede ser negativo)")
     if margen_minimo_pct is not None and margen_minimo_pct < 0:
         faltantes.append("margen mínimo del canal (no puede ser negativo)")
+    if ganancia_minima_clp is not None and ganancia_minima_clp < 0:
+        faltantes.append("ganancia neta mínima del canal (no puede ser negativa)")
     if faltantes:
         return RecomendacionPrecio(estado=ESTADO_DATOS_INSUFICIENTES, faltantes=faltantes)
 
@@ -141,7 +144,11 @@ def recomendar_precio(
             else:
                 posicion = "en_rango"
 
-    alcanza_margen_minimo = None if margen_minimo_pct is None or margen_pct is None else margen_pct >= margen_minimo_pct
+    # 14 de septiembre de 2026 — el piso se cumple si alcanza el margen mínimo
+    # (%) O la ganancia neta mínima ($); None solo si no hay ninguno configurado.
+    alcanza_pct = None if margen_minimo_pct is None or margen_pct is None else margen_pct >= margen_minimo_pct
+    alcanza_ganancia = None if ganancia_minima_clp is None or margen_clp is None else margen_clp >= ganancia_minima_clp
+    alcanza_margen_minimo = None if alcanza_pct is None and alcanza_ganancia is None else bool(alcanza_pct) or bool(alcanza_ganancia)
 
     return RecomendacionPrecio(
         estado=ESTADO_RECOMENDACION,

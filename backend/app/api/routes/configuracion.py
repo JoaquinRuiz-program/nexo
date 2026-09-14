@@ -105,6 +105,9 @@ class ChannelCostsUpdate(BaseModel):
     # DATOS_INSUFICIENTES en vez de asumir un % inventado).
     target_margin_pct: float | None = None
     min_margin_pct: float | None = None
+    # 14 de septiembre de 2026 — ganancia neta mínima por unidad ($): conviene
+    # si alcanza min_margin_pct O esta ganancia. NULL = no configurada.
+    min_profit_clp: float | None = None
 
 
 def _fila(costos: ChannelCostSettings) -> dict:
@@ -116,6 +119,7 @@ def _fila(costos: ChannelCostSettings) -> dict:
         "listingTypePref": costos.listing_type_pref,
         "targetMarginPct": float(costos.target_margin_pct) if costos.target_margin_pct is not None else None,
         "minMarginPct": float(costos.min_margin_pct) if costos.min_margin_pct is not None else None,
+        "minProfitClp": float(costos.min_profit_clp) if costos.min_profit_clp is not None else None,
         # Ningún campo configurado todavía = el canal existe pero no se usa
         # para calcular margen neto (ver domain/profitability.py.is_configured).
         "configurado": costos.commission_pct is not None or costos.shipping_cost is not None or costos.other_fixed_cost is not None,
@@ -144,6 +148,7 @@ def configurar_canal(
     costos.listing_type_pref = body.listing_type_pref
     costos.target_margin_pct = body.target_margin_pct
     costos.min_margin_pct = body.min_margin_pct
+    costos.min_profit_clp = body.min_profit_clp
     costos.updated_at = datetime.now()
     db.commit()
     db.refresh(costos)

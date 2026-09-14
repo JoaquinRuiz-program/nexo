@@ -21,8 +21,14 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
       Falta solo verla logueado como admin en el navegador.
 - [x] Errores de sincronización por empresa — hecho 14 sept 2026: se registran en
       `SyncJob`/`SyncLog` (ya existían, nadie escribía) y el admin los ve (atención + detalle).
-- [ ] Devoluciones por empresa: hoy Mercado Libre solo nos entrega "cancelado"; las
-      devoluciones vienen por la API de reclamos (claims), no importada. No inventar.
+- [ ] Devoluciones por empresa — investigado 14 sept 2026 contra la API real:
+      `GET /post-purchase/v1/claims/search` (tipos mediations, cancel_purchase, return,
+      cancel_sale; vínculo con la orden por `resource_id`) y
+      `GET /post-purchase/v2/claims/{claim_id}/returns` (status, status_money, refund_at,
+      envío de vuelta, revisión del producto). La app YA tiene permiso (HTTP 200). Exige al
+      menos un filtro real (`type`/`status`/`stage`…); `players.role`+`players.user_id` solos
+      dan 400. Hoy: 0 reclamos y 0 órdenes en Nexo. Pendiente decidir construirlo (sincronizar
+      reclamos al importar ventas y mostrarlos por empresa) cuando haya ventas reales.
 
 ## Deploy (día del despliegue, ver backend/DEPLOY.md)
 - [ ] **Servicio de mail** (Resend/SendGrid) + `noreply` para los recordatorios de

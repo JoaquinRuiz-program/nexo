@@ -461,6 +461,22 @@ def test_comision_ml_real_informativa_usa_el_costo_de_cada_variante_no_el_de_la_
 # ------------------------------------------------------------------
 
 
+def test_configurar_ganancia_neta_minima_se_guarda_y_se_devuelve(client, a_store):
+    res = client.put(
+        "/api/configuracion/canales/mercadolibre",
+        json={"commission_pct": 19.0, "target_margin_pct": 38.8, "min_margin_pct": 22.5, "min_profit_clp": 30000},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["minProfitClp"] == 30000.0
+    canal = next(c for c in client.get("/api/configuracion/canales").json() if c["channel"] == "mercadolibre")
+    assert canal["minProfitClp"] == 30000.0
+
+    # Vaciarla la deja sin configurar (solo cuenta el margen mínimo).
+    client.put("/api/configuracion/canales/mercadolibre", json={"commission_pct": 19.0, "min_margin_pct": 22.5, "min_profit_clp": None})
+    canal = next(c for c in client.get("/api/configuracion/canales").json() if c["channel"] == "mercadolibre")
+    assert canal["minProfitClp"] is None
+
+
 def test_datos_generales_devuelve_el_nombre_real_de_la_empresa(client, a_store):
     body = client.get("/api/configuracion/general").json()
     assert body["companyName"] == "Tienda de prueba"

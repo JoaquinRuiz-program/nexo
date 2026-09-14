@@ -149,6 +149,19 @@ catálogo (52).
     `margenClp`, `margenPct`; la lista de Productos muestra Costo y Margen; el detalle del
     producto, Oportunidades y el importador muestran "Venta − compra" junto a la ganancia
     neta de ML.
+19. **Ganancia neta mínima por unidad** (14 sept 2026, sin commitear) — caso real: Notebook HP
+    ($499.990, costo $350.000, comisión manual 19%) deja $54.992 (11,0%) y quedaba "no
+    conviene" por el margen mínimo de 22,5%. Nuevo `ChannelCostSettings.min_profit_clp`
+    (migración `d4f6a8c0e2b1`, aplicada a `nexo.db`) y campo en Configuración. Regla: un
+    producto conviene si alcanza el margen mínimo (%) **o** la ganancia neta mínima ($); una
+    pérdida nunca se rescata. Aplicada igual en `classify_product` (Oportunidades, /seleccion,
+    gate de /decision y de publicar), `recomendar_precio` y `/decision-lote`.
+    Nota de datos: los 201 productos de Empresa Demo no tienen categoría de ML, así que todos
+    usan la comisión manual de respaldo (19%) hasta correr "Actualizar comisiones reales".
+20. **Devoluciones — investigado, no construido** (14 sept 2026) — ver TODO.md: la app ya tiene
+    permiso sobre `/post-purchase/v1/claims/search` y `/post-purchase/v2/claims/{id}/returns`
+    (verificado en vivo, HTTP 200); hoy hay 0 reclamos y 0 órdenes, así que no hay nada que
+    mostrar todavía.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

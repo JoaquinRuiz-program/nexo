@@ -1537,6 +1537,28 @@ def test_oportunidades_y_decision_lote_aplican_el_mismo_margen_minimo_que_decisi
     assert fila_seleccion["clasificacion"] == "margen_bajo"
 
 
+def test_ganancia_neta_minima_hace_convenir_igual_en_decision_lote_y_seleccion(client, db_session, a_store):
+    """Mismo producto que el test anterior (45% de margen, bajo un mínimo de
+    70%), pero con una ganancia neta mínima de $5.000 que SÍ alcanza ($9.000):
+    las tres pantallas coinciden en que conviene."""
+    from app.db.models import ChannelCostSettings
+
+    variant_id = _producto_publicable(db_session, a_store, sku="LOTE-GANANCIA", costo=8000, precio=20000)
+    _configurar_margen(db_session, a_store, objetivo=80.0, minimo=70.0)
+    canal = db_session.query(ChannelCostSettings).filter_by(store_id=a_store.id, channel="mercadolibre").one()
+    canal.min_profit_clp = 5000
+    db_session.commit()
+
+    decision = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/decision").json()
+    with respx.mock:
+        lote = client.get("/api/publicaciones/mercadolibre/decision-lote").json()
+    seleccion = client.get("/api/seleccion", params={"canal": "mercadolibre"}).json()
+
+    assert decision["decision"] == "conviene"
+    assert next(f for f in lote if f["variantId"] == variant_id)["decision"] == "conviene"
+    assert next(f for f in seleccion["productos"] if f["id"] == variant_id)["clasificacion"] == "rentable"
+
+
 def test_decision_lote_sin_margen_configurado_es_revisar_para_todos(client, db_session, a_store):
     _producto_publicable(db_session, a_store, sku="LOTE-SIN-MARGEN", costo=8000, precio=20000)
 

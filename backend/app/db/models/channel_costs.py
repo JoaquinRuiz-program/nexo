@@ -51,6 +51,10 @@ class ChannelCostSettings(Base):
     # "datos_insuficientes" si esto falta en vez de asumir, p.ej., 25%).
     target_margin_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
     min_margin_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # 14 de septiembre de 2026 — ganancia neta mínima por unidad ($). Un
+    # producto conviene si alcanza min_margin_pct O esta ganancia (un
+    # notebook puede dejar mucha plata con poco %). NULL = no configurada.
+    min_profit_clp: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     store: Mapped["Store"] = relationship(back_populates="channel_cost_settings")  # noqa: F821

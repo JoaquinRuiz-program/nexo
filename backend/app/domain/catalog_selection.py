@@ -25,6 +25,10 @@ class SelectionCriteria:
     # cuál (o ambos) aplican; ninguno es la definición "correcta" de rentable.
     min_margin_clp: Optional[float] = None
     min_margin_pct: Optional[float] = None
+    # 14 de septiembre de 2026 — ganancia neta mínima por unidad del canal
+    # (ChannelCostSettings.min_profit_clp): si el margen % no llega a
+    # min_margin_pct pero la ganancia en pesos sí llega a esto, conviene igual.
+    ganancia_minima_clp: Optional[float] = None
     # 13 de septiembre de 2026 — el stock YA NO decide si algo es rentable.
     # "Rentable o no" se juzga SOLO por el margen monetario (pedido del
     # dueño). El stock es una cosa aparte, que se completa/pregunta en la
@@ -86,10 +90,21 @@ def classify_product(row: dict, criteria: SelectionCriteria) -> dict:
             ).replace(",", "."),
         }
 
-    if criteria.min_margin_pct is not None and margen_pct is not None and margen_pct < criteria.min_margin_pct:
+    cumple_ganancia_minima = criteria.ganancia_minima_clp is not None and margen_clp >= criteria.ganancia_minima_clp
+    if criteria.min_margin_pct is not None and margen_pct is not None and margen_pct < criteria.min_margin_pct and not cumple_ganancia_minima:
+        razon = f"El margen estimado ({margen_pct:.1f}%) está por debajo del mínimo pedido ({criteria.min_margin_pct:.1f}%)."
+        if criteria.ganancia_minima_clp is not None:
+            razon = razon[:-1] + (
+                f" y la ganancia (${margen_clp:,.0f}) no llega a la ganancia neta mínima (${criteria.ganancia_minima_clp:,.0f})."
+            ).replace(",", ".")
+        return {"clasificacion": "margen_bajo", "razon": razon}
+
+    if criteria.min_margin_pct is None and criteria.ganancia_minima_clp is not None and not cumple_ganancia_minima:
         return {
             "clasificacion": "margen_bajo",
-            "razon": f"El margen estimado ({margen_pct:.1f}%) está por debajo del mínimo pedido ({criteria.min_margin_pct:.1f}%).",
+            "razon": (
+                f"La ganancia estimada (${margen_clp:,.0f}) no llega a la ganancia neta mínima (${criteria.ganancia_minima_clp:,.0f})."
+            ).replace(",", "."),
         }
 
     return {"clasificacion": "rentable", "razon": None}

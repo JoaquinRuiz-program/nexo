@@ -2181,7 +2181,7 @@ window.LC = window.LC || {};
     { id: "revision", clasificaciones: ["sin_datos", "sin_stock"], titulo: "Requiere revisión", desc: "Falta información para decidir — conviene completarla." },
     // margen_bajo = no alcanza el margen mínimo configurado: es exactamente lo
     // que "¿Conviene?" marca como "no conviene", así que va en este grupo.
-    { id: "no_rentable", clasificaciones: ["margen_bajo", "no_rentable"], titulo: "No conviene todavía", desc: "Con la comisión y los costos de Mercado Libre no alcanza el margen mínimo — revisa el costo o el precio." },
+    { id: "no_rentable", clasificaciones: ["margen_bajo", "no_rentable"], titulo: "No conviene todavía", desc: "Con la comisión y los costos de Mercado Libre no alcanza el margen mínimo ni la ganancia neta mínima configurados — revisa el costo o el precio." },
   ];
 
   // Comisión REAL de Mercado Libre (29 de agosto de 2026) — "Clásica 15% /
@@ -2887,6 +2887,11 @@ window.LC = window.LC || {};
               <label class="form-label">Margen mínimo aceptable (%)</label>
               <input id="cfg-ml-margen-minimo" type="number" min="0" step="0.1" class="form-input" value="${canalMl.minMarginPct ?? ""}" />
             </div>
+            <div>
+              <label class="form-label">Ganancia neta mínima por unidad ($)</label>
+              <input id="cfg-ml-ganancia-minima" type="number" min="0" step="1" class="form-input" value="${canalMl.minProfitClp ?? ""}" />
+              <p class="text-xs text-slate-400 mt-1">Un producto conviene si alcanza el margen mínimo (%) <strong>o</strong> esta ganancia en pesos. Sirve para productos caros que dejan buena plata con poco margen. Vacío = solo cuenta el margen mínimo.</p>
+            </div>
             <div class="sm:col-span-2">
               <label class="form-label">Comisión real por producto</label>
               <select id="cfg-ml-listing-pref" class="form-input">
@@ -2968,6 +2973,7 @@ window.LC = window.LC || {};
           listing_type_pref: document.getElementById("cfg-ml-listing-pref").value || null,
           target_margin_pct: num("cfg-ml-margen-objetivo"),
           min_margin_pct: num("cfg-ml-margen-minimo"),
+          min_profit_clp: num("cfg-ml-ganancia-minima"),
         });
         btnGuardarMl.disabled = false;
         btnGuardarMl.textContent = "Guardar";

@@ -36,13 +36,18 @@ def seleccionar_productos(
     # 14 de septiembre de 2026 — mismo piso de margen que el paso "¿Conviene?"
     # (/decision) y el gate de publicar: así Oportunidades nunca marca como
     # buena oportunidad algo que después "no conviene" publicar.
+    ganancia_minima_clp = None
     if canal == "mercadolibre" and margen_minimo_pct is None:
         config_ml = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
         if config_ml is not None and config_ml.min_margin_pct is not None:
             margen_minimo_pct = float(config_ml.min_margin_pct)
+        # Misma ganancia neta mínima que /decision: margen % O ganancia $.
+        if config_ml is not None and config_ml.min_profit_clp is not None:
+            ganancia_minima_clp = float(config_ml.min_profit_clp)
     criterios = SelectionCriteria(
         min_margin_clp=margen_minimo_clp,
         min_margin_pct=margen_minimo_pct,
+        ganancia_minima_clp=ganancia_minima_clp,
         require_marketplace_stock=requiere_stock,
         channel=canal,
     )
