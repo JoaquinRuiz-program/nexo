@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db.models import MarketplaceAccount, MarketplaceListing, Store, Subscription
-from app.domain.reminder_email import armar_recordatorio, enviador_actual
+from app.domain.reminder_email import armar_recordatorio
 from app.domain.subscription_lifecycle import (
     ESTADOS_SUJETOS_A_VENCIMIENTO,
     DatosVigencia,
@@ -40,7 +40,11 @@ EnviarEmail = Callable[[str, str, str], None]
 
 
 def _enviar_por_defecto(para: str, asunto: str, cuerpo: str) -> None:
-    enviador_actual.enviar(para=para, asunto=asunto, cuerpo=cuerpo)
+    # Resend si RESEND_API_KEY y EMAIL_FROM están configuradas; si no, el log.
+    from app.config import get_settings
+    from app.domain.reminder_email import enviador_desde_settings
+
+    enviador_desde_settings(get_settings()).enviar(para=para, asunto=asunto, cuerpo=cuerpo)
 
 
 async def ejecutar_ciclo_de_vida(

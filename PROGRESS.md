@@ -130,6 +130,14 @@ catálogo (52).
     Panel "Evolución del margen" en el Overview. `chart.js::lineChartSVG` ahora soporta
     valores negativos (escala desde min(0, valores), línea de cero); con valores >= 0 el
     gráfico de ventas queda idéntico.
+16. **Deploy preparado en el repo (Render + Supabase + Resend)** (14 sept 2026, sin
+    commitear) — `render.yaml` (Blueprint: `nexo-api` con preDeploy `alembic upgrade head`,
+    `--workers 1`, `/api/health` y disco `/var/data`; cron `nexo-ciclo-de-vida` diario;
+    frontend estático `nexo-app` que genera `js/env.js` con `API_BASE_URL`), secretos todos
+    `sync: false`. `psycopg[binary]` activo. Correo real: `EnviadorResend`
+    (`RESEND_API_KEY` + `EMAIL_FROM`; sin ellas, al log) — si Resend rechaza, el recordatorio
+    no se marca como enviado y se reintenta al día siguiente. DEPLOY.md con los pasos de
+    cuentas (dominio, Supabase pooler en modo sesión, Resend, Blueprint, DNS, ML).
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

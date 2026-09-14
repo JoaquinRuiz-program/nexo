@@ -11,8 +11,7 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
       sin peso ni medidas. Pendiente: verlo en pantalla logueado.
 - [x] **Autor y Editorial** al publicar libros — resuelto 14 sept 2026 sin columnas nuevas:
       `/validar` los sugiere desde el catálogo real de ML, precargados "Por confirmar".
-- [ ] Dato del usuario: corregir "repiza de habitacion" → "repisa" para que ML le
-      encuentre categoría al recalcular comisiones.
+- [x] Dato del usuario: "repiza de habitacion" — corregido por el dueño (14 sept 2026).
 
 ## Admin BI — extensiones opcionales (el spec original quedó cortado en la sección 8)
 - [x] Gráfico dedicado de **evolución del margen** en el tiempo — hecho 14 sept 2026

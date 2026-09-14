@@ -13,9 +13,10 @@ alembic==1.13.3
 # contraseña original (ver app/domain/security.py).
 bcrypt==4.3.0
 
-# Necesario solo si DATABASE_URL apunta a PostgreSQL en producción — no
-# hace falta para desarrollo/pruebas (que usan SQLite, incluido en Python).
-# psycopg[binary]==3.2.*
+# Driver de PostgreSQL para producción (Render + Supabase). En desarrollo y
+# pruebas no se usa (SQLite), pero se instala igual: el build de Render lee
+# este archivo tal cual. Verificado contra Postgres real el 13 sept 2026.
+psycopg[binary]==3.2.*
 
 # Lectura de .xlsx para importar costos de compra (app/db/import_costs.py) —
 # el dueño tiene su planilla en Excel, no tiene sentido pedirle que la

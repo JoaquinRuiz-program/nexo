@@ -6,6 +6,51 @@ de producción exacta, transición de la base de datos y de Mercado Libre, y
 el dominio. No asume un proveedor específico — vos elegís, acá está la
 comparación.
 
+## Despliegue concreto: Render + Supabase + Resend (14 de septiembre de 2026)
+
+Decisión tomada: backend y frontend en **Render**, PostgreSQL en **Supabase**,
+correo en **Resend**. El repo ya trae todo lo que no requiere cuentas:
+`render.yaml` (Blueprint en la raíz), driver de Postgres activo en
+`requirements.txt`, envío real de mails (`EnviadorResend`, se activa solo con
+`RESEND_API_KEY` + `EMAIL_FROM`) y el cron diario. Lo que sigue lo hace una
+persona, en este orden:
+
+1. **Dominio.** Comprarlo (ej. Cloudflare Registrar). Se usan dos subdominios
+   del MISMO dominio: `app.tudominio.cl` (frontend) y `api.tudominio.cl` (API);
+   si no, la cookie de sesión no viaja y el login se rompe.
+2. **Supabase.** Crear el proyecto (región cercana, ej. São Paulo) y guardar la
+   clave de la base. En *Connect*, copiar la cadena del **pooler en modo sesión**
+   (puerto `5432`, usuario `postgres.<ref>`): es IPv4, la única que funciona
+   desde Render sin el add-on de IPv4 (la conexión directa es solo IPv6). Formato
+   para Nexo:
+   `postgresql+psycopg://postgres.<ref>:<clave>@<pooler-host>:5432/postgres?sslmode=require`.
+   Confirmar que el backup automático está activo.
+3. **Resend.** Crear la cuenta, agregar el dominio y cargar los registros DNS que
+   pide (verificación). Crear una API key. `EMAIL_FROM` = `Nexo <noreply@tudominio.cl>`.
+4. **Render → New → Blueprint** apuntando a este repo. Crea `nexo-api`,
+   `nexo-ciclo-de-vida` y `nexo-app`. `nexo-api` necesita instancia **paga**
+   (disco persistente y `preDeployCommand`). Completar los valores `sync: false`:
+   - `DATABASE_URL` (paso 2), `TOKEN_ENCRYPTION_KEY` **nueva** (nunca la de dev),
+     `FRONTEND_BASE_URL=https://app.tudominio.cl`,
+     `BACKEND_PUBLIC_BASE_URL=https://api.tudominio.cl`,
+     `CORS_ALLOWED_ORIGINS=https://app.tudominio.cl`,
+     `MERCADOLIBRE_*` (paso 6), `RESEND_API_KEY` y `EMAIL_FROM` (paso 3),
+     `MERCADOPAGO_*` solo si ya se cobra.
+   - En `nexo-ciclo-de-vida`, los **mismos** valores que en `nexo-api`.
+   - En `nexo-app`, `API_BASE_URL=https://api.tudominio.cl` (el build genera `js/env.js`).
+5. **Dominios en Render.** `api.tudominio.cl` → `nexo-api`, `app.tudominio.cl` →
+   `nexo-app` (Render indica los CNAME a cargar en el DNS; HTTPS es automático).
+6. **Mercado Libre.** En developers.mercadolibre.cl, Redirect URI
+   `https://api.tudominio.cl/api/mercadolibre/callback`, igual carácter por
+   carácter a `MERCADOLIBRE_REDIRECT_URI`. Con esto ya no hace falta ngrok.
+7. **Verificar.** `GET https://api.tudominio.cl/api/health` → `{"status":"ok"}`;
+   el primer deploy ya corrió `alembic upgrade head` (preDeploy). Seguir con
+   "Cuentas" y "Primer cliente real" del checklist de abajo.
+
+Costo aproximado: dominio ~US$12/año, `nexo-api` instancia paga + disco 1 GB,
+cron por uso, frontend estático gratis, Supabase y Resend con plan gratuito
+para empezar.
+
 ## Arquitectura objetivo
 
 ```
@@ -137,13 +182,9 @@ window.LC.env = { API_BASE_URL: "https://api.tudominio.cl" };
 
 ### Dependencias — antes de instalar contra Postgres
 
-`backend/requirements.txt` tiene el driver de Postgres **comentado a
-propósito** (no hace falta para desarrollo con SQLite). Antes de desplegar:
-
-```bash
-# Descomentar en requirements.txt:
-psycopg[binary]==3.2.*
-```
+`backend/requirements.txt` ya trae el driver de Postgres activo
+(`psycopg[binary]==3.2.*`, desde el 14 de septiembre de 2026): el build de
+Render lo instala tal cual. En desarrollo no se usa (SQLite).
 
 ### Comando de arranque en producción
 

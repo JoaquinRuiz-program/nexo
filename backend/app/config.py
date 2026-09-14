@@ -162,6 +162,13 @@ class Settings(BaseSettings):
     # disco persistente (no se borra al redesplegar).
     uploads_dir: str = "uploads"
 
+    # 14 de septiembre de 2026 — correo real para los recordatorios de
+    # vencimiento (app/domain/reminder_email.py::EnviadorResend). Clave de
+    # https://resend.com/api-keys y remitente de un dominio verificado en
+    # Resend, ej. "Nexo <noreply@tudominio.cl>". Vacías: los mails van al log.
+    resend_api_key: str = ""
+    email_from: str = ""
+
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding="utf-8",
@@ -222,3 +229,5 @@ def print_env_diagnostics(settings: Settings) -> None:
     print(f"  MERCADOPAGO_WEBHOOK_SECRET={mask_secret(settings.mercadopago_webhook_secret)}")
     print(f"  FRONTEND_BASE_URL={settings.frontend_base_url}")
     print(f"  TOKEN_ENCRYPTION_KEY={mask_secret(settings.token_encryption_key)}")
+    print(f"  RESEND_API_KEY={mask_secret(settings.resend_api_key)}")
+    print(f"  EMAIL_FROM={settings.email_from or '(no definida)'}")

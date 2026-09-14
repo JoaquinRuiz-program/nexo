@@ -1,0 +1,118 @@
+# Render Blueprint de Nexo (14 de septiembre de 2026) — ver backend/DEPLOY.md,
+# seccion "Despliegue concreto: Render + Supabase + Resend".
+#
+# Tres servicios: API (FastAPI), cron diario del ciclo de vida de suscripciones
+# y frontend estatico. La base de datos es Supabase (fuera de Render): su URL va
+# en DATABASE_URL. Ningun secreto vive en este archivo: todo `sync: false` se
+# carga a mano en el panel de Render al crear el Blueprint.
+#
+# Sintaxis verificada contra la doc oficial "Blueprint YAML Reference".
+
+services:
+  # ---------------------------------------------------------------- API
+  - type: web
+    name: nexo-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Migraciones antes de cada deploy: si fallan, el deploy se corta y sigue
+    # corriendo la version anterior (requiere instancia paga).
+    preDeployCommand: alembic upgrade head
+    # --workers 1 es obligatorio: los estados OAuth pendientes y el rate limit
+    # de login viven en memoria del proceso (ver DEPLOY.md).
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /api/health
+    # Imagenes subidas por los clientes: sin disco persistente, un redeploy las
+    # borra. Un servicio con disco no se puede escalar (y no hace falta).
+    disk:
+      name: nexo-uploads
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.3
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+      # Supabase, pooler en modo sesion (IPv4, puerto 5432):
+      # postgresql+psycopg://postgres.<ref>:<clave>@<pooler-host>:5432/postgres?sslmode=require
+      - key: DATABASE_URL
+        sync: false
+      # Fernet: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: FRONTEND_BASE_URL
+        sync: false
+      - key: BACKEND_PUBLIC_BASE_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: MERCADOLIBRE_CLIENT_ID
+        sync: false
+      - key: MERCADOLIBRE_CLIENT_SECRET
+        sync: false
+      - key: MERCADOLIBRE_REDIRECT_URI
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: MERCADOPAGO_ACCESS_TOKEN
+        sync: false
+      - key: MERCADOPAGO_WEBHOOK_SECRET
+        sync: false
+
+  # ---------------------------------------------------- Cron diario
+  # Recordatorios de vencimiento (5, 3 y 1 dia) y pausa por vencimiento.
+  # 12:00 UTC = 8:00 o 9:00 en Chile segun horario de verano.
+  - type: cron
+    name: nexo-ciclo-de-vida
+    runtime: python
+    rootDir: backend
+    schedule: "0 12 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.services.lifecycle
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.3
+      # Mismos valores que en nexo-api (la pausa por vencimiento usa la cuenta
+      # de Mercado Libre de cada empresa y el mail sale por Resend).
+      - key: DATABASE_URL
+        sync: false
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: MERCADOLIBRE_CLIENT_ID
+        sync: false
+      - key: MERCADOLIBRE_CLIENT_SECRET
+        sync: false
+      - key: MERCADOLIBRE_REDIRECT_URI
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+
+  # ------------------------------------------------ Frontend estatico
+  # Solo la carpeta frontend/ (la raiz del repo tiene un prototipo viejo en
+  # Vite que NO es Nexo). Sin build real: solo se genera js/env.js con la URL
+  # publica de la API.
+  - type: web
+    name: nexo-app
+    runtime: static
+    rootDir: frontend
+    buildCommand: 'test -n "$API_BASE_URL" && printf "window.LC = window.LC || {};\nwindow.LC.env = { API_BASE_URL: \"%s\" };\n" "$API_BASE_URL" > js/env.js'
+    staticPublishPath: ./
+    headers:
+      - path: /*
+        headers:
+          - key: X-Frame-Options
+            value: DENY
+          - key: X-Content-Type-Options
+            value: nosniff
+          - key: Referrer-Policy
+            value: strict-origin-when-cross-origin
+    envVars:
+      # URL publica de nexo-api con el dominio propio, ej. https://api.tudominio.cl (sin barra final)
+      - key: API_BASE_URL
+        sync: false

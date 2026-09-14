@@ -16,6 +16,8 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
+import httpx
+
 logger = logging.getLogger("nexo.email")
 
 # Cuántos días faltan para la pausa -> asunto y encabezado del mail.
@@ -67,6 +69,44 @@ class EnviadorPorLog:
         logger.info("EMAIL (sin servicio real) -> %s | %s", para, asunto)
 
 
-# Instancia por defecto que usa el resto del backend hasta conectar un
-# servicio real. Se cambia en un solo lugar el día del deploy.
+# Instancia por defecto mientras no hay servicio real configurado.
 enviador_actual: EnviadorDeEmail = EnviadorPorLog()
+
+
+class EnviadorResend:
+    """Envío real por Resend (14 de septiembre de 2026) — POST
+    https://api.resend.com/emails con `Authorization: Bearer <clave>` (doc
+    oficial "Send Email" verificada ese día). El remitente (`EMAIL_FROM`, ej.
+    "Nexo <noreply@tudominio.cl>") tiene que ser de un dominio verificado en
+    Resend. Si Resend rechaza el mail o no responde, LEVANTA: el ciclo de
+    vida atrapa el error, lo registra y no marca el recordatorio como enviado.
+    El mensaje del error nunca incluye la clave."""
+
+    URL = "https://api.resend.com/emails"
+
+    def __init__(self, api_key: str, remitente: str, *, timeout_s: float = 10.0):
+        self._api_key = api_key
+        self._remitente = remitente
+        self._timeout_s = timeout_s
+
+    def enviar(self, *, para: str, asunto: str, cuerpo: str) -> None:
+        try:
+            respuesta = httpx.post(
+                self.URL,
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                json={"from": self._remitente, "to": [para], "subject": asunto, "text": cuerpo},
+                timeout=self._timeout_s,
+            )
+        except httpx.HTTPError as err:
+            raise RuntimeError(f"No se pudo conectar con Resend: {err.__class__.__name__}") from err
+        if respuesta.status_code >= 400:
+            raise RuntimeError(f"Resend rechazó el email (HTTP {respuesta.status_code}): {respuesta.text[:300]}")
+        logger.info("EMAIL enviado -> %s | %s", para, asunto)
+
+
+def enviador_desde_settings(settings) -> EnviadorDeEmail:  # noqa: ANN001 - app.config.Settings
+    """Resend si están RESEND_API_KEY y EMAIL_FROM; si no, el log (nunca
+    finge que un mail salió)."""
+    if settings.resend_api_key and settings.email_from:
+        return EnviadorResend(settings.resend_api_key, settings.email_from)
+    return enviador_actual
