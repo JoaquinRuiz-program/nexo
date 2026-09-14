@@ -49,20 +49,24 @@ DEFAULT_PLANS = [
     {
         "code": "basico",
         "name": "Nexo Básico",
-        "product_limit": 200,
+        # 14 de septiembre de 2026 — decisión del dueño: cualquier tienda real
+        # (ej. una librería) supera fácil los 1.000 ítems. Básico 200 -> 1.000
+        # y Pro 1.000 -> 5.000 (migración c9e1a3b5d7f2 actualiza los planes ya
+        # guardados). Publicaciones sin cambios.
+        "product_limit": 1000,
         "publication_limit": 150,
         "price_demo_label": "$80.000 CLP/mes",
         "monthly_price_clp": 80000,
-        "features": ["Hasta 200 productos", "Hasta 150 publicaciones activas en Mercado Libre", "Conexión con Mercado Libre", "Soporte por email"],
+        "features": ["Hasta 1.000 productos", "Hasta 150 publicaciones activas en Mercado Libre", "Conexión con Mercado Libre", "Soporte por email"],
     },
     {
         "code": "pro",
         "name": "Nexo Pro",
-        "product_limit": 1000,
+        "product_limit": 5000,
         "publication_limit": 800,
         "price_demo_label": "$200.000 CLP/mes",
         "monthly_price_clp": 200000,
-        "features": ["Hasta 1.000 productos", "Hasta 800 publicaciones activas en Mercado Libre", "Soporte prioritario", "Pensado para catálogos en crecimiento"],
+        "features": ["Hasta 5.000 productos", "Hasta 800 publicaciones activas en Mercado Libre", "Soporte prioritario", "Pensado para catálogos en crecimiento"],
     },
 ]
 

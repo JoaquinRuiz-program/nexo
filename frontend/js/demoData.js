@@ -291,7 +291,7 @@ window.LC = window.LC || {};
       limite: 200,
       precio: "$80.000 CLP/mes",
       descripcion: "Para partir con lo esencial.",
-      features: ["Hasta 200 productos", "Hasta 150 publicaciones activas en Mercado Libre", "Conexión con Mercado Libre", "Soporte por email"],
+      features: ["Hasta 1.000 productos", "Hasta 150 publicaciones activas en Mercado Libre", "Conexión con Mercado Libre", "Soporte por email"],
     },
     {
       id: "pro",
@@ -299,7 +299,7 @@ window.LC = window.LC || {};
       limite: 1000,
       precio: "$200.000 CLP/mes",
       descripcion: "Para catálogos en crecimiento.",
-      features: ["Hasta 1.000 productos", "Hasta 800 publicaciones activas en Mercado Libre", "Soporte prioritario"],
+      features: ["Hasta 5.000 productos", "Hasta 800 publicaciones activas en Mercado Libre", "Soporte prioritario"],
     },
   ];
 

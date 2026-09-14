@@ -114,9 +114,16 @@ catálogo (52).
     "precio" tomaba el precio de COMPRA como precio de venta y el costo quedaba vacío (sin
     margen posible). `catalog_import.py`: sinónimos "preciodecompra"/"compra" y
     "precioventa"/"venta" + regla de intención (un encabezado de compra/costo nunca es precio,
-    uno de venta nunca es costo). Los 20 productos DEP- ya guardados mal en Empresa Demo se
-    corrigieron reimportándolos (actualiza por SKU). Los otros 180 no entran: la tienda está
-    en 200/200 productos del plan Básico.
+    uno de venta nunca es costo). En Empresa Demo ya estaban 199 de los 200 productos del
+    Excel (10 categorías: DEP, ROP, AUT, TEC, LIB, HOG, HER, ASE, CUI, ALI), todos con el
+    precio de compra como precio de venta y sin costo; con el volante sumaban 200 = tope del
+    plan, así que ALI-200 no había entrado. Tras subir el límite se reimportó el Excel: 199
+    actualizados + 1 creado, los 200 con compra/venta correctas (tienda: 201 productos, 0 sin
+    costo).
+14. **Límites de productos por plan** (14 sept 2026, decisión del dueño) — Nexo Básico
+    200 -> 1.000 productos, Nexo Pro 1.000 -> 5.000 (publicaciones sin cambios: 150 / 800).
+    `plans.py` + migración de datos `c9e1a3b5d7f2` (ensure_default_plans solo crea, nunca
+    actualiza; la migración solo toca planes que siguen con el valor viejo).
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas
