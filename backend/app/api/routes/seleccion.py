@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_store
 from app.api.routes.rentabilidad import build_profitability_rows
-from app.db.models import Store
+from app.db.models import ChannelCostSettings, Store
 from app.db.session import get_db
 from app.domain.catalog_selection import SelectionCriteria, select, summarize_selection
 
@@ -33,6 +33,13 @@ def seleccionar_productos(
     store: Store = Depends(get_current_store),
 ) -> dict:
     filas, _ = build_profitability_rows(db, store)
+    # 14 de septiembre de 2026 — mismo piso de margen que el paso "¿Conviene?"
+    # (/decision) y el gate de publicar: así Oportunidades nunca marca como
+    # buena oportunidad algo que después "no conviene" publicar.
+    if canal == "mercadolibre" and margen_minimo_pct is None:
+        config_ml = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
+        if config_ml is not None and config_ml.min_margin_pct is not None:
+            margen_minimo_pct = float(config_ml.min_margin_pct)
     criterios = SelectionCriteria(
         min_margin_clp=margen_minimo_clp,
         min_margin_pct=margen_minimo_pct,

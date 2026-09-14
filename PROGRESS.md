@@ -75,6 +75,19 @@ catálogo (52).
    Como la publicación está CERRADA en ML, Rentabilidad no la cuenta (muestra "No
    disponible", provisional). No hay publicaciones activas para ver el costo en pantalla.
 
+8. **Atributos sugeridos desde el catálogo real de ML** (14 sept 2026) — `/validar` busca el
+   producto en el catálogo (misma búsqueda que /competencia) y devuelve `valorSugerido` para
+   los atributos faltantes (ej. Autor, Editorial de un libro; verificado en vivo: "Cien años
+   de soledad" -> Autor "Gabriel García Márquez"). Quedan precargados y marcados "Por
+   confirmar". El ISBN solo se sugiere si la búsqueda fue por código de barras (por nombre
+   podría ser otra edición). Best effort: sin catálogo, se completa a mano como antes.
+9. **Oportunidades coherente con "¿Conviene?"** (14 sept 2026) — Oportunidades ahora usa el
+   margen NETO de ML y el mismo margen mínimo de Configuración (`/api/seleccion` lo toma por
+   defecto con canal ML; `/decision-lote` aplica el mismo gate que `/decision`). "Margen bajo"
+   pasa al grupo "No conviene todavía". Nunca más "Alta oportunidad" y después "no conviene".
+   Ojo datos: en Empresa Demo hay productos "Ej: ..." (LIB-001, ESC-014) que parecen filas de
+   ejemplo de la plantilla importadas como productos.
+
 ## En progreso
 - Nada a medias. El Admin BI cubre lo pedido (secciones 1–8); ver `TODO.md` para las
   extensiones opcionales que quedaron fuera de alcance a propósito.

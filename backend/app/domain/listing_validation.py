@@ -313,6 +313,40 @@ def _faltante_desde(atributo: dict[str, Any]) -> MissingAttribute:
     )
 
 
+def sugerencias_desde_catalogo(
+    faltantes: list[MissingAttribute], atributos_catalogo: list[dict[str, Any]], coincidencia_por_codigo: bool
+) -> dict[str, str]:
+    """14 de septiembre de 2026 — valores que el producto REAL del catálogo de
+    Mercado Libre (GET /products/{id}, campo `attributes`, verificado en vivo
+    con un libro: AUTHOR, BOOK_PUBLISHER, ...) ya trae para atributos que le
+    faltan al dueño. Son SUGERENCIAS por confirmar, nunca atributos completos.
+    Si el catálogo se encontró por nombre (no por código de barras), el código
+    (GTIN/EAN/UPC) no se sugiere: puede ser otra edición del mismo producto. En
+    atributos con opciones cerradas solo se sugiere un valor que exista entre
+    esas opciones."""
+    valores: dict[str, str] = {}
+    for atributo in atributos_catalogo or []:
+        if not isinstance(atributo, dict):
+            continue
+        valor = atributo.get("value_name")
+        if atributo.get("id") and isinstance(valor, str) and valor.strip():
+            valores[atributo["id"]] = valor.strip()
+
+    sugerencias: dict[str, str] = {}
+    for faltante in faltantes:
+        if faltante.id == EMPTY_GTIN_REASON_ATTRIBUTE_ID:
+            continue
+        if faltante.id in _ALIAS_GTIN and not coincidencia_por_codigo:
+            continue
+        valor = valores.get(faltante.id)
+        if not valor:
+            continue
+        if faltante.opciones and valor not in {o.get("name") for o in faltante.opciones}:
+            continue
+        sugerencias[faltante.id] = valor
+    return sugerencias
+
+
 def construir_attributes_payload(resultado: ResultadoValidacion) -> list[dict[str, str]]:
     """El array `attributes` final tal cual se manda a POST /items.
 

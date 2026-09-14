@@ -426,6 +426,7 @@ window.LC = window.LC || {};
     return `
       <div class="panel-card mb-5">
         <h3 class="panel-title mb-3">Atributos de la categoría</h3>
+        ${v.sugerenciasCatalogo ? `<p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Completamos lo que encontramos en el catálogo de Mercado Libre${v.sugerenciasCatalogo.coincidencia === "codigo" ? " por el código de barras" : ` buscando por nombre ("${escapeHtml(v.sugerenciasCatalogo.productoCatalogo || "")}")`}. Confirmá cada dato marcado.</p>` : ""}
         ${v.atributosFaltantes.length === 0 ? `<p class="text-sm text-slate-500 dark:text-slate-400 mb-2">No falta ningún atributo más.</p>` : ""}
         ${v.atributosFaltantes.map((f) => renderCampoAtributo(f)).join("")}
         ${v.atributosCompletos.length ? `
@@ -453,6 +454,7 @@ window.LC = window.LC || {};
       <div class="mb-3">
         <label class="form-label">${escapeHtml(f.nombre)}</label>
         ${campo}
+        ${f.valorSugerido && valorActual === f.valorSugerido ? `<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">Por confirmar: dato del catálogo de Mercado Libre. Revisalo antes de publicar.</p>` : ""}
         ${eligioSinCodigo ? `
           <label class="flex items-center gap-2 mt-2 text-sm text-slate-600 dark:text-slate-300">
             <input type="checkbox" id="ml-confirmar-sin-codigo" class="form-checkbox" ${state.gtinSinCodigoConfirmado ? "checked" : ""} ${state.confirmandoSinCodigo ? "disabled" : ""} />
@@ -660,6 +662,11 @@ window.LC = window.LC || {};
         // de atributos, con otras opciones) nunca debe quedar arrastrado
         // como si siguiera siendo válido (hallazgo de qa-engineer, FASE 6).
         miState.atributosValores = {};
+        // Sugerencias del catálogo real de Mercado Libre (ej. Autor,
+        // Editorial): quedan precargadas pero marcadas "Por confirmar".
+        (res.data.atributosFaltantes || []).forEach((f) => {
+          if (f.valorSugerido) miState.atributosValores[f.id] = f.valorSugerido;
+        });
         miState.gtinSinCodigoConfirmado = false;
         miState.validacion = res.data;
         renderFase(main);

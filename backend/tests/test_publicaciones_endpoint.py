@@ -590,6 +590,62 @@ def test_validar_nunca_crea_marketplace_listing(client, db_session, a_store, cue
     assert db_session.query(MarketplaceListing).count() == 0
 
 
+# Forma real de GET /categories/MLC1196/attributes y GET /products/{id}
+# (verificadas en vivo el 14 de septiembre de 2026 con "Cien años de soledad").
+ATRIBUTOS_LIBROS = [
+    {"id": "BOOK_TITLE", "name": "Título del libro", "tags": {"required": True}, "value_type": "string"},
+    {"id": "AUTHOR", "name": "Autor", "tags": {"required": True}, "value_type": "string"},
+    {"id": "BOOK_PUBLISHER", "name": "Editorial del libro", "tags": {"required": True}, "value_type": "string"},
+    {"id": "GTIN", "name": "ISBN", "tags": {"required": True}, "value_type": "string"},
+]
+PRODUCTO_CATALOGO_LIBRO = {
+    "id": "MLC75374754",
+    "name": "Cien años de soledad",
+    "attributes": [
+        {"id": "BOOK_TITLE", "name": "Título del libro", "value_name": "Cien años de soledad"},
+        {"id": "AUTHOR", "name": "Autor", "value_name": "Gabriel García Márquez"},
+        {"id": "BOOK_PUBLISHER", "name": "Editorial del libro", "value_name": "Diana México"},
+        {"id": "GTIN", "name": "ISBN", "value_name": "9786070728792"},
+    ],
+}
+
+
+@respx.mock
+def test_validar_sugiere_autor_y_editorial_del_catalogo_real_por_confirmar(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id = _producto(db_session, a_store, sku="LIB-1", nombre="Cien años de soledad", marca=None, categoria="Libros", precio=15000, costo=8000)
+    respx.get("https://api.mercadolibre.com/categories/MLC1196/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_LIBROS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/products/search.*").mock(
+        return_value=httpx.Response(200, json={"results": [{"id": "MLC75374754"}]})
+    )
+    respx.get("https://api.mercadolibre.com/products/MLC75374754").mock(return_value=httpx.Response(200, json=PRODUCTO_CATALOGO_LIBRO))
+
+    body = client.post(f"/api/publicaciones/{variant_id}/mercadolibre/validar", json={"category_id": "MLC1196", "condition": "new"}).json()
+
+    faltantes = {f["id"]: f for f in body["atributosFaltantes"]}
+    assert faltantes["AUTHOR"]["valorSugerido"] == "Gabriel García Márquez"
+    assert faltantes["BOOK_PUBLISHER"]["valorSugerido"] == "Diana México"
+    # Encontrado por NOMBRE: el ISBN puede ser de otra edición, nunca se sugiere.
+    assert faltantes["GTIN"]["valorSugerido"] is None
+    # Sugerido no es completo: el dueño tiene que confirmarlo.
+    assert body["listoParaPublicar"] is False
+    assert body["sugerenciasCatalogo"] == {"productoCatalogo": "Cien años de soledad", "coincidencia": "nombre"}
+
+
+@respx.mock
+def test_validar_sin_producto_en_catalogo_no_sugiere_nada(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id = _producto(db_session, a_store, sku="LIB-2", nombre="Libro inexistente", marca=None, categoria="Libros", precio=15000, costo=8000)
+    respx.get("https://api.mercadolibre.com/categories/MLC1196/attributes").mock(return_value=httpx.Response(200, json=ATRIBUTOS_LIBROS))
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/products/search.*").mock(return_value=httpx.Response(200, json={"results": []}))
+
+    res = client.post(f"/api/publicaciones/{variant_id}/mercadolibre/validar", json={"category_id": "MLC1196", "condition": "new"})
+
+    assert res.status_code == 200
+    assert all(f["valorSugerido"] is None for f in res.json()["atributosFaltantes"])
+    assert res.json()["sugerenciasCatalogo"] is None
+
+
 # ------------------------------------------------------------------
 # POST /{variant_id}/mercadolibre/confirmar — publicación REAL (29 de
 # agosto de 2026, commit 4/N): el único flujo de todo el backend que puede
@@ -1329,6 +1385,27 @@ def test_decision_lote_calcula_para_todas_las_variantes_sin_llamar_a_ml(client, 
         if fila["variantId"] in (variant_id_1, variant_id_2):
             assert fila["decision"] == "conviene"
             assert fila["precioRecomendado"] > 0
+
+
+def test_oportunidades_y_decision_lote_aplican_el_mismo_margen_minimo_que_decision(client, db_session, a_store):
+    """14 de septiembre de 2026 — pedido del dueño: Oportunidades tiene que
+    decir de entrada si conviene. Un producto bajo el margen mínimo nunca
+    puede figurar como "rentable"/"conviene" en la lista y después "no
+    conviene" en el paso ¿Conviene?."""
+    variant_id = _producto_publicable(db_session, a_store, sku="LOTE-MIN", costo=8000, precio=20000)
+    _configurar_margen(db_session, a_store, objetivo=80.0, minimo=70.0)  # 60% bruto nunca alcanza el 70%
+
+    decision = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/decision").json()
+    with respx.mock:
+        lote = client.get("/api/publicaciones/mercadolibre/decision-lote").json()
+    seleccion = client.get("/api/seleccion", params={"canal": "mercadolibre"}).json()
+
+    fila_lote = next(f for f in lote if f["variantId"] == variant_id)
+    fila_seleccion = next(f for f in seleccion["productos"] if f["id"] == variant_id)
+    assert decision["decision"] == "no_conviene"
+    assert fila_lote["decision"] == "no_conviene"
+    assert fila_lote["razon"] == decision["razon"]
+    assert fila_seleccion["clasificacion"] == "margen_bajo"
 
 
 def test_decision_lote_sin_margen_configurado_es_revisar_para_todos(client, db_session, a_store):

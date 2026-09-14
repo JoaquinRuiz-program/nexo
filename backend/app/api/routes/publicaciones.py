@@ -371,6 +371,7 @@ async def validar_publicacion_mercadolibre(
     datos_conocidos = _datos_conocidos_ml(producto, variante)
 
     resultado = evaluar_atributos(atributos_categoria, body.condition, datos_conocidos, {})
+    sugerencias, sugerencias_catalogo = await _sugerencias_de_catalogo_ml(db, store, variante, producto, resultado.faltantes)
     clasificacion = classify_product(fila, SelectionCriteria(channel="mercadolibre", require_marketplace_stock=True))
 
     return {
@@ -380,9 +381,14 @@ async def validar_publicacion_mercadolibre(
             {"id": a.id, "nombre": a.nombre, "valueId": a.value_id, "valueName": a.value_name} for a in resultado.completos
         ],
         "atributosFaltantes": [
-            {"id": f.id, "nombre": f.nombre, "valueType": f.value_type, "opciones": f.opciones}
+            {
+                "id": f.id, "nombre": f.nombre, "valueType": f.value_type, "opciones": f.opciones,
+                # Valor real del catálogo de Mercado Libre, POR CONFIRMAR (None si no hay).
+                "valorSugerido": sugerencias.get(f.id),
+            }
             for f in resultado.faltantes
         ],
+        "sugerenciasCatalogo": sugerencias_catalogo,
         "listoParaPublicar": resultado.listo_para_publicar,
         "rentabilidad": {
             "clasificacion": clasificacion["clasificacion"],
@@ -437,6 +443,46 @@ async def _buscar_producto_en_catalogo(
     catalog_product_id = resultados[0].get("id")
     detalle = await adapter.get_catalog_product(access_token, catalog_product_id)
     return catalog_product_id, detalle
+
+
+async def _sugerencias_de_catalogo_ml(
+    db: Session, store: Store, variante: ProductVariant, producto: Product, faltantes: list
+) -> tuple[dict[str, str], Optional[dict]]:
+    """14 de septiembre de 2026 — para que el dueño no tenga que tipear lo que
+    Mercado Libre ya sabe (ej. Autor/Editorial de un libro): busca el producto
+    real en el catálogo (misma búsqueda que /competencia) y sugiere sus
+    atributos para los que faltan, POR CONFIRMAR (ver
+    listing_validation.sugerencias_desde_catalogo). Best effort: cualquier
+    problema acá nunca bloquea /validar — sin sugerencias, el dueño completa
+    a mano como antes."""
+    from app.domain.listing_validation import sugerencias_desde_catalogo
+
+    if not faltantes:
+        return {}, None
+    account = _get_account(db, store)
+    settings = get_settings()
+    cfg = _build_ml_config(settings)
+    adapter = None
+    try:
+        access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
+        adapter = MercadoLibreAdapter(cfg)
+        _catalog_id, detalle = await _buscar_producto_en_catalogo(
+            adapter, access_token, account.external_account_site_id, variante, producto
+        )
+    except Exception as err:  # noqa: BLE001 — best effort a propósito
+        logger.info("Sin sugerencias de catálogo de Mercado Libre para variant_id=%s: %s", variante.id, err)
+        return {}, None
+    finally:
+        if adapter is not None:
+            await adapter.aclose()
+    if not detalle:
+        return {}, None
+
+    por_codigo = bool(variante.barcode and gtin_checksum_valido(variante.barcode))
+    sugerencias = sugerencias_desde_catalogo(faltantes, detalle.get("attributes") or [], por_codigo)
+    if not sugerencias:
+        return {}, None
+    return sugerencias, {"productoCatalogo": detalle.get("name"), "coincidencia": "codigo" if por_codigo else "nombre"}
 
 
 @router.get("/{variant_id}/mercadolibre/competencia")
@@ -715,6 +761,11 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
     # contradecir el margen de la misma fila.
     variantes = db.query(ProductVariant).filter_by(store_id=store.id).all()
     publicaciones_ml = publicaciones_ml_por_producto(db, store.id)
+    # Mismo gate de margen mínimo que /decision (paso "¿Conviene?"): sin esto
+    # la columna "Decisión preliminar" podía decir "Conviene" en una fila que
+    # Oportunidades y "¿Conviene?" marcan como que no conviene.
+    filas_por_variante = {f["id"]: f for f in build_profitability_rows(db, store)[0]}
+    criterios_gate = SelectionCriteria(channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct)
     resultado = []
     for variante in variantes:
         precio_actual = float(variante.price) if variante.price is not None else None
@@ -729,10 +780,16 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
             analisis_competencia=None,
         )
         decision = evaluar_decision(recomendacion, analisis_competencia=None)
+        decision_valor, razon_valor = decision.decision, decision.razon
+        fila = filas_por_variante.get(variante.id)
+        if fila is not None:
+            gate = classify_product(fila, criterios_gate)
+            if gate["clasificacion"] in ("margen_bajo", "no_rentable"):
+                decision_valor, razon_valor = "no_conviene", gate["razon"]
         resultado.append({
             "variantId": variante.id,
-            "decision": decision.decision,
-            "razon": decision.razon,
+            "decision": decision_valor,
+            "razon": razon_valor,
             "precioRecomendado": decision.precio_recomendado,
             "margenEstimadoPct": decision.margen_estimado_pct,
             "faltantes": decision.faltantes,

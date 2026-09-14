@@ -1234,8 +1234,8 @@ window.LC = window.LC || {};
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
           <div><p class="stat-label">Costo de compra</p><p class="text-lg font-semibold mt-1">${rentabilidad.costo != null ? formatCLP(rentabilidad.costo) : "Sin registrar"}</p></div>
-          <div><p class="stat-label">Ganancia estimada</p><p class="text-lg font-semibold mt-1 ${rentabilidad.margenTiendaClp != null && rentabilidad.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${rentabilidad.margenTiendaClp != null ? formatCLP(rentabilidad.margenTiendaClp) : "—"}</p></div>
-          <div><p class="stat-label">Margen</p><p class="text-lg font-semibold mt-1">${rentabilidad.margenTiendaPct != null ? `${rentabilidad.margenTiendaPct.toFixed(1)}%` : "—"}</p></div>
+          <div><p class="stat-label">Ganancia neta ML</p><p class="text-lg font-semibold mt-1 ${rentabilidad.margenMercadoLibreClp != null && rentabilidad.margenMercadoLibreClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${rentabilidad.margenMercadoLibreClp != null ? formatCLP(rentabilidad.margenMercadoLibreClp) : "—"}</p></div>
+          <div><p class="stat-label">Margen neto ML</p><p class="text-lg font-semibold mt-1">${rentabilidad.margenMercadoLibrePct != null ? `${rentabilidad.margenMercadoLibrePct.toFixed(1)}%` : "—"}</p></div>
           <div><p class="stat-label">Mercado Libre</p><p class="text-lg font-semibold mt-1">${rentabilidad.mercadoLibreConfigurado ? "Configurado" : "Sin configurar"}</p></div>
         </div>
         <p class="text-xs text-slate-400 dark:text-slate-500 mb-4">Calculado con tu costo y precio reales — sin asumir ninguna comisión que no hayas confirmado.</p>
@@ -2137,8 +2137,10 @@ window.LC = window.LC || {};
   // organizadas para que la atención vaya a lo que más importa primero.
   const GRUPOS_OPORTUNIDAD = [
     { id: "rentable", clasificaciones: ["rentable"], titulo: "Alta oportunidad", desc: "Ganancia potencial y buen margen — buenos candidatos para vender más." },
-    { id: "revision", clasificaciones: ["margen_bajo", "sin_datos", "sin_stock"], titulo: "Requiere revisión", desc: "Información incompleta o margen ajustado — conviene completarlos." },
-    { id: "no_rentable", clasificaciones: ["no_rentable"], titulo: "Baja rentabilidad", desc: "Hoy no conviene venderlos — revisa el costo o el precio." },
+    { id: "revision", clasificaciones: ["sin_datos", "sin_stock"], titulo: "Requiere revisión", desc: "Falta información para decidir — conviene completarla." },
+    // margen_bajo = no alcanza el margen mínimo configurado: es exactamente lo
+    // que "¿Conviene?" marca como "no conviene", así que va en este grupo.
+    { id: "no_rentable", clasificaciones: ["margen_bajo", "no_rentable"], titulo: "No conviene todavía", desc: "Con la comisión y los costos de Mercado Libre no alcanza el margen mínimo — revisa el costo o el precio." },
   ];
 
   // Comisión REAL de Mercado Libre (29 de agosto de 2026) — "Clásica 15% /
@@ -2210,8 +2212,8 @@ window.LC = window.LC || {};
         </td>
         <td class="px-3 py-2.5 text-right">${p.precio != null ? formatCLP(p.precio) : "—"}</td>
         <td class="px-3 py-2.5 text-right">${p.costo != null ? formatCLP(p.costo) : "—"}</td>
-        <td class="px-3 py-2.5 text-right font-medium ${p.margenTiendaClp != null && p.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${p.margenTiendaClp != null ? formatCLP(p.margenTiendaClp) : "—"}</td>
-        <td class="px-3 py-2.5 text-right">${p.margenTiendaPct != null ? `${p.margenTiendaPct.toFixed(1)}%` : "—"}</td>
+        <td class="px-3 py-2.5 text-right font-medium ${p.margenMercadoLibreClp != null && p.margenMercadoLibreClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${p.margenMercadoLibreClp != null ? formatCLP(p.margenMercadoLibreClp) : "—"}${p.rentabilidadMlProvisional ? `<p class="text-xs font-normal text-slate-400">Provisional</p>` : ""}</td>
+        <td class="px-3 py-2.5 text-right">${p.margenMercadoLibrePct != null ? `${p.margenMercadoLibrePct.toFixed(1)}%` : "—"}</td>
         <td class="px-3 py-2.5 text-right text-xs text-slate-500 dark:text-slate-400">${escapeHtml(comisionMlTexto(p.comisionMlReal))}</td>
         ${celdaEnvioMl(p)}
         ${celdaDecision(p, decisionMap)}
@@ -2226,8 +2228,8 @@ window.LC = window.LC || {};
           <th class="px-3 py-2 font-medium">Producto</th>
           <th class="px-3 py-2 font-medium text-right">Precio</th>
           <th class="px-3 py-2 font-medium text-right">Costo</th>
-          <th class="px-3 py-2 font-medium text-right">Ganancia estimada</th>
-          <th class="px-3 py-2 font-medium text-right">Margen</th>
+          <th class="px-3 py-2 font-medium text-right">Ganancia neta ML</th>
+          <th class="px-3 py-2 font-medium text-right">Margen neto ML</th>
           <th class="px-3 py-2 font-medium text-right">Comisión ML real</th>
           <th class="px-3 py-2 font-medium text-right">Costo de envío</th>
           <th class="px-3 py-2 font-medium" title="Evaluación rápida sin consultar competencia — abrí el producto para la evaluación completa.">Decisión preliminar</th>
@@ -2241,7 +2243,7 @@ window.LC = window.LC || {};
   async function renderOportunidades(main) {
     const [modo, data] = await Promise.all([LC.dataSource.getModo(), LC.dataSource.getOportunidades()]);
     const esReal = modo === "real";
-    const productos = [...(data.productos || [])].sort((a, b) => (b.margenTiendaClp ?? -Infinity) - (a.margenTiendaClp ?? -Infinity));
+    const productos = [...(data.productos || [])].sort((a, b) => (b.margenMercadoLibreClp ?? -Infinity) - (a.margenMercadoLibreClp ?? -Infinity));
     const r = data.resumen || {};
 
     // Comisión REAL de Mercado Libre (29 de agosto de 2026) — el botón

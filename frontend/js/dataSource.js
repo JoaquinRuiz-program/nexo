@@ -243,7 +243,9 @@ window.LC = window.LC || {};
 
   async function getOportunidades() {
     if ((await getModo()) === "real") {
-      const res = await LC.backendApi.obtenerSeleccion({ canal: "tienda", requiereStock: false });
+      // Canal Mercado Libre: margen NETO (comisión real + envío) y el mismo
+      // margen mínimo que "¿Conviene?", para que ambas pantallas coincidan.
+      const res = await LC.backendApi.obtenerSeleccion({ canal: "mercadolibre", requiereStock: false });
       if (!res.ok) throw new ErrorDatosReales(res.error);
       return res.data;
     }
