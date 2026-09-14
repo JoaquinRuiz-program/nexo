@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters.mercadolibre import MercadoLibreAdapter, MercadoLibreAuthError, MercadoLibreRequestError
 from app.db.models import MarketplaceAccount, MarketplaceListing, MarketplaceListingVariant, ProductVariant, Store
+from app.services.sync_registro import DIRECCION_ML_STOCK, registrar_fallo, registrar_sincronizacion
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,8 @@ async def sincronizar_stock_ml(db: Session, store: Store, variantes: list[Produc
 
     actualizadas = 0
     con_error = 0
+    errores: list[tuple[int | None, str]] = []
+    inicio = datetime.now()
     adapter = None
     try:
         access_token = await _get_valid_access_token(db, cuenta, cfg, settings.token_encryption_key)
@@ -76,17 +79,22 @@ async def sincronizar_stock_ml(db: Session, store: Store, variantes: list[Produc
                     raise
                 con_error += 1
                 logger.error("Mercado Libre rechazó actualizar el stock de %s: %s", listing.external_listing_id, err)
+                errores.append((variante.id, f"Mercado Libre no permitió actualizar el stock de {listing.external_listing_id} (HTTP {err.status})."))
             except MercadoLibreRequestError as err:
                 con_error += 1
                 logger.error("No se pudo actualizar el stock de %s en Mercado Libre: %s", listing.external_listing_id, err)
+                mensaje_ml = str((err.response_body or {}).get("message") or "")[:200]
+                errores.append((variante.id, f"Mercado Libre no aceptó el stock de {listing.external_listing_id} (HTTP {err.status}){': ' + mensaje_ml if mensaje_ml else ''}."))
             else:
                 listing_variante.stock_quantity = variante.marketplace_stock
                 listing_variante.last_synced_at = datetime.now()
                 actualizadas += 1
+        registrar_sincronizacion(db, store.id, direccion=DIRECCION_ML_STOCK, productos_afectados=actualizadas, inicio=inicio, errores=errores)
         db.commit()
     except Exception as err:  # noqa: BLE001 — best effort a propósito
         db.rollback()
         logger.error("No se pudo sincronizar el stock con Mercado Libre (store_id=%s): %s", store.id, err)
+        registrar_fallo(db, store.id, DIRECCION_ML_STOCK, f"No se pudo actualizar el stock en Mercado Libre ({err.__class__.__name__}).")
         return None
     finally:
         if adapter is not None:

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters.mercadolibre import MercadoLibreAdapter, MercadoLibreAuthError, MercadoLibreRequestError
 from app.db.models import MarketplaceAccount, MarketplaceListing
+from app.services.sync_registro import DIRECCION_ML_COSTOS_ENVIO, registrar_fallo, registrar_sincronizacion
 from app.domain.ml_shipping import (
     MOTIVO_ITEM_INEXISTENTE,
     MOTIVO_SIN_ACCESO,
@@ -114,11 +115,23 @@ async def sincronizar_costos_envio(
     listings: list[MarketplaceListing] | None = None,
 ) -> dict:
     listings = publicaciones_a_sincronizar(db, account) if listings is None else listings
+    inicio = datetime.now()
     conteo = {OBTENIDO: 0, NO_DISPONIBLE: 0, ERROR_TEMPORAL: 0}
+    errores: list[tuple[int | None, str]] = []
     for listing in listings:
         if not listing.external_listing_id:
             continue
-        conteo[await actualizar_costo_envio(account, adapter, access_token, listing)] += 1
+        resultado = await actualizar_costo_envio(account, adapter, access_token, listing)
+        conteo[resultado] += 1
+        if resultado == ERROR_TEMPORAL:
+            variant_id = listing.variants[0].variant_id if listing.variants else None
+            errores.append((variant_id, f"No se pudo consultar el costo de envío de {listing.external_listing_id}: Mercado Libre no respondió."))
+    if sum(conteo.values()):
+        # "No disponible" es una respuesta válida de ML, no un error.
+        registrar_sincronizacion(
+            db, account.store_id, direccion=DIRECCION_ML_COSTOS_ENVIO,
+            productos_afectados=conteo[OBTENIDO] + conteo[NO_DISPONIBLE], inicio=inicio, errores=errores,
+        )
     db.commit()
     return {
         "publicacionesRevisadas": sum(conteo.values()),
@@ -154,6 +167,7 @@ async def sincronizar_costos_envio_de_la_cuenta(
     except Exception as err:  # noqa: BLE001 — best effort a propósito
         db.rollback()
         logger.error("No se pudo sincronizar el costo de envío de Mercado Libre (store_id=%s): %s", account.store_id, err)
+        registrar_fallo(db, account.store_id, DIRECCION_ML_COSTOS_ENVIO, f"No se pudo sincronizar el costo de envío con Mercado Libre ({err.__class__.__name__}).")
         return None
     finally:
         if adapter is not None:

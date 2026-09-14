@@ -19,8 +19,10 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
       logueado como admin con ventas reales (hoy hay 0 órdenes).
 - [x] Sección **"Clientes que necesitan atención"** — hecha 14 sept 2026 (ver PROGRESS.md).
       Falta solo verla logueado como admin en el navegador.
-- [ ] Devoluciones/errores de sincronización por empresa: hoy no hay modelo de errores
-      por tienda (solo logs de servidor). No inventar; construir el modelo si se necesita.
+- [x] Errores de sincronización por empresa — hecho 14 sept 2026: se registran en
+      `SyncJob`/`SyncLog` (ya existían, nadie escribía) y el admin los ve (atención + detalle).
+- [ ] Devoluciones por empresa: hoy Mercado Libre solo nos entrega "cancelado"; las
+      devoluciones vienen por la API de reclamos (claims), no importada. No inventar.
 
 ## Deploy (día del despliegue, ver backend/DEPLOY.md)
 - [ ] **Servicio de mail** (Resend/SendGrid) + `noreply` para los recordatorios de

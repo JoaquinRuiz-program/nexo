@@ -138,6 +138,17 @@ catálogo (52).
     (`RESEND_API_KEY` + `EMAIL_FROM`; sin ellas, al log) — si Resend rechaza, el recordatorio
     no se marca como enviado y se reintenta al día siguiente. DEPLOY.md con los pasos de
     cuentas (dominio, Supabase pooler en modo sesión, Resend, Blueprint, DNS, ML).
+17. **Errores de sincronización visibles para el admin** (14 sept 2026, sin commitear) —
+    `services/sync_registro.py` escribe en `SyncJob`/`SyncLog` (existían desde el esquema
+    inicial, sin uso): importar ventas (fallos de ML + avisos de SKU fuera del catálogo y
+    stock reservado insuficiente), costos de envío (errores temporales por publicación) y
+    stock (rechazos de ML). "Clientes que necesitan atención" suma el motivo "N errores de
+    sincronización (últimos 7 días)" y el detalle del cliente muestra las últimas 10.
+18. **Margen venta − compra visible** (14 sept 2026, sin commitear) — el dueño no veía en
+    ningún lado el margen simple de su Excel: `/api/productos` ahora trae `costo`,
+    `margenClp`, `margenPct`; la lista de Productos muestra Costo y Margen; el detalle del
+    producto, Oportunidades y el importador muestran "Venta − compra" junto a la ganancia
+    neta de ML.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

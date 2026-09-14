@@ -182,3 +182,22 @@ async def test_item_inexistente_queda_no_disponible_y_un_token_invalido_corta(db
 
     with pytest.raises(MercadoLibreAuthError):
         await sincronizar_costos_envio(db, cuenta, _AdapterFalso(items={"MLC9": MercadoLibreAuthError("token vencido", 401)}, costos={}), "token")
+
+
+@pytest.mark.asyncio
+async def test_sincronizar_costos_deja_registro_de_la_sincronizacion_y_sus_errores(db):
+    """14/09/2026 — antes un error temporal quedaba solo en el log del servidor."""
+    from app.db.models import SyncJob
+
+    cuenta, _pubs = _cuenta_con_publicaciones(db, {"MLC1": "active", "MLC4": "active"})
+    adapter = _AdapterFalso(
+        items={"MLC1": ITEM_ME2, "MLC4": MercadoLibreRequestError("Mercado Libre no responde", status=503)},
+        costos={"MLC1": RESPUESTA_COSTO},
+    )
+
+    await sincronizar_costos_envio(db, cuenta, adapter, "token")
+
+    job = db.query(SyncJob).one()
+    assert (job.direction, job.status, job.products_affected, job.store_id) == ("ml_costos_envio", "partial_error", 1, cuenta.store_id)
+    assert [log.level for log in job.logs] == ["error"]
+    assert "MLC4" in job.logs[0].message

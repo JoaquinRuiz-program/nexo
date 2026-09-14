@@ -83,6 +83,7 @@ from app.domain.marketplace_stock import MarketplaceStockError, apply_sale
 from app.domain.ml_fees import LISTING_TYPE_IDS, parse_listing_fees
 from app.domain.token_crypto import TokenEncryptionNotConfigured, decrypt_token, encrypt_token
 from app.services.ml_shipping_sync import sincronizar_costos_envio_de_la_cuenta
+from app.services.sync_registro import DIRECCION_ML_VENTAS, registrar_fallo, registrar_sincronizacion
 
 logger = logging.getLogger(__name__)
 
@@ -421,9 +422,11 @@ async def importar_ventas(db: Session = Depends(get_db), store: Store = Depends(
         # ver adapters/mercadolibre.py) — el detalle completo queda en el
         # log del servidor.
         logger.error("Mercado Libre rechazó la consulta de pedidos para store_id=%s: %s", store.id, err)
+        registrar_fallo(db, store.id, DIRECCION_ML_VENTAS, f"Mercado Libre rechazó la consulta de pedidos (HTTP {err.status}).")
         raise HTTPException(status_code=502, detail="Mercado Libre rechazó la consulta de pedidos. Reconectá la cuenta e intentá de nuevo.") from err
     except MercadoLibreRequestError as err:
         logger.error("No se pudo consultar pedidos de Mercado Libre para store_id=%s: %s", store.id, err)
+        registrar_fallo(db, store.id, DIRECCION_ML_VENTAS, "No se pudieron consultar los pedidos de Mercado Libre (Mercado Libre no respondió).")
         raise HTTPException(status_code=502, detail="No pudimos consultar los pedidos de Mercado Libre en este momento. Intentá de nuevo más tarde.") from err
     finally:
         await adapter.aclose()
@@ -494,6 +497,11 @@ async def importar_ventas(db: Session = Depends(get_db), store: Store = Depends(
         ordenes_nuevas.append(fila["external_order_id"])
 
     account.last_checked_at = ahora
+    registrar_sincronizacion(
+        db, store.id, direccion=DIRECCION_ML_VENTAS, productos_afectados=len(ordenes_nuevas), inicio=ahora,
+        advertencias=[(None, f"Venta de un SKU que no está en el catálogo de Nexo: {sku}") for sku in items_sin_sku_en_catalogo]
+        + [(None, f"El stock reservado para Mercado Libre no alcanzaba para la venta del SKU {sku}") for sku in desajustes_stock_reservado],
+    )
     db.commit()
 
     # Cada sincronización con Mercado Libre refresca también el costo de

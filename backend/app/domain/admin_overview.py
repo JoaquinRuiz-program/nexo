@@ -177,6 +177,7 @@ def motivos_de_atencion(
     cantidad_productos: int,
     tickets_sin_resolver: int,
     hoy: date,
+    errores_sincronizacion: int = 0,
 ) -> list[dict]:
     """Por qué una empresa cliente necesita que el admin la mire. Pura: recibe
     datos reales ya leídos y nunca inventa un motivo. Lista vacía = está bien.
@@ -220,5 +221,14 @@ def motivos_de_atencion(
     if tickets_sin_resolver > 0:
         texto = "1 solicitud de soporte sin resolver" if tickets_sin_resolver == 1 else f"{tickets_sin_resolver} solicitudes de soporte sin resolver"
         agregar("soporte_sin_resolver", "media", texto)
+
+    if errores_sincronizacion > 0:
+        # Errores reales registrados en SyncLog (services/sync_registro.py).
+        texto = (
+            "1 error de sincronización con Mercado Libre (últimos 7 días)"
+            if errores_sincronizacion == 1
+            else f"{errores_sincronizacion} errores de sincronización con Mercado Libre (últimos 7 días)"
+        )
+        agregar("errores_sincronizacion", "media", texto)
 
     return motivos

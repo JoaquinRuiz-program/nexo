@@ -158,6 +158,34 @@ def test_stock_ml_en_lote_actualiza_publicaciones_y_un_error_de_ml_no_deshace_ne
     assert res.status_code == 200, res.text
     assert res.json()["sincronizacionMl"] == {"publicacionesActualizadas": 1, "conError": 1}
     assert {v.id: v.marketplace_stock for v in db_session.query(ProductVariant).all()} == {ok_id: 3, falla_id: 3}
+    # El rechazo de ML queda registrado para el admin (SyncJob/SyncLog), no solo en el log.
+    from app.db.models import SyncJob
+
+    job = db_session.query(SyncJob).one()
+    assert (job.direction, job.status, job.products_affected) == ("ml_stock", "partial_error", 1)
+    assert [log.variant_id for log in job.logs] == [falla_id]
+    assert "MLC2" in job.logs[0].message and "item.available_quantity.invalid" in job.logs[0].message
+
+
+def test_lista_de_productos_trae_costo_y_margen_de_venta_menos_compra(client, db_session, a_store):
+    """14 de septiembre de 2026 — caso real (Excel con "Precio de Compra" y
+    "Precio de Venta Recomendado"): la lista mostraba solo el precio, sin el
+    costo ni el margen que el dueño cargó."""
+    con_costo = Product(store=a_store, internal_sku="DEP-001", name="Zapatilla adidas F50", product_type="simple", created_at=NOW, updated_at=NOW)
+    sin_costo = Product(store=a_store, internal_sku="SIN-COSTO", name="Producto sin costo", product_type="simple", created_at=NOW, updated_at=NOW)
+    db_session.add_all([con_costo, sin_costo])
+    db_session.flush()
+    db_session.add_all([
+        ProductVariant(product=con_costo, store_id=a_store.id, variant_sku="DEP-001", price=74990, cost_price=45000, created_at=NOW, updated_at=NOW),
+        ProductVariant(product=sin_costo, store_id=a_store.id, variant_sku="SIN-COSTO", price=10000, created_at=NOW, updated_at=NOW),
+    ])
+    db_session.commit()
+
+    filas = {f["sku"]: f for f in client.get("/api/productos").json()}
+
+    assert (filas["DEP-001"]["costo"], filas["DEP-001"]["margenClp"], filas["DEP-001"]["margenPct"]) == (45000.0, 29990.0, 39.99)
+    # Sin costo cargado no se inventa ningún margen.
+    assert (filas["SIN-COSTO"]["costo"], filas["SIN-COSTO"]["margenClp"], filas["SIN-COSTO"]["margenPct"]) == (None, None, None)
 
 
 def _producto_simple(db_session, tienda, *, sku, nombre, precio, stock):

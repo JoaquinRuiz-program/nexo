@@ -1008,6 +1008,8 @@ window.LC = window.LC || {};
                   <th class="sortable-th px-3 py-2 font-medium" data-sort="tipo">Tipo</th>
                   <th class="sortable-th px-3 py-2 font-medium" data-sort="stock">Stock</th>
                   <th class="sortable-th px-3 py-2 font-medium text-right" data-sort="precio">Precio</th>
+                  <th class="px-3 py-2 font-medium text-right">Costo</th>
+                  <th class="px-3 py-2 font-medium text-right" title="Precio de venta menos costo de compra (sin comisiones ni envío)">Margen</th>
                   <th class="px-3 py-2 font-medium">Mercado Libre</th>
                   <th class="px-3 py-2 w-10"></th>
                 </tr>
@@ -1119,6 +1121,10 @@ window.LC = window.LC || {};
               <td>${tipoBadge}</td>
               <td><span class="stock-cell"><span class="dot ${ind.dotClass}"></span> ${ind.label}</span></td>
               <td class="text-right font-medium">${formatCLP(r.precio)}</td>
+              <td class="text-right text-slate-500 dark:text-slate-400">${r.costo != null ? formatCLP(r.costo) : "—"}</td>
+              <td class="text-right whitespace-nowrap">${r.margenClp != null
+                ? `<span class="font-medium ${r.margenClp < 0 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}">${formatCLP(r.margenClp)}</span>${r.margenPct != null ? `<span class="text-xs text-slate-400 ml-1">${r.margenPct.toFixed(1)}%</span>` : ""}`
+                : `<span class="text-xs text-slate-400" title="Falta el costo de compra">—</span>`}</td>
               <td>${celdaEstadoPublicacion(r.estadoPublicacionMercadoLibre)}</td>
               <td class="relative">
                 <button class="row-menu-btn" data-menu="${r.id}">⋯</button>
@@ -1241,6 +1247,7 @@ window.LC = window.LC || {};
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
           <div><p class="stat-label">Costo de compra</p><p class="text-lg font-semibold mt-1">${rentabilidad.costo != null ? formatCLP(rentabilidad.costo) : "Sin registrar"}</p></div>
+          <div><p class="stat-label">Margen (venta − compra)</p><p class="text-lg font-semibold mt-1 ${rentabilidad.margenTiendaClp != null && rentabilidad.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${rentabilidad.margenTiendaClp != null ? `${formatCLP(rentabilidad.margenTiendaClp)}${rentabilidad.margenTiendaPct != null ? ` <span class="text-sm font-normal text-slate-400">${rentabilidad.margenTiendaPct.toFixed(1)}%</span>` : ""}` : "—"}</p></div>
           <div><p class="stat-label">Ganancia neta ML</p><p class="text-lg font-semibold mt-1 ${rentabilidad.margenMercadoLibreClp != null && rentabilidad.margenMercadoLibreClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${rentabilidad.margenMercadoLibreClp != null ? formatCLP(rentabilidad.margenMercadoLibreClp) : "—"}</p></div>
           <div><p class="stat-label">Margen neto ML</p><p class="text-lg font-semibold mt-1">${rentabilidad.margenMercadoLibrePct != null ? `${rentabilidad.margenMercadoLibrePct.toFixed(1)}%` : "—"}</p></div>
           <div><p class="stat-label">Mercado Libre</p><p class="text-lg font-semibold mt-1">${rentabilidad.mercadoLibreConfigurado ? "Configurado" : "Sin configurar"}</p></div>
@@ -2256,7 +2263,7 @@ window.LC = window.LC || {};
         </td>
         <td class="px-3 py-2.5 text-right">${p.precio != null ? formatCLP(p.precio) : "—"}</td>
         <td class="px-3 py-2.5 text-right">${p.costo != null ? formatCLP(p.costo) : "—"}</td>
-        <td class="px-3 py-2.5 text-right font-medium ${p.margenMercadoLibreClp != null && p.margenMercadoLibreClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${p.margenMercadoLibreClp != null ? formatCLP(p.margenMercadoLibreClp) : "—"}${p.rentabilidadMlProvisional ? `<p class="text-xs font-normal text-slate-400">Provisional</p>` : ""}</td>
+        <td class="px-3 py-2.5 text-right font-medium ${p.margenMercadoLibreClp != null && p.margenMercadoLibreClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${p.margenMercadoLibreClp != null ? formatCLP(p.margenMercadoLibreClp) : "—"}${p.rentabilidadMlProvisional ? `<p class="text-xs font-normal text-slate-400">Provisional</p>` : ""}${p.margenTiendaClp != null ? `<p class="text-xs font-normal text-slate-500 dark:text-slate-400 whitespace-nowrap">Venta − compra: ${formatCLP(p.margenTiendaClp)}${p.margenTiendaPct != null ? ` (${p.margenTiendaPct.toFixed(1)}%)` : ""}</p>` : ""}</td>
         <td class="px-3 py-2.5 text-right">${p.margenMercadoLibrePct != null ? `${p.margenMercadoLibrePct.toFixed(1)}%` : "—"}</td>
         <td class="px-3 py-2.5 text-right text-xs text-slate-500 dark:text-slate-400">${escapeHtml(comisionMlTexto(p.comisionMlReal))}</td>
         ${celdaEnvioMl(p)}

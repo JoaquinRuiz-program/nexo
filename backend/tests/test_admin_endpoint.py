@@ -947,6 +947,35 @@ def test_overview_atencion_omite_clientes_suspendidos(client, db_session):
     assert client.get("/api/admin/overview", params={"periodo": "todo"}).json()["atencion"] == []
 
 
+def test_atencion_y_detalle_del_cliente_muestran_errores_de_sincronizacion_reales(client, db_session):
+    from app.db.models import SyncJob, SyncLog
+
+    _u, tienda = _crear_empresa(db_session, email="sync@at.cl", nombre_empresa="Con errores de sync", con_producto=True, con_ml_conectado=True)
+    _suscripcion(db_session, tienda, status="active", vence=date.today() + timedelta(days=30))
+    ahora = datetime.now()
+    reciente = SyncJob(store=tienda, direction="ml_stock", triggered_by="manual", started_at=ahora, finished_at=ahora, status="partial_error", products_affected=1)
+    viejo = SyncJob(store=tienda, direction="ml_costos_envio", triggered_by="manual", started_at=ahora - timedelta(days=30), finished_at=ahora - timedelta(days=30), status="error", products_affected=0)
+    db_session.add_all([reciente, viejo])
+    db_session.flush()
+    db_session.add_all([
+        SyncLog(job=reciente, level="error", message="Mercado Libre no aceptó el stock de MLC2 (HTTP 400).", created_at=ahora),
+        SyncLog(job=viejo, level="error", message="Error de hace un mes", created_at=ahora - timedelta(days=30)),
+    ])
+    db_session.commit()
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    atencion = client.get("/api/admin/overview", params={"periodo": "todo"}).json()["atencion"]
+    fila = next(e for e in atencion if e["nombre"] == "Con errores de sync")
+    motivos = {m["codigo"]: m for m in fila["motivos"]}
+    # Solo cuenta el error de los últimos 7 días, nunca el de hace un mes.
+    assert motivos["errores_sincronizacion"]["texto"] == "1 error de sincronización con Mercado Libre (últimos 7 días)"
+
+    detalle = client.get(f"/api/admin/clientes/{tienda.id}").json()
+    assert [s["direccion"] for s in detalle["sincronizaciones"]] == ["ml_stock", "ml_costos_envio"]  # la más reciente primero
+    assert detalle["sincronizaciones"][0]["detalle"] == [{"nivel": "error", "mensaje": "Mercado Libre no aceptó el stock de MLC2 (HTTP 400)."}]
+
+
 def test_motivos_de_atencion_gracia_y_pago_pendiente():
     hoy = date(2026, 9, 14)
     en_gracia = motivos_de_atencion(sub_status="trialing", current_period_end=hoy - timedelta(days=2), ml_status="connected",

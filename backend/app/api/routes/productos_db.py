@@ -48,6 +48,7 @@ from app.domain.image_storage import (
 )
 from app.domain.listing_validation import gtin_checksum_valido
 from app.domain.marketplace_stock import set_manual_stock
+from app.domain.profitability import gross_margin, gross_margin_pct
 from app.services.ml_stock_sync import sincronizar_stock_ml
 
 router = APIRouter(prefix="/api/productos", tags=["productos-bd"])
@@ -96,13 +97,21 @@ def _estado_gtin(variante: ProductVariant) -> str:
 
 
 def build_producto_fila(producto: Product, variante: ProductVariant) -> dict:
+    precio = float(variante.price) if variante.price is not None else None
+    costo = float(variante.cost_price) if variante.cost_price is not None else None
     return {
         "id": variante.id,
         "sku": variante.variant_sku or "",
         "nombre": f"{producto.name} - {variante.variant_label}" if variante.variant_label else producto.name,
         "categoria": producto.category,
         "tipo": producto.product_type,
-        "precio": float(variante.price) if variante.price is not None else None,
+        "precio": precio,
+        # 14 de septiembre de 2026 — costo de compra y margen simple (venta −
+        # compra, sin comisión ni envío). None si falta alguno: nunca se asume
+        # un costo de $0 (domain/profitability.py).
+        "costo": costo,
+        "margenClp": gross_margin(precio, costo),
+        "margenPct": gross_margin_pct(precio, costo),
         "stockQuantity": variante.stock_quantity,
         "gestionaStock": variante.manage_stock,
         "estadoStock": variante.stock_status,

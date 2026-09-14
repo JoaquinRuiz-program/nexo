@@ -29,6 +29,10 @@ window.LC = window.LC || {};
   const SOPORTE_ESTADO_LABEL = { abierto: "Abierto", en_revision: "En revisión", resuelto: "Resuelto", cerrado: "Cerrado" };
   const SOPORTE_ESTADO_CLASE = { abierto: "reco-activo", en_revision: "reco-trial", resuelto: "reco-rentable", cerrado: "reco-pendiente_configuracion" };
   const ESTADO_SUSCRIPCION_LABEL = { trialing: "Prueba gratuita", active: "Activa", past_due: "Pago pendiente", canceled: "Cancelada", expired: "Vencida" };
+  // Historial real de sincronizaciones con Mercado Libre (14 de septiembre de 2026).
+  const SYNC_DIRECCION_LABEL = { ml_importar_ventas: "Importar ventas", ml_costos_envio: "Costos de envío", ml_stock: "Stock" };
+  const SYNC_ESTADO_LABEL = { success: "Correcto", partial_error: "Con errores", error: "Error", running: "En curso" };
+  const SYNC_ESTADO_CLASE = { success: "reco-activo", partial_error: "reco-pendiente_configuracion", error: "reco-suspendido", running: "reco-trial" };
 
   async function render(main, storeId) {
     if (storeId === "usuarios") await renderUsuarios(main);
@@ -653,6 +657,27 @@ window.LC = window.LC || {};
               <div class="flex justify-between"><span class="text-slate-500 dark:text-slate-400">Última sincronización</span><span>${c.mercadoLibre.ultimaSincronizacion ? formatDate(new Date(c.mercadoLibre.ultimaSincronizacion)) : "—"}</span></div>
             </div>
           ` : `<p class="text-sm text-slate-500 dark:text-slate-400">No conectó Mercado Libre todavía.</p>`}
+        </div>
+
+        <div class="panel-card mb-5">
+          <h3 class="panel-title mb-1">Sincronizaciones con Mercado Libre</h3>
+          <p class="panel-subtitle mb-3">Últimas 10 (importar ventas, costos de envío y stock), con los errores reales que devolvió Mercado Libre.</p>
+          ${(c.sincronizaciones || []).length ? `
+            <div class="table-wrap"><table class="w-full text-sm">
+              <thead><tr class="text-left border-b border-slate-200 dark:border-slate-700"><th class="px-3 py-2 font-medium">Fecha</th><th class="px-3 py-2 font-medium">Qué</th><th class="px-3 py-2 font-medium">Estado</th><th class="px-3 py-2 font-medium">Detalle</th></tr></thead>
+              <tbody>
+                ${c.sincronizaciones.map((s) => `
+                  <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0 align-top">
+                    <td class="px-3 py-2.5 whitespace-nowrap">${formatDate(new Date(s.inicio))}</td>
+                    <td class="px-3 py-2.5">${escapeHtml(SYNC_DIRECCION_LABEL[s.direccion] || s.direccion)}</td>
+                    <td class="px-3 py-2.5"><span class="reco-badge ${SYNC_ESTADO_CLASE[s.estado] || "reco-pendiente_configuracion"} !text-xs !py-1">${escapeHtml(SYNC_ESTADO_LABEL[s.estado] || s.estado)}</span></td>
+                    <td class="px-3 py-2.5 text-xs text-slate-500 dark:text-slate-400">${s.detalle.length
+                      ? s.detalle.map((d) => `<p class="${d.nivel === "error" ? "text-red-600 dark:text-red-400" : ""}">${escapeHtml(d.mensaje)}</p>`).join("")
+                      : `${s.productosAfectados} producto(s)`}</td>
+                  </tr>`).join("")}
+              </tbody>
+            </table></div>
+          ` : `<p class="text-sm text-slate-500 dark:text-slate-400">Todavía no hay sincronizaciones registradas.</p>`}
         </div>
 
         <div class="panel-card mb-5">

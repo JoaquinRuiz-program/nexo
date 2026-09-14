@@ -53,6 +53,8 @@ from app.db.models import (
     StoreSettings,
     Subscription,
     SupportTicket,
+    SyncJob,
+    SyncLog,
     User,
 )
 from app.db.models.support import ESTADOS_VALIDOS as ESTADOS_SOPORTE_VALIDOS
@@ -362,6 +364,8 @@ def overview(
 
 # Una solicitud de soporte "sin resolver" todavía espera algo del admin.
 _ESTADOS_TICKET_SIN_RESOLVER = ("abierto", "en_revision")
+# Ventana de errores de sincronización que se muestran como motivo de atención.
+_DIAS_ERRORES_SINCRONIZACION = 7
 
 
 def _clientes_que_necesitan_atencion(db: Session, empresas_scope: list[int], hoy: date) -> list[dict]:
@@ -374,6 +378,12 @@ def _clientes_que_necesitan_atencion(db: Session, empresas_scope: list[int], hoy
                db.query(SupportTicket.store_id, func.count(SupportTicket.id))
                .filter(SupportTicket.store_id.in_(empresas_scope), SupportTicket.status.in_(_ESTADOS_TICKET_SIN_RESOLVER))
                .group_by(SupportTicket.store_id).all()}
+    desde_errores = datetime.now() - timedelta(days=_DIAS_ERRORES_SINCRONIZACION)
+    errores_sync = {sid: int(c) for sid, c in
+                    db.query(SyncJob.store_id, func.count(SyncLog.id))
+                    .join(SyncLog, SyncLog.sync_job_id == SyncJob.id)
+                    .filter(SyncJob.store_id.in_(empresas_scope), SyncLog.level == "error", SyncLog.created_at >= desde_errores)
+                    .group_by(SyncJob.store_id).all()}
     tiendas = (
         db.query(Store).join(User, Store.owner_user_id == User.id)
         .filter(Store.id.in_(empresas_scope), User.status != "suspended").all()
@@ -389,6 +399,7 @@ def _clientes_que_necesitan_atencion(db: Session, empresas_scope: list[int], hoy
             cantidad_productos=productos.get(tienda.id, 0),
             tickets_sin_resolver=tickets.get(tienda.id, 0),
             hoy=hoy,
+            errores_sincronizacion=errores_sync.get(tienda.id, 0),
         )
         if motivos:
             severidad = min((m["severidad"] for m in motivos), key=SEVERIDAD_ORDEN.__getitem__)
@@ -659,6 +670,19 @@ def detalle_cliente(store_id: int, db: Session = Depends(get_db), _admin: User =
         .all()
     )
 
+    # 14 de septiembre de 2026 — historial real de sincronizaciones con
+    # Mercado Libre (services/sync_registro.py), con los errores/avisos que
+    # devolvió cada una. Nunca tokens: solo los mensajes registrados.
+    filas_sincronizaciones = [{
+        "id": job.id,
+        "direccion": job.direction,
+        "inicio": job.started_at.isoformat(),
+        "fin": job.finished_at.isoformat() if job.finished_at else None,
+        "estado": job.status,
+        "productosAfectados": job.products_affected,
+        "detalle": [{"nivel": log.level, "mensaje": log.message} for log in job.logs if log.level in ("error", "warning")][:20],
+    } for job in db.query(SyncJob).filter_by(store_id=tienda.id).order_by(SyncJob.started_at.desc(), SyncJob.id.desc()).limit(10).all()]
+
     return {
         "storeId": tienda.id,
         "nombre": tienda.name,
@@ -684,6 +708,7 @@ def detalle_cliente(store_id: int, db: Session = Depends(get_db), _admin: User =
             "solicitudes": [_fila_soporte_admin(t) for t in tickets_soporte],
         },
         "cantidadUsuarios": 1,  # ver comentario de "usuarios" más arriba
+        "sincronizaciones": filas_sincronizaciones,
         "mercadoLibre": None if cuenta_ml is None else {
             # Nunca access_token_encrypted/refresh_token_encrypted — ni
             # siquiera el hecho de que existan como campo en la respuesta.

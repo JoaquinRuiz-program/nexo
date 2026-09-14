@@ -437,7 +437,7 @@ window.LC = window.LC || {};
                   </td>
                   <td class="px-3 py-2.5 text-right">${formatCLPReal(p.precio)}</td>
                   <td class="px-3 py-2.5 text-right">${formatCLPReal(p.costo)}</td>
-                  <td class="px-3 py-2.5 text-right font-medium ${margenClpDe(p) != null && margenClpDe(p) < 0 ? "text-red-600 dark:text-red-400" : ""}">${formatCLPReal(margenClpDe(p))}${p.rentabilidadMlProvisional ? `<p class="text-xs font-normal text-slate-400" title="${escapeHtml(p.envioMlMotivo || "")}">Provisional · envío no disponible</p>` : ""}</td>
+                  <td class="px-3 py-2.5 text-right font-medium ${margenClpDe(p) != null && margenClpDe(p) < 0 ? "text-red-600 dark:text-red-400" : ""}">${formatCLPReal(margenClpDe(p))}${p.rentabilidadMlProvisional ? `<p class="text-xs font-normal text-slate-400" title="${escapeHtml(p.envioMlMotivo || "")}">Provisional · envío no disponible</p>` : ""}${p.margenTiendaClp != null ? `<p class="text-xs font-normal text-slate-500 dark:text-slate-400 whitespace-nowrap">Venta − compra: ${formatCLPReal(p.margenTiendaClp)}${p.margenTiendaPct != null ? ` (${formatPct(p.margenTiendaPct)})` : ""}</p>` : ""}</td>
                   <td class="px-3 py-2.5 text-right">${formatPct(margenPctDe(p))}</td>
                   <td class="px-3 py-2.5">
                     ${p.tipoPublicacionRecomendadoLabel
