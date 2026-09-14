@@ -238,7 +238,24 @@ async def _aplicar_pago_confirmado(db: Session, *, store_id: int, plan_code: str
     else:
         sub.mercadopago_preapproval_id = mercadopago_id
         sub.mercadopago_last_payment_id = mercadopago_id
+    # 13 de septiembre de 2026 — al pagar, el ciclo de vida empieza limpio:
+    # se olvida el ultimo recordatorio y la marca de pausa, para que si
+    # vuelve a vencer mas adelante los recordatorios arranquen de cero.
+    sub.ultimo_hito_recordatorio = None
+    sub.publicaciones_pausadas_por_vencimiento = False
     db.commit()
+
+    # Reactivar las publicaciones que Nexo habia pausado por vencimiento
+    # (solo esas, ver app/services/lifecycle.py). Tolerante: si Mercado
+    # Libre falla ahora, el pago ya quedo aplicado igual.
+    try:
+        from app.services.lifecycle import reactivar_publicaciones_por_pago
+        reactivadas = await reactivar_publicaciones_por_pago(db, store, get_settings())
+        if reactivadas:
+            db.commit()
+            logger.info("Reactivadas %s publicaciones de store_id=%s tras el pago", reactivadas, store_id)
+    except Exception as err:  # noqa: BLE001
+        logger.error("Pago aplicado pero no se pudieron reactivar las publicaciones de store_id=%s: %r", store_id, err)
 
 
 async def _aplicar_cancelacion(db: Session, *, store_id: int) -> None:

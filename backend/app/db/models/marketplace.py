@@ -116,6 +116,10 @@ class MarketplaceListing(Base):
     family_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # not_published | active | paused | closed
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="not_published")
+    # 13 de septiembre de 2026 — esta publicacion fue pausada por el
+    # VENCIMIENTO del plan, no por el cliente a mano. Al pagar solo se
+    # reactivan estas (ver app/domain/subscription_lifecycle.py).
+    paused_by_expiry: Mapped[bool] = mapped_column(default=False, server_default="0")
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

@@ -115,6 +115,22 @@ def limite_alcanzado(cantidad_actual: int, limite: int | None) -> bool:
     return limite is not None and cantidad_actual >= limite
 
 
+def _vigencia_publica(sub) -> dict:  # noqa: ANN001 - Subscription
+    """Estado efectivo por fecha + cuando se pausa, para la pantalla del
+    cliente. Solo aplica a trial/past_due; una `active` siempre es vigente."""
+    from datetime import date
+    from app.domain.subscription_lifecycle import (
+        DatosVigencia, estado_efectivo, fecha_de_pausa, dias_hasta_la_pausa,
+    )
+    vig = DatosVigencia(status=sub.status, current_period_end=sub.current_period_end, ultimo_hito_recordatorio=sub.ultimo_hito_recordatorio)
+    efectivo = estado_efectivo(vig, date.today())
+    return {
+        "estado": efectivo,  # vigente | en_gracia | vencida
+        "fechaPausa": fecha_de_pausa(vig).isoformat(),
+        "diasHastaPausa": dias_hasta_la_pausa(vig, date.today()),
+    }
+
+
 def resumen_suscripcion(db: Session, store: Store) -> dict:
     """Único lugar que arma "plan + estado + uso" de una empresa — lo usan
     tanto GET /api/suscripcion (pantalla "Mi plan") como GET
@@ -154,6 +170,10 @@ def resumen_suscripcion(db: Session, store: Store) -> dict:
         "cicloFacturacion": sub.billing_cycle,
         "fechaInicio": sub.started_at.isoformat(),
         "fechaRenovacion": sub.current_period_end.isoformat(),
+        # 13 de septiembre de 2026 — vigencia efectiva por fecha, para que
+        # "Mi plan" muestre la gracia y la fecha de pausa (ver
+        # app/domain/subscription_lifecycle.py).
+        "vigencia": _vigencia_publica(sub),
         "ultimoPagoEn": sub.last_payment_at.isoformat() if sub.last_payment_at else None,
         "uso": {"productos": cantidad_productos, "publicaciones": cantidad_publicaciones},
     }

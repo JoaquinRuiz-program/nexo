@@ -54,6 +54,7 @@ from app.domain.listing_validation import (
 )
 from app.domain.ml_error_messages import mensaje_amigable_error_publicacion
 from app.domain.plans import limite_alcanzado
+from app.domain.subscription_lifecycle import VENCIDA, DatosVigencia, estado_efectivo
 from app.domain.ml_listing_payload import PayloadPublicacion, construir_payload_publicacion
 from app.domain.ml_fees import resolver_listing_type
 from app.domain.ml_seller_capabilities import es_user_product_seller
@@ -1086,9 +1087,27 @@ async def preview_publicacion_mercadolibre(
     payload que /confirmar — pero nunca llega a POST /items. Para poder
     inspeccionar el payload real antes de autorizar la publicación (30 de
     agosto de 2026, ver PARTE 5/7 de la auditoría de User Products)."""
+    _verificar_plan_vigente(store)
     resolucion, adapter = await _resolver_publicacion(db, store, variant_id, body)
     await adapter.aclose()
     return _preview_sanitizado(resolucion)
+
+
+def _verificar_plan_vigente(store: Store) -> None:
+    """13 de septiembre de 2026 — un plan vencido (pasada la gracia) no puede
+    publicar ni reactivar en Mercado Libre. La vigencia se calcula por fecha
+    (ver app/domain/subscription_lifecycle.py), no por un `status` que puede
+    estar viejo si el proceso diario no corrio todavia."""
+    from datetime import date
+    sub = store.subscription
+    if sub is None:
+        return
+    vig = DatosVigencia(status=sub.status, current_period_end=sub.current_period_end, ultimo_hito_recordatorio=sub.ultimo_hito_recordatorio)
+    if estado_efectivo(vig, date.today()) == VENCIDA:
+        raise HTTPException(
+            status_code=403,
+            detail="Tu plan venció y el período de gracia terminó. Renová tu plan en \"Mi plan\" para volver a publicar en Mercado Libre.",
+        )
 
 
 @router.post("/{variant_id}/mercadolibre/confirmar")
@@ -1502,6 +1521,7 @@ async def pausar_publicacion_mercadolibre(
 async def reactivar_publicacion_mercadolibre(
     variant_id: int, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
 ) -> dict:
+    _verificar_plan_vigente(store)
     return await _cambiar_estado_publicacion(db, store, variant_id, estado_ml_nuevo="active", accion="reactivar")
 
 

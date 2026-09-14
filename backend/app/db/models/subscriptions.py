@@ -56,6 +56,14 @@ class Subscription(Base):
     current_period_end: Mapped[date] = mapped_column(Date, nullable=False)
     canceled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # 13 de septiembre de 2026 — ciclo de vida (ver
+    # app/domain/subscription_lifecycle.py). El ultimo recordatorio (5/3/1)
+    # ya avisado, para no repetir el mismo mail; NULL = ninguno.
+    ultimo_hito_recordatorio: Mapped[int | None] = mapped_column(nullable=True)
+    # Marca idempotente de que ya se corrio la pausa real en Mercado Libre
+    # por vencimiento — para no volver a llamar a la API en cada corrida.
+    publicaciones_pausadas_por_vencimiento: Mapped[bool] = mapped_column(default=False, server_default="0")
+
     # Reservado para integrar Stripe u otro proveedor más adelante — no se
     # usa todavía (pagos reales fuera de alcance de esta fase).
     stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
