@@ -114,8 +114,12 @@ window.LC = window.LC || {};
         toast("error", "Completa el asunto y la descripción.");
         return;
       }
+      // QA fase 2 (15/09/2026): un doble clic enviaba la solicitud dos veces.
+      const boton = ev.target.querySelector('button[type="submit"]');
+      boton.disabled = true;
       const res = await LC.backendApi.crearSolicitudSoporte({ category, subject, description, reference });
       if (!res.ok) {
+        boton.disabled = false;
         toast("error", res.error.mensaje);
         return;
       }

@@ -17,6 +17,7 @@ lo nuevo o lo que cambió de precio.
 from __future__ import annotations
 
 import logging
+import random
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -57,7 +58,9 @@ async def actualizar_comisiones_reales(
     productos_sin_categoria: list[str] = []
     categorias: dict[int, str] = {}
     predicciones: dict[int, dict] = {}
-    for producto_id, nombre, categoria, _precios in productos_con_precio:
+    # Orden al azar: con el tope por corrida, los productos cuya categoría nunca
+    # se puede predecir no bloquean para siempre a los demás (QA fase 2).
+    for producto_id, nombre, categoria, _precios in random.sample(productos_con_precio, len(productos_con_precio)):
         if categoria:
             categorias[producto_id] = categoria
             continue
@@ -143,7 +146,10 @@ async def _solo_predecir_categorias(db: Session, store_id: int, settings) -> dic
     Igual que arriba: nunca con la conexión de la base tomada mientras espera."""
     from app.api.routes.mercadolibre import _build_ml_config
 
-    productos = [(p.id, p.name) for p in db.query(Product).filter(Product.store_id == store_id, Product.ml_category_id.is_(None)).limit(MAX_PREDICCIONES_POR_CORRIDA).all()]
+    # Al azar entre los que siguen sin categoría: si algunos nunca se pueden
+    # predecir, no bloquean para siempre a los demás (QA fase 2, 15/09/2026).
+    pendientes = db.query(Product.id, Product.name).filter(Product.store_id == store_id, Product.ml_category_id.is_(None)).all()
+    productos = random.sample(pendientes, min(len(pendientes), MAX_PREDICCIONES_POR_CORRIDA))
     db.rollback()  # libera la conexión antes de llamar a Mercado Libre
     if not productos:
         return {"productosConCategoriaNueva": 0, "productosSinCategoriaDetectada": []}

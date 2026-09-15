@@ -38,10 +38,21 @@ class CrearSolicitudRequest(BaseModel):
 
     @field_validator("subject", "description")
     @classmethod
-    def _no_vacio(cls, v: str) -> str:
+    def _no_vacio(cls, v: str, info) -> str:  # noqa: ANN001
         v = (v or "").strip()
         if not v:
             raise ValueError("Este campo no puede estar vacío.")
+        # QA fase 2 (15/09/2026): se aceptaba un asunto de 200.000 caracteres
+        # (la columna es de 200) y una descripción sin tope.
+        if len(v) > (200 if info.field_name == "subject" else 10_000):
+            raise ValueError("Este campo es demasiado largo.")
+        return v
+
+    @field_validator("reference")
+    @classmethod
+    def _referencia_corta(cls, v: str | None) -> str | None:
+        if v is not None and len(v.strip()) > 200:
+            raise ValueError("La referencia es demasiado larga.")
         return v
 
 
@@ -74,6 +85,20 @@ def crear_solicitud(
     usuario: User = Depends(get_current_user),
 ) -> dict:
     ahora = datetime.now()
+    # QA fase 2 (15/09/2026): un doble clic (o reintentar) creaba varias
+    # solicitudes iguales. La misma solicitud dentro del último minuto se
+    # devuelve en vez de duplicarse.
+    repetida = (
+        db.query(SupportTicket)
+        .filter(
+            SupportTicket.store_id == store.id, SupportTicket.user_id == usuario.id,
+            SupportTicket.subject == body.subject.strip(), SupportTicket.description == body.description.strip(),
+            SupportTicket.created_at >= datetime.fromtimestamp(ahora.timestamp() - 60),
+        )
+        .first()
+    )
+    if repetida is not None:
+        return _fila(repetida)
     ticket = SupportTicket(
         store=store,
         user=usuario,

@@ -92,6 +92,9 @@ def guardar_datos_generales(
     }
 
 
+CANALES_CONFIGURABLES = ("mercadolibre",)
+
+
 class ChannelCostsUpdate(BaseModel):
     commission_pct: float | None = None
     shipping_cost: float | None = None
@@ -140,6 +143,10 @@ def listar_canales(db: Session = Depends(get_db), store: Store = Depends(get_cur
 def configurar_canal(
     channel: str, body: ChannelCostsUpdate, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
 ) -> dict:
+    # QA fase 2 (15/09/2026): cualquier nombre de canal creaba una fila de
+    # configuración ("/canales/chancho"). Hoy Nexo solo calcula Mercado Libre.
+    if channel not in CANALES_CONFIGURABLES:
+        raise HTTPException(status_code=404, detail="Canal no encontrado.")
     # QA fase 2 (15/09/2026): se aceptaba una comisión de -50 % o 1000 %, un
     # envío de 1e308 o un margen objetivo de 150 %, y la rentabilidad de toda la
     # empresa quedaba calculada sobre esos valores. Un porcentaje va de 0 a 100

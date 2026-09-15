@@ -161,7 +161,8 @@ def preparar_publicaciones(
     no_encontrados: list[int] = []
     filas, _ = build_profitability_rows(db, store)
 
-    for variant_id in body.variant_ids:
+    # QA fase 2 (15/09/2026): IDs repetidos devolvían borradores duplicados.
+    for variant_id in dict.fromkeys(body.variant_ids):
         borrador = _build_one(db, store, variant_id, criteria, filas=filas)
         if borrador is None:
             no_encontrados.append(variant_id)

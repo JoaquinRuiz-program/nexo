@@ -60,4 +60,10 @@ def set_manual_stock(new_value: int | None) -> int | None:
     inválido."""
     if new_value is not None and new_value < 0:
         raise ValueError("El stock para Mercado Libre no puede ser negativo.")
+    # QA fase 2 (15/09/2026): se aceptaban valores como 1.000.000.000.000.
+    if new_value is not None and new_value > MAX_STOCK_MANUAL:
+        raise ValueError("El stock para Mercado Libre es demasiado grande.")
     return new_value
+
+
+MAX_STOCK_MANUAL = 1_000_000

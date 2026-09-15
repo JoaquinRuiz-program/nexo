@@ -285,6 +285,12 @@ catálogo (52).
       Oportunidades 9,4 s → 0,7 s, decisión en lote 14,5 s → 1,2 s, Dashboard 9,3 s → 1,2 s.
     - Dos pestañas del admin en "ver como empresa" mostraban la empresa anterior.
     - Textos con voseo que quedaban.
+39. **P3 de la QA fase 2** (15 sept 2026): la misma solicitud de soporte enviada dos veces en
+    un minuto se devuelve en vez de duplicarse (y el botón se desactiva mientras envía);
+    asunto de soporte máx. 200 y descripción máx. 10.000 caracteres; `/preparar` ignora IDs
+    repetidos; solo se puede configurar el canal `mercadolibre`; stock para Mercado Libre
+    máx. 1.000.000; la predicción de categorías elige los productos al azar para que los que
+    nunca se pueden predecir no bloqueen a los demás.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

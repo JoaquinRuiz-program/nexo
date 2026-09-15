@@ -54,6 +54,59 @@ def test_prediccion_de_categorias_respeta_el_tope_por_corrida(db_session, a_stor
     assert len(llamadas) == 2
 
 
+def test_canal_inventado_no_se_puede_configurar(client, a_store):
+    assert client.put("/api/configuracion/canales/chancho", json={"commission_pct": 10}).status_code == 404
+    assert client.get("/api/configuracion/canales").json() == []
+
+
+def test_stock_para_mercado_libre_gigante_se_rechaza(client, db_session, a_store):
+    variant_id = _producto_publicable(db_session, a_store, sku="STOCK-GIGANTE")
+    assert client.put(f"/api/productos/{variant_id}/stock-mercadolibre", json={"cantidad": 10 ** 12}).status_code == 400
+
+
+def test_solicitud_de_soporte_larga_o_repetida(client, a_store):
+    from app.db.models.support import CATEGORIAS_VALIDAS
+
+    base = {"category": CATEGORIAS_VALIDAS[0], "subject": "No puedo importar", "description": "Me da un error"}
+    assert client.post("/api/soporte/solicitudes", json={**base, "subject": "S" * 201}).status_code == 422
+    primera = client.post("/api/soporte/solicitudes", json=base).json()
+    segunda = client.post("/api/soporte/solicitudes", json=base).json()
+    assert primera["id"] == segunda["id"]
+    assert len(client.get("/api/soporte/solicitudes").json()) == 1
+
+
+def test_preparar_con_ids_repetidos_no_duplica_borradores(client, db_session, a_store):
+    variant_id = _producto_publicable(db_session, a_store, sku="PREP-DUP")
+    res = client.post("/api/publicaciones/preparar", json={"variant_ids": [variant_id, variant_id, variant_id], "canal": "mercadolibre"})
+    assert res.status_code == 200
+    assert len(res.json()["borradores"]) == 1
+
+
+def test_productos_sin_categoria_predecible_no_bloquean_a_los_demas(db_session, a_store, monkeypatch):
+    import random
+
+    monkeypatch.setattr(ml_comisiones, "MAX_PREDICCIONES_POR_CORRIDA", 1)
+    random.seed(7)
+    for sku, nombre in (("NO-PREDECIBLE", "zzzz"), ("PREDECIBLE", "Cuaderno universitario")):
+        producto = Product(store=a_store, internal_sku=sku, name=nombre, product_type="simple", created_at=NOW, updated_at=NOW)
+        db_session.add(producto)
+        db_session.flush()
+        db_session.add(ProductVariant(product=producto, store_id=a_store.id, variant_sku=sku, price=5000, created_at=NOW, updated_at=NOW))
+    db_session.commit()
+
+    class AdapterFalso:
+        async def predict_category(self, nombre, site_id):  # noqa: ARG002
+            return None if nombre == "zzzz" else {"categoryId": "MLC180937", "categoryName": "Cuadernos"}
+
+        async def get_listing_fees(self, *args):  # noqa: ARG002
+            return []
+
+    for _ in range(20):
+        asyncio.run(ml_comisiones.actualizar_comisiones_reales(db_session, a_store.id, AdapterFalso(), "token", "MLC"))
+    predecible = db_session.query(Product).filter_by(store_id=a_store.id, internal_sku="PREDECIBLE").one()
+    assert predecible.ml_category_id == "MLC180937"
+
+
 def test_costo_absurdo_o_no_numerico_se_rechaza(client, db_session, a_store):
     variant_id = _producto_publicable(db_session, a_store, sku="COSTO-RARO", costo=3000)
     for cuerpo in ('{"costo": 1e308}', '{"costo": NaN}', '{"costo": Infinity}', '{"costo": 99999999999}'):
