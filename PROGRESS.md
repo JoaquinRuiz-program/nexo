@@ -266,7 +266,9 @@ catálogo (52).
     vacío y `tieneCosto=False`): ganancia = venta − comisión − envío − otros costos, se evalúa
     "¿Conviene?" con la regla de siempre y se publica al precio de venta del Excel. Importar sin
     costo es solo un aviso. Sin costo (o con costo $0) no se calcula "precio para tu margen
-    objetivo". Sin precio de venta queda pendiente (no se inventa precio).
+    objetivo". Sin precio de venta queda pendiente (no se inventa precio) y al intentar
+    publicarlo el bloqueo dice "Todavía no se puede publicar…: Falta el precio de venta"
+    (antes decía "no es rentable").
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

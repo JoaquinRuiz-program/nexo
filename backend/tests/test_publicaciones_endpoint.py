@@ -1865,6 +1865,23 @@ def test_confirmar_producto_no_rentable_bloquea_con_400(client, db_session, a_st
     assert db_session.query(MarketplaceListing).count() == 0
 
 
+def test_confirmar_sin_precio_de_venta_explica_que_falta_el_precio(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+    """15 de septiembre de 2026: sin precio el bloqueo decía "no es rentable";
+    la causa real es que falta el precio de venta."""
+    monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
+    variant_id = _producto_publicable(db_session, a_store, sku="SIN-PRECIO", precio=None, costo=None)
+
+    for ruta in ("confirmar/preview", "confirmar"):
+        res = client.post(
+            f"/api/publicaciones/{variant_id}/mercadolibre/{ruta}",
+            json={"category_id": "MLC180937", "condition": "new", "listing_type": "classic"},
+        )
+        assert res.status_code == 400, ruta
+        assert "no es rentable" not in res.json()["detail"]
+        assert "precio de venta" in res.json()["detail"]
+    assert db_session.query(MarketplaceListing).count() == 0
+
+
 # ------------------------------------------------------------------
 # 31 de agosto de 2026 — cierre de inconsistencia de negocio: el gate de
 # /confirmar ahora respeta el margen mínimo configurado (ChannelCostSettings

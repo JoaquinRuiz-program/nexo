@@ -1070,6 +1070,14 @@ async def _resolver_publicacion(
     # decir cuántas unidades vender. Ahora la rentabilidad se juzga solo por
     # el margen, y el stock se pregunta aparte.
     clasificacion = classify_product(fila, _criterios_conviene_ml(db, store.id))
+    if clasificacion["clasificacion"] == "sin_datos":
+        # 15 de septiembre de 2026 — sin precio de venta (o sin costos de ML
+        # configurados) el bloqueo decía "no es rentable": la causa es un dato
+        # que falta, no la rentabilidad.
+        raise HTTPException(
+            status_code=400,
+            detail=f"Todavía no se puede publicar este producto en Mercado Libre: {clasificacion['razon']}",
+        )
     if clasificacion["clasificacion"] != "rentable":
         raise HTTPException(
             status_code=400,
