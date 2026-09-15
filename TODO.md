@@ -45,6 +45,8 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
       `c9e1a3b5d7f2` solo corre online, que es lo que hace el preDeploy de Render).
 - [ ] Despliegue real: Render (backend) + Supabase (Postgres) + dominio. Reemplaza el
       túnel ngrok por el dominio HTTPS propio en el redirect de OAuth de ML.
-- [ ] **Términos y Condiciones + Privacidad**. Redactar con cuidado: el claim "los
-      admins solo ven números agregados" NO es literal por "ver como empresa" — decirlo
-      con verdad. Considerar Ley 21.719 (diciembre 2026).
+- [ ] **Términos y Condiciones + Privacidad** — borradores hechos 15 sept 2026 en `legal/`
+      (describen lo que el código guarda hoy, incluido el modo soporte "ver como empresa").
+      Falta del dueño: revisión de un abogado (Ley 19.628 y 21.719), completar los
+      `[CORCHETES]` (razón social, RUT, correos, plazos, IVA, reembolsos, responsabilidad) y
+      recién ahí reemplazar `TEXTO_TERMINOS_INTERINO` en `frontend/js/app.js`.

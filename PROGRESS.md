@@ -193,6 +193,10 @@ catálogo (52).
     (`POST /packs/{pack_id}/fiscal_documents`, pack_id de `/orders/{id}` o el ID del pedido) y
     se registra en `order_invoices` (migración `b9d1f3a5c7e9`). Quitar = `DELETE` en ML. Envío
     Full en Chile no admite facturas propias: mensaje claro. Panel en la sección Mercado Libre.
+27. **Borradores legales** (15 sept 2026) — `legal/TERMINOS_DE_SERVICIO_BORRADOR.md` y
+    `legal/POLITICA_DE_PRIVACIDAD_BORRADOR.md`, escritos a partir de lo que el código guarda
+    (sin datos de compradores, tokens cifrados, modo soporte registrado, planes y gracia
+    reales). No publicados: requieren abogado y completar datos de la empresa.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas
