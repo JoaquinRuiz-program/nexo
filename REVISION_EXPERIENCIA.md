@@ -19,12 +19,13 @@ tres pantallas para los 4 perfiles.
 
 ## 1. Críticos — afectan la decisión de qué publicar
 
-1. **La comisión real se ignora por defecto.** Si en Configuración "Comisión real por producto"
-   queda en "Comparar ambas" (el valor por defecto), `elegir_comision_principal` devuelve `None`
-   y todo se calcula con la comisión de respaldo manual, aunque la real esté consultada. Choca
-   con la regla "siempre comisiones reales".
-   *Propuesta:* sin preferencia, usar la comisión real del tipo recomendado (Clásica/Premium) y
-   dejar el % manual solo cuando no hay real.
+> **Estado:** los 8 críticos se corrigieron el 15 de septiembre de 2026 (ver PROGRESS.md #30).
+
+1. **La comisión real no se usaba en todas las pantallas.** Rentabilidad y Oportunidades ya
+   elegían solas Clásica o Premium con la comisión real. Pero "¿Conviene?", el precio
+   recomendado y la decisión en lote recibían la preferencia vacía ("Comparar ambas", el valor
+   por defecto) y calculaban con la comisión de respaldo manual.
+   *Corregido:* las tres usan la misma elección automática (`preferencia_efectiva`).
 2. **El Dashboard contradice a Oportunidades.** "X productos con buena oportunidad de venta" y
    "Rentables" usan venta − compra, sin comisión ni envío. Pyme: 40 "buena oportunidad" en el
    Dashboard vs 6 que convienen en Mercado Libre. Retailer: 814 vs 194.

@@ -338,9 +338,10 @@ window.LC = window.LC || {};
     return resultado.ok;
   }
 
-  async function analizarCatalogo(file) {
+  async function analizarCatalogo(file, mapeo) {
     const form = new FormData();
     form.append("file", file);
+    if (mapeo) form.append("mapeo", JSON.stringify(mapeo));
     return request("/api/catalogo/importar/analizar", { method: "POST", body: form, isFormData: true, timeoutMs: UPLOAD_TIMEOUT_MS });
   }
 

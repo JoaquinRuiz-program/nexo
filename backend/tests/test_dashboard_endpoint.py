@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
-from app.db.models import MarketplaceAccount, Order, Product, ProductVariant, Store, StoreSettings, User
+from app.db.models import ChannelCostSettings, MarketplaceAccount, Order, Product, ProductVariant, Store, StoreSettings, User
 from app.db.session import get_db
 from app.domain.security import hash_password
 from tests.auth_helpers import autenticar
@@ -131,8 +131,12 @@ def test_rentabilidad_distingue_sin_costo_de_cero_rentables(client, db_session, 
     assert body["rentabilidad"]["productosRentables"] is None
 
 
-def test_rentabilidad_cuenta_solo_los_de_margen_positivo(client, db_session, a_store):
-    _producto(db_session, a_store, sku="R1", nombre="Rentable", precio=10000, costo=6000)
+def test_rentabilidad_cuenta_los_que_convienen_en_mercado_libre(client, db_session, a_store):
+    # 15 de septiembre de 2026 — misma regla que Oportunidades: margen neto de
+    # Mercado Libre contra los mínimos por defecto (15 % o $3.000).
+    db_session.add(ChannelCostSettings(store=a_store, channel="mercadolibre", commission_pct=15, updated_at=NOW))
+    db_session.commit()
+    _producto(db_session, a_store, sku="R1", nombre="Rentable", precio=10000, costo=6000)  # 10000-6000-1500 = 2500 (25 %)
     _producto(db_session, a_store, sku="R2", nombre="No rentable", precio=5000, costo=6000)  # margen negativo
     _producto(db_session, a_store, sku="R3", nombre="Sin costo", precio=8000)
 
@@ -141,6 +145,13 @@ def test_rentabilidad_cuenta_solo_los_de_margen_positivo(client, db_session, a_s
     assert rent["totalProductos"] == 3
     assert rent["productosConCosto"] == 2
     assert rent["productosRentables"] == 1
+
+
+def test_rentabilidad_sin_mercado_libre_configurado_no_decide(client, db_session, a_store):
+    _producto(db_session, a_store, sku="S1", nombre="Con costo", precio=10000, costo=6000)
+    rent = client.get("/api/dashboard/resumen").json()["rentabilidad"]
+    assert rent["productosConCosto"] == 1
+    assert rent["productosRentables"] is None
 
 
 def test_ventas_cuenta_pedidos_importados_y_los_de_los_ultimos_30_dias(client, db_session, a_store):

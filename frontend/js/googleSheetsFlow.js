@@ -406,6 +406,7 @@ window.LC = window.LC || {};
           <div><p class="stat-label">Actualizados</p><p class="stat-value stat-value--sm">${r.actualizados}</p></div>
           <div><p class="stat-label">Omitidos</p><p class="stat-value stat-value--sm ${r.omitidos ? "stat-value--warning" : ""}">${r.omitidos}</p></div>
         </div>
+        ${r.limitePlan ? `<p class="text-sm text-amber-600 dark:text-amber-400 mb-4">No importamos ${r.limitePlan.omitidosPorLimite} producto${r.limitePlan.omitidosPorLimite === 1 ? "" : "s"}: llegaste al límite de ${Number(r.limitePlan.limite).toLocaleString("es-CL")} productos de tu plan. <a href="#/suscripcion" class="underline">Ver planes</a></p>` : ""}
         <div class="flex items-center justify-center gap-3">
           <button id="btn-ver-productos-gs" class="btn-primary">Ver productos</button>
           <button id="btn-sincronizar-otra-vez-gs" class="btn-secondary">Sincronizar de nuevo</button>

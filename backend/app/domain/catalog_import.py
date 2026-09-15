@@ -47,15 +47,18 @@ _FIELD_SYNONYMS: dict[str, list[str]] = {
     "nombre": ["nombre", "producto", "descripcioncorta", "articulo", "titulo", "name"],
     "marca": ["marca", "fabricante", "brand"],
     "categoria": ["categoria", "category", "rubro", "tipo", "familia"],
-    "precio": ["precio", "preciodeventa", "precioventa", "valor", "price", "pvp", "venta"],
+    # "vendo"/"vende": planillas informales ("Lo vendo a") — revisión por perfil, 15/09/2026.
+    "precio": ["precio", "preciodeventa", "precioventa", "valor", "price", "pvp", "venta", "vendo", "vende"],
     # "preciocompra"/"preciocosto" tienen que estar acá (no solo
     # "costo"/"costodecompra"): un header como "Precio compra" es costo, no
     # precio de venta, aunque empiece con la palabra "precio" — ver
     # IMPORT_FIELDS más abajo, que procesa "costo" antes que "precio" para
     # que estos sinónimos se reclamen primero y no se los coma el matching
     # parcial (substring) de "precio".
-    "costo": ["costo", "costodecompra", "preciocosto", "preciocompra", "preciodecompra", "cost", "costocompra", "compra"],
-    "stock": ["stock", "cantidad", "existencia", "existencias", "qty", "unidades"],
+    # "compre"/"comprado" ("Lo compré a") y "tengo"/"cuantos" ("Cuántos tengo"):
+    # encabezados informales de un revendedor — revisión por perfil, 15/09/2026.
+    "costo": ["costo", "costodecompra", "preciocosto", "preciocompra", "preciodecompra", "cost", "costocompra", "compra", "compre", "comprado"],
+    "stock": ["stock", "cantidad", "existencia", "existencias", "qty", "unidades", "inventario", "disponible", "tengo", "cuantos"],
     "descripcion": ["descripcion", "description", "detalle", "observacion"],
     "imagen_url": ["imagen", "image", "foto", "picture", "imagenurl", "urlimagen"],
     "codigo_barras": ["codigodebarras", "codigobarras", "ean", "upc", "gtin", "barcode"],
@@ -124,11 +127,11 @@ def detect_columns(headers: list[str], rows: list[dict[str, Any]] | None = None)
                 break
         if not match:
             for syn in synonyms:
-                match = next(
-                    (h for h, norm in normalized if h not in used and syn in norm and not _contradice_intencion(field_name, norm)),
-                    None,
-                )
-                if match:
+                candidatos = [
+                    h for h, norm in normalized if h not in used and syn in norm and not _contradice_intencion(field_name, norm)
+                ]
+                if candidatos:
+                    match = _preferir_candidato(field_name, candidatos)
                     break
         result[field_name] = match
         if match:
@@ -136,8 +139,44 @@ def detect_columns(headers: list[str], rows: list[dict[str, Any]] | None = None)
 
     if rows:
         _detectar_por_contenido(headers, rows, result, used)
+        _nombre_desde_descripcion(rows, result)
 
     return ColumnMapping(mapping=result)
+
+
+# Precio de venta en Mercado Libre: con dos columnas de precio (caso real de
+# un importador: "Precio mayorista" y "Precio retail"), la de venta al público
+# gana y la mayorista queda al final — revisión por perfil, 15/09/2026.
+_PRECIO_PREFERIDO = ("venta", "retail", "publico", "pvp", "final", "detalle", "vendo")
+_PRECIO_POSTERGADO = ("mayor", "distribuidor")
+
+
+def _preferir_candidato(field_name: str, candidatos: list[str]) -> str:
+    if field_name != "precio" or len(candidatos) == 1:
+        return candidatos[0]
+
+    def rango(header: str) -> int:
+        norm = _normalize_header(header)
+        if any(p in norm for p in _PRECIO_PREFERIDO):
+            return 0
+        if any(p in norm for p in _PRECIO_POSTERGADO):
+            return 2
+        return 1
+
+    return min(candidatos, key=rango)  # a igual rango, el primero del archivo
+
+
+def _nombre_desde_descripcion(rows: list[dict[str, Any]], result: dict[str, str | None]) -> None:
+    """Sin columna de nombre, una "Descripción" con textos cortos ES el nombre
+    del producto (caso real: la lista de precios de un importador). Un texto
+    largo sigue siendo descripción. Revisión por perfil, 15/09/2026."""
+    header = result.get("descripcion")
+    if result.get("nombre") is not None or header is None:
+        return
+    valores = _muestras(rows, header)
+    if valores and sum(len(v) for v in valores) / len(valores) <= 80:
+        result["nombre"] = header
+        result["descripcion"] = None
 
 
 # ------------------------------------------------------------------

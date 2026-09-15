@@ -691,7 +691,8 @@ window.LC = window.LC || {};
           <p class="stat-label">Uso del plan</p>
           ${plan ? `
             <p class="stat-value stat-value--sm ${cercaDelLimite ? "stat-value--warning" : ""}">${sus.uso.productos}${plan.limiteProductos ? `/${plan.limiteProductos}` : ""} productos</p>
-            <p class="stat-hint">${sus.uso.publicaciones}${plan.limitePublicaciones ? `/${plan.limitePublicaciones}` : ""} publicaciones${cercaDelLimite ? " · cerca del límite" : ""}</p>
+            <p class="stat-hint">${sus.uso.publicaciones}${plan.limitePublicaciones ? `/${plan.limitePublicaciones}` : ""} publicaciones</p>
+            ${cercaDelLimite ? `<p class="stat-hint text-amber-600 dark:text-amber-400">${plan.limiteProductos && sus.uso.productos >= plan.limiteProductos ? "Llegaste al límite de tu plan" : "Cerca del límite de tu plan"} · <a href="#/suscripcion" class="underline">Ver planes</a></p>` : ""}
           ` : `<p class="stat-value stat-value--sm">—</p><p class="stat-hint">Sin plan asignado</p>`}
         </div>
       </div>
@@ -754,11 +755,23 @@ window.LC = window.LC || {};
         ruta: "/oportunidades",
       });
     }
+    // 15 de septiembre de 2026 — revisión por perfil: "rentables" es la misma
+    // regla de Oportunidades (margen neto de Mercado Libre contra los mínimos),
+    // no venta − compra. Sin costos de Mercado Libre configurados, se pide eso.
+    if (rent && rent.productosConCosto > 0 && !rent.canalesConfigurados.includes("mercadolibre")) {
+      acciones.push({
+        tono: "warning",
+        texto: "Configura los costos de Mercado Libre",
+        detalle: "Sin comisión y envío no podemos calcular qué productos te conviene publicar.",
+        cta: "Configurar",
+        ruta: "/configuracion",
+      });
+    }
     if (rent && rent.productosRentables > 0) {
       acciones.push({
         tono: "success",
-        texto: `${rent.productosRentables} producto${rent.productosRentables === 1 ? "" : "s"} con buena oportunidad de venta`,
-        detalle: "Ya tienen costo y precio cargados, y dejan margen positivo.",
+        texto: `${rent.productosRentables} producto${rent.productosRentables === 1 ? "" : "s"} que conviene publicar en Mercado Libre`,
+        detalle: "Con la comisión, el envío y tus mínimos de margen y ganancia.",
         cta: "Ver oportunidades",
         ruta: "/oportunidades",
       });
@@ -825,10 +838,10 @@ window.LC = window.LC || {};
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
         <div class="panel-card">
           <h3 class="panel-title mb-1">Rentabilidad</h3>
-          <p class="panel-subtitle mb-3">${rent.productosConCosto === 0 ? "Todavía no hay costos de compra cargados — importa un Excel/CSV con costo para ver esto." : "Calculado con tus costos y precios reales."}</p>
+          <p class="panel-subtitle mb-3">${rent.productosConCosto === 0 ? "Todavía no hay costos de compra cargados — importa un Excel/CSV con costo para ver esto." : "Con la comisión y el envío de Mercado Libre y tus mínimos de margen y ganancia."}</p>
           <div class="grid grid-cols-3 gap-3">
             <div><p class="stat-label">Con costo cargado</p><p class="stat-value stat-value--sm mt-1">${rent.productosConCosto} / ${rent.totalProductos}</p></div>
-            <div><p class="stat-label">Rentables</p><p class="stat-value stat-value--sm stat-value--success mt-1">${rent.productosRentables ?? "—"}</p></div>
+            <div><p class="stat-label">Convienen en Mercado Libre</p><p class="stat-value stat-value--sm stat-value--success mt-1">${rent.productosRentables ?? "—"}</p></div>
             <div><p class="stat-label">Mercado Libre configurado</p><p class="stat-value stat-value--sm mt-1">${rent.canalesConfigurados.includes("mercadolibre") ? "Sí" : "No"}</p></div>
           </div>
           <button data-nav="/importar" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline mt-3">Importar catálogo con costos →</button>
@@ -3099,11 +3112,17 @@ window.LC = window.LC || {};
             <div>
               <label class="form-label">Comisión de Mercado Libre (%)</label>
               <input id="cfg-ml-comision" type="number" min="0" step="0.1" class="form-input" value="${canalMl.commissionPct ?? ""}" />
-              <p class="text-xs text-slate-400 mt-1">Valor de respaldo — se usa solo si abajo elegís "Comparar ambas" o si un producto todavía no tiene su comisión real consultada.</p>
+              <p class="text-xs text-slate-400 mt-1">Valor de respaldo — se usa solo para productos cuya comisión real Mercado Libre todavía no informó.</p>
             </div>
             <div>
               <label class="form-label">Costo de envío ($)</label>
               <input id="cfg-ml-envio" type="number" min="0" step="1" class="form-input" value="${canalMl.shippingCost ?? ""}" />
+              <p class="text-xs text-slate-400 mt-1">Se usa mientras Mercado Libre no informe el envío real de la publicación.</p>
+            </div>
+            <div>
+              <label class="form-label">Descontar el envío desde este precio ($)</label>
+              <input id="cfg-ml-envio-desde" type="number" min="0" step="1" class="form-input" value="${canalMl.shippingMinPriceClp ?? ""}" />
+              <p class="text-xs text-slate-400 mt-1">Si solo pagas el envío desde cierto precio de venta (bajo ese precio lo paga el comprador), indícalo acá. Vacío = el envío se descuenta en todos los productos.</p>
             </div>
             <div>
               <label class="form-label">Otros costos fijos ($)</label>
@@ -3125,11 +3144,11 @@ window.LC = window.LC || {};
             <div class="sm:col-span-2">
               <label class="form-label">Comisión real por producto</label>
               <select id="cfg-ml-listing-pref" class="form-input">
-                <option value="" ${!canalMl.listingTypePref ? "selected" : ""}>Comparar ambas (usar la comisión de respaldo de arriba para calcular márgenes)</option>
+                <option value="" ${!canalMl.listingTypePref ? "selected" : ""}>Automático — Nexo elige Clásica o Premium con la comisión real de cada producto</option>
                 <option value="classic" ${canalMl.listingTypePref === "classic" ? "selected" : ""}>Usar Clásica — la comisión real de cada producto, según su categoría y precio</option>
                 <option value="premium" ${canalMl.listingTypePref === "premium" ? "selected" : ""}>Usar Premium — la comisión real de cada producto, según su categoría y precio</option>
               </select>
-              <p class="text-xs text-slate-400 mt-1">La comisión de Mercado Libre varía por producto (categoría, precio y tipo de publicación) — elegí acá cuál usar para calcular el margen y la decisión de "¿conviene publicar?" de cada producto, en vez de la comisión de respaldo de arriba. Necesita haber corrido "Actualizar comisiones reales de Mercado Libre" (pantalla Oportunidades) al menos una vez para cada producto.</p>
+              <p class="text-xs text-slate-400 mt-1">La comisión real de cada producto (según su categoría y precio) se consulta sola al importar el catálogo y al conectar Mercado Libre. En Automático, Nexo usa el tipo de publicación que más te conviene en cada producto; elige Clásica o Premium si siempre publicas con uno.</p>
             </div>
           </div>
           <p id="cfg-ml-feedback" class="text-sm mt-2 min-h-[1.25rem]"></p>
@@ -3204,6 +3223,7 @@ window.LC = window.LC || {};
         const res = await LC.backendApi.configurarCanal("mercadolibre", {
           commission_pct: num("cfg-ml-comision"),
           shipping_cost: num("cfg-ml-envio"),
+          shipping_min_price_clp: num("cfg-ml-envio-desde"),
           other_fixed_cost: num("cfg-ml-otros"),
           listing_type_pref: document.getElementById("cfg-ml-listing-pref").value || null,
           target_margin_pct: num("cfg-ml-margen-objetivo"),

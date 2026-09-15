@@ -51,6 +51,7 @@ from app.domain.catalog_selection import SelectionCriteria, classify_product
 from app.domain.competencia import AnalisisCompetencia, analizar_competencia
 from app.domain.decision import evaluar_decision
 from app.db.models.channel_costs import umbrales_minimos
+from app.api.routes.rentabilidad import preferencia_efectiva
 from app.domain.pricing import ESTADO_RECOMENDACION, RecomendacionPrecio, recomendar_precio
 from app.domain.profitability import ChannelCosts
 from app.domain.listing_draft import build_draft
@@ -609,13 +610,19 @@ async def _resolver_recomendacion_precio(
     )
     listing_type_pref = config_canal.listing_type_pref if config_canal else None
     precio_actual = float(variante.price) if variante.price is not None else None
+    costo_actual = float(variante.cost_price) if variante.cost_price is not None else None
+    envio_desde = float(config_canal.shipping_min_price_clp) if config_canal and config_canal.shipping_min_price_clp is not None else None
     comisiones = comisiones_ml_cacheadas(db, store.id, producto, precio_actual)
     # Mismo envío real de Mercado Libre que Rentabilidad (aplicar_envio_real_ml).
     channel_costs_manual, _envio_ml = aplicar_envio_real_ml(
-        channel_costs_manual, publicaciones_ml_por_producto(db, store.id, [producto.id]).get(producto.id)
+        channel_costs_manual, publicaciones_ml_por_producto(db, store.id, [producto.id]).get(producto.id),
+        precio=precio_actual, envio_desde_clp=envio_desde,
     )
-    channel_costs, fuente_comision_ml = resolver_costos_ml(comisiones, channel_costs_manual, listing_type_pref)
     margen_objetivo_pct = float(config_canal.target_margin_pct) if config_canal and config_canal.target_margin_pct is not None else None
+    # Misma elección automática de Clásica/Premium que Rentabilidad: sin
+    # preferencia manual se usa la comisión REAL del tipo recomendado.
+    pref_efectiva, _tipo = preferencia_efectiva(listing_type_pref, precio_actual, costo_actual, comisiones, channel_costs_manual, margen_objetivo_pct)
+    channel_costs, fuente_comision_ml = resolver_costos_ml(comisiones, channel_costs_manual, pref_efectiva)
     margen_minimo_pct = umbrales_minimos(config_canal)[0]
 
     # Competencia: agregado OPCIONAL — cualquier problema acá (sin cuenta
@@ -764,6 +771,7 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
         other_fixed_cost=float(config_canal.other_fixed_cost) if config_canal and config_canal.other_fixed_cost is not None else None,
     )
     listing_type_pref = config_canal.listing_type_pref if config_canal else None
+    envio_desde = float(config_canal.shipping_min_price_clp) if config_canal and config_canal.shipping_min_price_clp is not None else None
     margen_objetivo_pct = float(config_canal.target_margin_pct) if config_canal and config_canal.target_margin_pct is not None else None
     margen_minimo_pct = umbrales_minimos(config_canal)[0]
 
@@ -784,8 +792,12 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
     for variante in variantes:
         precio_actual = float(variante.price) if variante.price is not None else None
         comisiones = comisiones_ml_cacheadas(db, store.id, variante.product, precio_actual)
-        costos_con_envio, _envio_ml = aplicar_envio_real_ml(channel_costs_manual, publicaciones_ml.get(variante.product_id))
-        channel_costs, _fuente = resolver_costos_ml(comisiones, costos_con_envio, listing_type_pref)
+        costos_con_envio, _envio_ml = aplicar_envio_real_ml(
+            channel_costs_manual, publicaciones_ml.get(variante.product_id), precio=precio_actual, envio_desde_clp=envio_desde
+        )
+        costo_actual = float(variante.cost_price) if variante.cost_price is not None else None
+        pref_efectiva, _tipo = preferencia_efectiva(listing_type_pref, precio_actual, costo_actual, comisiones, costos_con_envio, margen_objetivo_pct)
+        channel_costs, _fuente = resolver_costos_ml(comisiones, costos_con_envio, pref_efectiva)
         recomendacion = recomendar_precio(
             costo=float(variante.cost_price) if variante.cost_price is not None else None,
             channel_costs=channel_costs,

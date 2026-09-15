@@ -109,7 +109,12 @@ def publicaciones_ml_por_producto(
 
 
 def aplicar_envio_real_ml(
-    costos: ChannelCosts, publicacion: MarketplaceListing | None, publicacion_cerrada: bool = False
+    costos: ChannelCosts,
+    publicacion: MarketplaceListing | None,
+    publicacion_cerrada: bool = False,
+    *,
+    precio: float | None = None,
+    envio_desde_clp: float | None = None,
 ) -> tuple[ChannelCosts, dict]:
     """14 de septiembre de 2026 — costo de envío del cálculo de rentabilidad
     de Mercado Libre: el REAL que informó Mercado Libre para la publicación
@@ -132,6 +137,11 @@ def aplicar_envio_real_ml(
         motivo = MOTIVO_PUBLICACION_CERRADA if publicacion_cerrada else MOTIVO_NO_PUBLICADO
     else:
         motivo = publicacion.shipping_cost_unavailable_reason or MOTIVO_NO_CONSULTADO
+    if envio_desde_clp is not None and precio is not None and precio < envio_desde_clp and costos.shipping_cost:
+        # 15 de septiembre de 2026 — revisión por perfil: un envío manual fijo
+        # dejaba con pérdida todo producto barato. El dueño indica desde qué
+        # precio de venta paga él el envío; bajo ese precio no se descuenta.
+        costos = replace(costos, shipping_cost=0.0)
     return costos, {
         "costoEnvioMl": None,
         "envioMlFuente": "no_disponible",
@@ -180,6 +190,34 @@ def _comision_ml_real(comisiones: dict[str, ListingFee], costo: float | None, pr
     return resultado or None
 
 
+def preferencia_efectiva(
+    listing_type_pref: str | None,
+    precio: float | None,
+    costo: float | None,
+    comisiones: dict[str, ListingFee],
+    costos: ChannelCosts,
+    target_margin_pct: float | None,
+):
+    """Tipo de publicación con el que se calcula el margen de Mercado Libre.
+    Con preferencia manual (Clásica/Premium), esa. Sin preferencia, el tipo
+    que recomienda recomendar_tipo_publicacion con la comisión REAL de cada
+    uno. 15 de septiembre de 2026 — revisión por perfil: antes solo
+    Rentabilidad hacía esta elección; ¿Conviene?, el precio recomendado y la
+    decisión en lote caían a la comisión manual. Devuelve (preferencia,
+    recomendación o None)."""
+    if listing_type_pref is not None or precio is None or costo is None:
+        return listing_type_pref, None
+    recomendacion = recomendar_tipo_publicacion(
+        precio,
+        costo,
+        comisiones,
+        shipping_cost=costos.shipping_cost or 0.0,
+        other_fixed_cost=costos.other_fixed_cost or 0.0,
+        target_margin_pct=target_margin_pct,
+    )
+    return (recomendacion.tipo if recomendacion else None), recomendacion
+
+
 def resolver_costos_ml(
     comisiones: dict[str, ListingFee], costos_manual: ChannelCosts, listing_type_pref: str | None
 ) -> tuple[ChannelCosts, str]:
@@ -225,32 +263,22 @@ def _fila(
     target_margin_pct: float | None = None,
     publicacion_ml: MarketplaceListing | None = None,
     publicacion_ml_cerrada: bool = False,
+    envio_desde_clp: float | None = None,
 ) -> dict:
     precio = float(variante.price) if variante.price is not None else None
     costo = float(variante.cost_price) if variante.cost_price is not None else None
 
     comisiones = comisiones_ml_cacheadas(db, store_id, producto, precio)
-    costos_ml_manual, envio_ml = aplicar_envio_real_ml(costos_ml_manual, publicacion_ml, publicacion_ml_cerrada)
+    costos_ml_manual, envio_ml = aplicar_envio_real_ml(
+        costos_ml_manual, publicacion_ml, publicacion_ml_cerrada, precio=precio, envio_desde_clp=envio_desde_clp
+    )
 
-    # Elección AUTOMÁTICA del tipo de publicación (14 de septiembre de 2026):
-    # si el dueño no fijó una preferencia manual, el sistema recomienda solo
-    # Clásica o Premium según el margen de ESTE producto, con la comisión
-    # exacta de cada tipo (ver ml_fees.recomendar_tipo_publicacion). Ese tipo
-    # recomendado pasa a ser la preferencia efectiva, así el margen neto usa
-    # la comisión real elegida en vez del fallback manual.
-    recomendacion = None
-    pref_efectiva = listing_type_pref
-    if listing_type_pref is None and precio is not None and costo is not None:
-        recomendacion = recomendar_tipo_publicacion(
-            precio,
-            costo,
-            comisiones,
-            shipping_cost=costos_ml_manual.shipping_cost or 0.0,
-            other_fixed_cost=costos_ml_manual.other_fixed_cost or 0.0,
-            target_margin_pct=target_margin_pct,
-        )
-        if recomendacion is not None:
-            pref_efectiva = recomendacion.tipo
+    # Elección AUTOMÁTICA del tipo de publicación (14 de septiembre de 2026),
+    # ver preferencia_efectiva: sin preferencia manual, el tipo recomendado
+    # pasa a ser la preferencia efectiva y el margen usa la comisión real.
+    pref_efectiva, recomendacion = preferencia_efectiva(
+        listing_type_pref, precio, costo, comisiones, costos_ml_manual, target_margin_pct
+    )
 
     costos_ml_efectivos, fuente_comision_ml = resolver_costos_ml(comisiones, costos_ml_manual, pref_efectiva)
     ml_configurado = costos_ml_efectivos.is_configured()
@@ -326,6 +354,7 @@ def build_profitability_rows(db: Session, store: Store) -> tuple[list[dict], boo
     ml_configurado = costos_ml.is_configured()
 
     listing_type_pref = config_ml.listing_type_pref if config_ml else None
+    envio_desde = float(config_ml.shipping_min_price_clp) if config_ml and config_ml.shipping_min_price_clp is not None else None
     target_margin_pct = (
         float(config_ml.target_margin_pct) if config_ml and config_ml.target_margin_pct is not None else None
     )
@@ -335,7 +364,7 @@ def build_profitability_rows(db: Session, store: Store) -> tuple[list[dict], boo
     filas = [
         _fila(
             db, store.id, producto, variante, costos_ml, listing_type_pref, target_margin_pct,
-            publicaciones_ml.get(producto.id), producto.id in publicaciones_ml_cerradas,
+            publicaciones_ml.get(producto.id), producto.id in publicaciones_ml_cerradas, envio_desde,
         )
         for producto in productos
         for variante in producto.variants

@@ -58,14 +58,27 @@ def _read_uploaded_rows(file: UploadFile, contenido: bytes) -> tuple[list[str], 
 
 
 @router.post("/importar/analizar")
-async def analizar_archivo(file: UploadFile, store: Store = Depends(get_current_store)) -> dict:
+async def analizar_archivo(
+    file: UploadFile,
+    mapeo: str | None = Form(None, description="Opcional: mapeo corregido por el usuario (misma forma que mapeoPropuesto)"),
+    store: Store = Depends(get_current_store),
+) -> dict:
     # No escribe nada en la base (ver docstring del módulo) — igual exige
     # sesión válida (`store` sin usar más abajo, a propósito): nadie
     # anónimo debería poder ni siquiera previsualizar un archivo acá.
     contenido = await file.read()
     headers, raw_rows = _read_uploaded_rows(file, contenido)
 
-    mapping = detect_columns(headers, raw_rows)
+    # 15 de septiembre de 2026 — revisión por perfil: al corregir una columna
+    # en la pantalla de revisión, el frontend vuelve a pedir el análisis con
+    # ese mapeo para que los contadores y avisos por fila reflejen el cambio.
+    if mapeo:
+        try:
+            mapping = ColumnMapping(mapping=json.loads(mapeo))
+        except json.JSONDecodeError as err:
+            raise HTTPException(status_code=400, detail=f"El campo 'mapeo' no es JSON válido: {err}") from err
+    else:
+        mapping = detect_columns(headers, raw_rows)
     rows = build_rows(raw_rows, mapping)
 
     return {

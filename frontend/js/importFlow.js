@@ -26,6 +26,9 @@ window.LC = window.LC || {};
     costo: "Costo de compra", precio: "Precio de venta", stock: "Stock",
     descripcion: "Descripción", imagen_url: "Imagen (URL)", codigo_barras: "Código de barras",
   };
+  // Sin estas columnas no se puede importar (nombre) o no se puede calcular si
+  // conviene publicar (costo y precio) — revisión por perfil, 15/09/2026.
+  const CAMPOS_CLAVE = ["nombre", "costo", "precio"];
 
   const PASOS = [
     { fase: "subir", titulo: "Sube tu catálogo" },
@@ -229,11 +232,12 @@ window.LC = window.LC || {};
   function renderPasoRevision() {
     const { resumen, encabezados, filas } = state.analisis;
     const conProblemas = filas.filter((f) => f.estado !== "valido").slice(0, 8);
+    const faltanClave = CAMPOS_CLAVE.filter((c) => !state.mapeo[c]);
 
     return `
       <div class="panel-card mb-5">
         <h2 class="panel-title mb-1">Así entendimos tu archivo</h2>
-        <p class="panel-subtitle mb-5">${escapeHtml(state.analisis.fileName || "")} — revisa que las columnas estén bien asignadas. Si algo no coincide, puedes corregirlo.</p>
+        <p class="panel-subtitle mb-5">${escapeHtml(state.analisis.fileName || (state.file && state.file.name) || "")} — revisa que las columnas estén bien asignadas. Si algo no coincide, puedes corregirlo.</p>
 
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           <div class="stat-card"><p class="stat-label">Filas encontradas</p><p class="stat-value stat-value--sm">${resumen.totalFilas}</p></div>
@@ -245,8 +249,8 @@ window.LC = window.LC || {};
         <h3 class="text-sm font-semibold mb-2 text-slate-600 dark:text-slate-300">Columnas detectadas</h3>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2">
           ${Object.keys(CAMPOS_LABEL).map((campo) => `
-            <label class="flex items-center justify-between gap-3 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">
-              <span class="text-slate-500 dark:text-slate-400">${escapeHtml(CAMPOS_LABEL[campo])}</span>
+            <label class="flex items-center justify-between gap-3 text-sm border ${faltanClave.includes(campo) ? "border-amber-400 dark:border-amber-500" : "border-slate-200 dark:border-slate-700"} rounded-lg px-3 py-2">
+              <span class="text-slate-500 dark:text-slate-400">${escapeHtml(CAMPOS_LABEL[campo])}${CAMPOS_CLAVE.includes(campo) ? ` <span class="text-xs ${faltanClave.includes(campo) ? "text-amber-600 dark:text-amber-400" : "text-slate-400"}">· clave</span>` : ""}</span>
               <select data-campo="${campo}" class="mapeo-select text-sm rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 max-w-[55%]">
                 <option value="">(ninguna)</option>
                 ${encabezados.map((h) => `<option value="${escapeHtml(h)}" ${state.mapeo[campo] === h ? "selected" : ""}>${escapeHtml(h)}</option>`).join("")}
@@ -280,17 +284,45 @@ window.LC = window.LC || {};
         </div>
       </div>` : ""}
 
+      ${faltanClave.length ? `
+      <div class="panel-card mb-5 border border-amber-300 dark:border-amber-600">
+        <p class="text-sm font-medium text-amber-700 dark:text-amber-400">Falta elegir: ${escapeHtml(faltanClave.map((c) => CAMPOS_LABEL[c]).join(", "))}</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">${!state.mapeo.nombre
+          ? "Sin la columna del nombre no se puede importar. Elígela arriba."
+          : "Sin costo de compra y precio de venta no podemos calcular si te conviene publicar cada producto. Elige esas columnas arriba."}</p>
+      </div>` : ""}
+
       <div class="flex items-center justify-between gap-4 flex-wrap">
         <button id="btn-cancelar-importacion" class="btn-secondary">← Elegir otro archivo</button>
-        <button id="btn-confirmar-importacion" class="btn-primary">Confirmar e importar ${resumen.totalFilas - resumen.errores} productos</button>
+        <button id="btn-confirmar-importacion" class="btn-primary" ${!state.mapeo.nombre ? "disabled" : ""}>${faltanClave.length ? "Importar igual" : "Confirmar e importar"} ${resumen.totalFilas - resumen.errores} productos</button>
       </div>
     `;
   }
 
+  // Corregir una columna vuelve a validar las filas con ese mapeo (15 de
+  // septiembre de 2026): antes los contadores y los avisos por fila seguían
+  // mostrando lo del mapeo propuesto ("Falta costo de compra").
+  async function reanalizarConMapeo(main) {
+    if (state.modoBackend === "demo") {
+      renderFase(main);
+      return;
+    }
+    main.querySelectorAll(".mapeo-select").forEach((s) => { s.disabled = true; });
+    const resultado = await LC.backendApi.analizarCatalogo(state.file, state.mapeo);
+    if (!resultado.ok) {
+      toast("error", `No pudimos revisar el archivo con esas columnas: ${resultado.error.mensaje}`);
+      main.querySelectorAll(".mapeo-select").forEach((s) => { s.disabled = false; });
+      return;
+    }
+    state.analisis = resultado.data;
+    renderFase(main);
+  }
+
   function wirePasoRevision(main) {
     main.querySelectorAll(".mapeo-select").forEach((sel) => {
-      sel.addEventListener("change", () => {
+      sel.addEventListener("change", async () => {
         state.mapeo[sel.dataset.campo] = sel.value || null;
+        await reanalizarConMapeo(main);
       });
     });
     document.getElementById("btn-cancelar-importacion").addEventListener("click", () => {
@@ -316,7 +348,11 @@ window.LC = window.LC || {};
       return;
     }
     state.confirmarResultado = resultado.data;
-    toast("success", `${resultado.data.creados} productos creados, ${resultado.data.actualizados} actualizados.`);
+    const limite = resultado.data.limitePlan;
+    toast(
+      limite ? "warning" : "success",
+      `${resultado.data.creados} productos creados, ${resultado.data.actualizados} actualizados.${limite ? ` ${limite.omitidosPorLimite} no entraron por el límite de tu plan.` : ""}`
+    );
     await cargarOportunidades(main);
   }
 
@@ -377,12 +413,24 @@ window.LC = window.LC || {};
     return filas.sort((a, b) => (valor(b) ?? -Infinity) - (valor(a) ?? -Infinity));
   }
 
+  // Productos que no entraron por el límite del plan (15 de septiembre de 2026).
+  function avisoLimitePlan(resultado) {
+    const lim = resultado && resultado.limitePlan;
+    if (!lim) return "";
+    return `
+      <div class="panel-card mb-5 border border-amber-300 dark:border-amber-600">
+        <p class="text-sm font-medium text-amber-700 dark:text-amber-400">No importamos ${lim.omitidosPorLimite} producto${lim.omitidosPorLimite === 1 ? "" : "s"}: llegaste al límite de ${Number(lim.limite).toLocaleString("es-CL")} productos de tu plan.</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Para agregarlos, cambia a un plan con más productos en <a href="#/suscripcion" class="underline">Mi plan</a> y vuelve a subir el archivo: los productos con SKU que ya están se actualizan, no se duplican.</p>
+      </div>`;
+  }
+
   function renderPasoOportunidades() {
     const { resumen } = state.seleccion;
     const filas = filasOrdenadas();
     const seleccionados = state.seleccionadosIds.size;
 
     return `
+      ${avisoLimitePlan(state.confirmarResultado)}
       <div class="panel-card mb-5">
         <h2 class="panel-title mb-1">Estas son las oportunidades que encontramos</h2>
         <p class="panel-subtitle mb-5">Margen NETO de Mercado Libre — ya descontada la comisión real de cada producto. El sistema recomienda solo Clásica o Premium según el margen. El costo de envío solo se descuenta cuando Mercado Libre lo informa para una publicación real; mientras tanto el margen es provisional.</p>

@@ -24,8 +24,10 @@ from app.api.routes.mercadolibre import build_estado_conexion
 from app.api.routes.productos_db import build_producto_fila
 from app.api.routes.rentabilidad import build_profitability_rows
 from app.config import get_settings
-from app.db.models import MarketplaceAccount, MarketplaceListing, Order, Product, ProductImage, Store
+from app.db.models import ChannelCostSettings, MarketplaceAccount, MarketplaceListing, Order, Product, ProductImage, Store
+from app.db.models.channel_costs import umbrales_minimos
 from app.db.session import get_db
+from app.domain.catalog_selection import SelectionCriteria, classify_product
 from app.domain.plans import resumen_suscripcion
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -72,7 +74,20 @@ def resumen(db: Session = Depends(get_db), store: Store = Depends(get_current_st
     # None si todavía no hay ningún costo cargado — "0 rentables" sería
     # engañoso (parecería que se revisó y ninguno conviene, cuando en
     # realidad no hay con qué calcularlo todavía).
-    rentables = len([f for f in con_costo if (f["margenTiendaClp"] or 0) > 0]) if con_costo else None
+    # 15 de septiembre de 2026 — revisión por perfil: antes contaba venta −
+    # compra > 0 (la pyme veía "40 con buena oportunidad" y en Oportunidades
+    # solo 6 convenían). Ahora es la MISMA regla que Oportunidades y
+    # "¿Conviene?": margen neto de Mercado Libre contra los mínimos. None si
+    # no hay costos o Mercado Libre no está configurado (no se puede decidir).
+    config_ml = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
+    margen_minimo_pct, ganancia_minima_clp = umbrales_minimos(config_ml)
+    criterios_ml = SelectionCriteria(
+        channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct, ganancia_minima_clp=ganancia_minima_clp,
+    )
+    rentables = (
+        len([f for f in con_costo if classify_product(f, criterios_ml)["clasificacion"] == "rentable"])
+        if con_costo and ml_configurado else None
+    )
 
     total_pedidos = db.query(Order).filter_by(store_id=store.id).count()
     desde = datetime.now() - timedelta(days=VENTANA_VENTAS_RECIENTES_DIAS)

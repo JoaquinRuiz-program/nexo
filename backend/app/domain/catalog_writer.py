@@ -34,6 +34,7 @@ def escribir_filas(db: Session, store: Store, rows: list[RowResult], *, fuente: 
     creados: list[str] = []
     actualizados: list[str] = []
     omitidos: list[dict] = []
+    omitidos_por_limite = 0
 
     limite_productos = store.subscription.plan.product_limit if (store.subscription and store.subscription.plan) else None
     cantidad_productos = db.query(Product).filter_by(store_id=store.id).count()
@@ -69,6 +70,7 @@ def escribir_filas(db: Session, store: Store, rows: list[RowResult], *, fuente: 
             continue
 
         if limite_alcanzado(cantidad_productos, limite_productos):
+            omitidos_por_limite += 1
             omitidos.append({
                 "fila": row.row_index, "nombre": row.nombre or None,
                 "problemas": [f"Has alcanzado el límite de productos de tu plan ({limite_productos}). Actualiza tu plan para agregar más."],
@@ -119,4 +121,7 @@ def escribir_filas(db: Session, store: Store, rows: list[RowResult], *, fuente: 
         "actualizados": len(actualizados),
         "omitidos": len(omitidos),
         "detalleOmitidos": omitidos[:20],
+        # 15 de septiembre de 2026 — revisión por perfil: el retailer subió
+        # 1.100 filas, entraron 1.000 y nada decía que fue por el plan.
+        "limitePlan": {"limite": limite_productos, "omitidosPorLimite": omitidos_por_limite} if omitidos_por_limite else None,
     }

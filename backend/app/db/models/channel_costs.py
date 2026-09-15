@@ -55,6 +55,10 @@ class ChannelCostSettings(Base):
     # producto conviene si alcanza min_margin_pct O esta ganancia (un
     # notebook puede dejar mucha plata con poco %). NULL = no configurada.
     min_profit_clp: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # 15 de septiembre de 2026 — precio de venta desde el cual el vendedor paga
+    # el envío (bajo ese precio lo paga el comprador). NULL = el envío manual se
+    # descuenta en todos los productos. Nunca aplica al envío real de ML.
+    shipping_min_price_clp: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     store: Mapped["Store"] = relationship(back_populates="channel_cost_settings")  # noqa: F821

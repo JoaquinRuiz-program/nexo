@@ -205,6 +205,21 @@ catálogo (52).
 29. **Revisión de experiencia por perfil** (15 sept 2026) — ver `REVISION_EXPERIENCIA.md`: 4
     cuentas de prueba (pyme, importador, retailer, emprendedor) en `nexo.db` de desarrollo,
     recorrido como admin y como cliente, 28 hallazgos priorizados.
+30. **Críticos de la revisión corregidos** (15 sept 2026):
+    - `preferencia_efectiva` (rentabilidad.py): ¿Conviene?, precio recomendado y decisión en
+      lote eligen solas Clásica/Premium con la comisión real, igual que Oportunidades.
+    - Dashboard: "Convienen en Mercado Libre" usa `classify_product` con los mínimos (antes
+      venta − compra). Sin costos de ML configurados pide configurarlos.
+    - `shipping_min_price_clp` (migración `c3e5a7b9d1f2`): "Descontar el envío desde este
+      precio" en Configuración; bajo ese precio no se descuenta el envío manual.
+    - Importador: "Descripción" corta = nombre si no hay columna nombre; con varios precios
+      gana venta/retail/público sobre mayorista; entiende "Lo compré a / Lo vendo a / Cuántos
+      tengo".
+    - Pantalla de revisión: al corregir una columna se vuelve a analizar con ese mapeo
+      (`/importar/analizar` acepta `mapeo`); nombre, costo y precio marcados como clave, con
+      aviso si faltan.
+    - Límite del plan: `limitePlan` en la respuesta de importar, aviso en la importación
+      (Excel y Google Sheets) y en "Uso del plan" del Dashboard.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas
