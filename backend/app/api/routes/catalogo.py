@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_store
@@ -30,6 +30,8 @@ from app.db.session import get_db
 from app.domain.catalog_import import IMPORT_FIELDS, ColumnMapping, build_rows, detect_columns, row_to_dict, summarize_rows
 from app.domain.catalog_writer import escribir_filas
 from app.domain.spreadsheet_io import UnsupportedSpreadsheetFormat, read_rows, validar_tamano
+from app.config import get_settings
+from app.services.ml_comisiones import actualizar_comisiones_en_segundo_plano
 
 router = APIRouter(prefix="/api/catalogo", tags=["catalogo"])
 
@@ -77,6 +79,7 @@ async def analizar_archivo(file: UploadFile, store: Store = Depends(get_current_
 
 @router.post("/importar/confirmar")
 async def confirmar_importacion(
+    background_tasks: BackgroundTasks,
     file: UploadFile,
     mapeo: str = Form(..., description="JSON con el mapeo de columnas — misma forma que mapeoPropuesto de /analizar"),
     omitir_errores: bool = Form(True),
@@ -93,4 +96,8 @@ async def confirmar_importacion(
     rows = build_rows(raw_rows, ColumnMapping(mapping=mapping_dict))
 
     fuente = "excel_upload" if file.filename.lower().endswith((".xlsx", ".xlsm")) else "csv_upload"
-    return escribir_filas(db, store, rows, fuente=fuente, omitir_errores=omitir_errores)
+    resultado = escribir_filas(db, store, rows, fuente=fuente, omitir_errores=omitir_errores)
+    # "Que siempre sean comisiones reales": la comisión real de Mercado Libre
+    # de lo importado se consulta sola, en segundo plano, sin demorar esta respuesta.
+    background_tasks.add_task(actualizar_comisiones_en_segundo_plano, db.get_bind(), store.id, get_settings())
+    return resultado

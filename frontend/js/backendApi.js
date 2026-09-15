@@ -266,6 +266,10 @@ window.LC = window.LC || {};
     return request("/api/mercadolibre/desconectar", { method: "POST" });
   }
 
+  async function listarDevolucionesMercadoLibre() {
+    return request("/api/mercadolibre/devoluciones");
+  }
+
   async function importarVentasMercadoLibre() {
     return request("/api/mercadolibre/importar-ventas", { method: "POST", timeoutMs: UPLOAD_TIMEOUT_MS });
   }
@@ -584,6 +588,7 @@ window.LC = window.LC || {};
     conectarMercadoLibre,
     desconectarMercadoLibre,
     importarVentasMercadoLibre,
+    listarDevolucionesMercadoLibre,
     recalcularComisionesMercadoLibre,
     fetchGoogleSheetsEstado,
     conectarGoogleSheets,

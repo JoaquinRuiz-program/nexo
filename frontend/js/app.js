@@ -1821,6 +1821,7 @@ window.LC = window.LC || {};
           <p class="text-sm text-slate-500 dark:text-slate-400 mt-3">
             Tu cuenta está conectada correctamente. Cuando importes tus ventas de Mercado Libre las vas a ver acá.
           </p>
+          <div id="ml-devoluciones" class="mt-4"></div>
         </div>`;
     }
     return `
@@ -2018,7 +2019,9 @@ window.LC = window.LC || {};
         toast("success", nuevas > 0 ? `${nuevas} venta${nuevas === 1 ? "" : "s"} nueva${nuevas === 1 ? "" : "s"} importada${nuevas === 1 ? "" : "s"}.` : "No hay ventas nuevas para importar.");
         importarVentasBtn.disabled = false;
         importarVentasBtn.textContent = "Importar ventas ahora";
+        cargarDevolucionesML();
       });
+      cargarDevolucionesML();
     }
 
     document.getElementById("ml-search-input").addEventListener("input", (e) => {
@@ -2099,6 +2102,45 @@ window.LC = window.LC || {};
     }
     const maxCantidad = top[0].cantidad;
     slot.innerHTML = top.map((p, i) => rankRow(i + 1, p, maxCantidad)).join("");
+  }
+
+  // Devoluciones reales de Mercado Libre (14 de septiembre de 2026) — se
+  // sincronizan al importar ventas; nunca datos del comprador.
+  const DEVOLUCION_ESTADO_LABEL = {
+    opened: "Devolución iniciada", shipped: "En camino de vuelta", delivered: "Entregada", closed: "Cerrada",
+    not_delivered: "No entregada", cancelled: "Cancelada", failed: "Falló", expired: "Vencida",
+  };
+  const DEVOLUCION_DINERO_LABEL = {
+    retained: "Dinero retenido por Mercado Libre", refunded: "Dinero devuelto al comprador", available: "Dinero liberado para vos",
+  };
+
+  async function cargarDevolucionesML() {
+    const cont = document.getElementById("ml-devoluciones");
+    if (!cont) return;
+    const res = await LC.backendApi.listarDevolucionesMercadoLibre();
+    if (!res.ok) {
+      cont.innerHTML = `<p class="text-xs text-slate-400">No pudimos cargar las devoluciones ahora mismo.</p>`;
+      return;
+    }
+    const filas = res.data.devoluciones;
+    if (!filas.length) {
+      cont.innerHTML = `<p class="text-sm font-medium mb-1">Devoluciones</p><p class="text-xs text-slate-400">Sin devoluciones registradas en Mercado Libre.</p>`;
+      return;
+    }
+    cont.innerHTML = `
+      <p class="text-sm font-medium mb-2">Devoluciones (${filas.length})</p>
+      <div class="table-wrap"><table class="w-full text-sm">
+        <thead><tr class="text-left border-b border-slate-200 dark:border-slate-700"><th class="px-3 py-2 font-medium">Fecha</th><th class="px-3 py-2 font-medium">Pedido</th><th class="px-3 py-2 font-medium">Devolución</th><th class="px-3 py-2 font-medium">Dinero</th></tr></thead>
+        <tbody>
+          ${filas.map((d) => `
+            <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0">
+              <td class="px-3 py-2 whitespace-nowrap">${d.fechaReclamo ? escapeHtml(new Date(d.fechaReclamo).toLocaleDateString("es-CL")) : "—"}</td>
+              <td class="px-3 py-2">${escapeHtml(d.pedidoId || "—")}${d.ventaImportada ? "" : ` <span class="text-xs text-slate-400">(venta no importada)</span>`}</td>
+              <td class="px-3 py-2">${escapeHtml(DEVOLUCION_ESTADO_LABEL[d.estadoDevolucion] || (d.estadoDevolucion ? d.estadoDevolucion : "Reclamo sin devolución todavía"))}</td>
+              <td class="px-3 py-2">${escapeHtml(DEVOLUCION_DINERO_LABEL[d.estadoDinero] || "—")}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table></div>`;
   }
 
   async function renderMLPedidos() {
@@ -2366,7 +2408,7 @@ window.LC = window.LC || {};
         ${
           esReal
             ? `<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-                <p class="text-sm text-slate-500 dark:text-slate-400 max-w-xl">La comisión real de Mercado Libre varía por producto (categoría, precio y tipo de publicación) — actualizala para ver cuál conviene subir.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 max-w-xl">La comisión real de Mercado Libre (según la categoría y el precio de cada producto) se consulta sola al importar el catálogo y al conectar Mercado Libre. Si recién agregaste productos, podés forzarla ahora.</p>
                 ${
                   mlConectado
                     ? `<button id="recalcular-comisiones-btn" class="btn-secondary shrink-0">Actualizar comisiones reales de Mercado Libre</button>`

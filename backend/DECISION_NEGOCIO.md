@@ -25,46 +25,34 @@ mezclan las dos responsabilidades.
 
 | Resultado | Qué significa para el dueño |
 |---|---|
-| `conviene` | El precio recomendado alcanza el margen objetivo (y el margen mínimo, si hay uno configurado), y no hay ninguna señal de competencia en contra. |
-| `revisar` | Falta información para decidir con confianza, o hay una señal mixta (por ejemplo: el precio rentable queda por encima de lo que cobra la competencia). Nunca significa "no publiques" — significa "mirá esto antes de decidir". |
-| `no_conviene` | El margen objetivo es matemáticamente imposible, o no se alcanza el margen mínimo aceptable configurado para el canal. |
+| `conviene` | Con el precio real, la venta no deja pérdida y alcanza el margen mínimo % o la ganancia neta mínima $ (o no hay ninguno configurado). |
+| `revisar` | Faltan datos para calcular la ganancia (costo, precio o costos del canal). |
+| `no_conviene` | La venta deja pérdida, o no alcanza ni el margen mínimo ni la ganancia neta mínima. |
 
 `razon` siempre trae una explicación en texto plano de por qué se llegó a
 ese resultado — la decisión nunca se muestra como una etiqueta sin
 contexto.
 
-## Reglas, en orden (la primera que aplica gana)
+## Regla definitiva (14 de septiembre de 2026, decisión del dueño)
 
-1. **Sin datos suficientes** para calcular un precio (falta costo, comisión
-   del canal o margen objetivo) → `revisar`. Nunca se inventa una decisión
-   con datos que faltan.
-2. **Margen objetivo matemáticamente imposible** (comisión + margen
-   objetivo ≥ 100%) → `no_conviene`.
-3. **No alcanza el margen mínimo configurado** → `no_conviene`. Esta regla
-   tiene prioridad absoluta, incluso si el margen objetivo sí se alcanzó
-   (puede pasar con una configuración contradictoria: mínimo mayor al
-   objetivo).
-4. **Sin margen mínimo configurado Y sin datos de competencia** → `revisar`:
-   no hay ninguna señal externa (ni un mínimo aceptable, ni el mercado) que
-   confirme la decisión.
-5. **Precio recomendado por encima del rango de competencia** → `revisar`:
-   es rentable, pero podría costar más venderlo que lo que muestra el
-   mercado.
-6. **En cualquier otro caso** (margen objetivo alcanzado, y margen mínimo
-   alcanzado o sin configurar-pero-con-competencia-favorable, y el precio
-   no queda por encima de la competencia) → `conviene`.
+"¿Conviene?" se evalúa SIEMPRE con el **precio real** del producto
+(Excel/publicación), nunca con el precio recomendado, y con la misma
+clasificación que Oportunidades (`classify_product`, vía
+`_criterios_conviene_ml` en `publicaciones.py`, también usada por
+`/validar` y el gate de `/confirmar`):
 
-## Qué pasa cuando falta la competencia
+1. Ganancia neta = precio real − costo − comisión (real de ML si existe) −
+   envío (real de ML si existe) − otros costos.
+2. Ganancia < 0 → `no_conviene`.
+3. Ganancia ≥ 0 → `conviene` si margen % ≥ margen mínimo **o** ganancia ≥
+   ganancia neta mínima $; si no cumple ninguna → `no_conviene`.
+4. El stock NO participa.
 
-La ausencia de datos de competencia (cuenta no conectada, Mercado Libre no
-encontró el producto en su catálogo, o la consulta falló) **nunca se
-interpreta como "no conviene"** — es una señal neutra. Si además hay un
-margen mínimo configurado y se alcanza, el sistema igual puede responder
-`conviene` (regla 6), dejándolo explícito en `razon`
-("No hay datos de competencia disponibles"). Solo cuando ADEMÁS falta el
-margen mínimo configurado, la ausencia de competencia empuja el resultado a
-`revisar` (regla 4) — ahí sí no hay ninguna señal externa que respalde la
-decisión.
+El **margen objetivo** solo calcula el precio recomendado (cuánto cobrar
+para alcanzarlo) y ayuda a elegir Clásica/Premium. Si es imposible de
+alcanzar, la respuesta trae `avisoMargenObjetivo` ("No es posible alcanzar
+tu margen objetivo con estas condiciones.") y la decisión no cambia. La
+competencia es información, nunca decide.
 
 ## Por qué no hay un campo `confidence`
 
@@ -81,6 +69,8 @@ si en el futuro se suman más fuentes de datos de competencia.
 |---|---|
 | `decision` | `"conviene"` \| `"revisar"` \| `"no_conviene"`. |
 | `razon` | Explicación en texto plano — siempre presente. |
+| `precioActual`, `gananciaActual`, `margenActualPct` | Los números al precio real con los que se decidió. |
+| `avisoMargenObjetivo` | Texto del aviso si el margen objetivo es imposible, si no `null`. |
 | `precioRecomendado`, `precioMinimoRentable`, `gananciaEstimada`, `margenEstimadoPct` | Los mismos valores que devuelve `/precio-recomendado` (nunca se recalculan dos veces — ambos endpoints comparten `_resolver_recomendacion_precio`). |
 | `competencia` | `null` si no hay dato de competencia, o `{precioGanador, rangoPrecioMinimo, rangoPrecioMaximo, posicionPrecioPropio}` si lo hay. |
 | `faltantes` | Lista de qué dato falta, solo si `decision == "revisar"` por datos insuficientes. |
@@ -92,22 +82,10 @@ para TODAS las variantes de la tienda de una sola vez, usando los mismos
 `domain/pricing.py`/`domain/decision.py`, pero **sin consultar
 competencia** (pedirle a Mercado Libre una consulta por cada fila de una
 tabla no es viable). Devuelve `[{variantId, decision, precioRecomendado,
-margenEstimadoPct, faltantes}]`. Nunca asume que falta competencia
-significa "no conviene" — pero, a diferencia de `/decision` (individual),
-acá `analisis_competencia` es SIEMPRE `None`, así que la regla 5 (precio
-por encima del rango de competencia → `revisar`) nunca puede dispararse en
-este endpoint, y con margen mínimo configurado y alcanzado la regla 6
-siempre gana → `conviene`, aunque el mismo producto en el detalle (con
-competencia real) pueda dar `revisar` (regla 5). No es un bug de cálculo
-(hallazgo de product-reviewer, ronda de pulido, 31/08/2026): son dos
-evaluaciones legítimas con distinto insumo por una razón de rendimiento
-deliberada — para que el dueño nunca lo lea como una contradicción, la
-columna "Decisión" de Oportunidades se etiqueta "Decisión preliminar" (con
-tooltip) y el detalle del producto muestra "Evaluación con competencia" o
-"Decisión preliminar — sin datos de competencia" según corresponda (ver
-`etiquetaTipoDecision`, `frontend/js/mercadolibrePublicar.js`). Lo usa el
-frontend para la columna "Decisión preliminar" en Oportunidades
-(`frontend/js/app.js`).
+margenEstimadoPct, faltantes, avisoMargenObjetivo}]`. Como la competencia
+ya no decide, la decisión del lote es la misma que la de `/decision` para el
+mismo producto. Lo usa el frontend para la columna "Decisión preliminar" en
+Oportunidades (`frontend/js/app.js`).
 
 ## Frontend
 

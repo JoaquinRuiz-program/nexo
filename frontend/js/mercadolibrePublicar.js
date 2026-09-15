@@ -199,22 +199,26 @@ window.LC = window.LC || {};
     const visual = estadoVisual(d);
     const label = visual === "datos_insuficientes" ? "Faltan datos para poder decidir" : DECISION_LABEL[d.decision];
     const preparaDeshabilitado = d.decision === "no_conviene";
-    const claseGanancia = d.gananciaEstimada == null ? "" : d.gananciaEstimada < 0 ? "stat-value--danger" : "stat-value--success";
+    // 14 de septiembre de 2026 — la decisión se toma con el precio REAL del
+    // producto; el precio recomendado es solo una sugerencia (margen objetivo).
+    const claseGanancia = d.gananciaActual == null ? "" : d.gananciaActual < 0 ? "stat-value--danger" : "stat-value--success";
     return `
       <div class="panel-card mb-5">
         <div class="flex items-center justify-between gap-3 mb-4">
           <h3 class="panel-title">¿Conviene venderlo en Mercado Libre?</h3>
           <span class="reco-badge reco-${visual}">${icon(DECISION_ICON[d.decision] || "help")} ${escapeHtml(label)}</span>
         </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
+          <div><p class="stat-label">Tu precio</p><p class="stat-value stat-value--sm mt-1">${formatCLPReal(d.precioActual)}</p></div>
+          <div><p class="stat-label">Ganancia con tu precio</p><p class="stat-value stat-value--sm mt-1 ${claseGanancia}">${formatCLPReal(d.gananciaActual)}</p></div>
+          <div><p class="stat-label">Margen con tu precio</p><p class="stat-value stat-value--sm mt-1">${formatPct(d.margenActualPct)}</p></div>
           <div><p class="stat-label">Precio recomendado</p><p class="stat-value stat-value--sm mt-1">${formatCLPReal(d.precioRecomendado)}</p></div>
-          <div><p class="stat-label">Ganancia estimada</p><p class="stat-value stat-value--sm mt-1 ${claseGanancia}">${formatCLPReal(d.gananciaEstimada)}</p></div>
-          <div><p class="stat-label">Margen</p><p class="stat-value stat-value--sm mt-1">${formatPct(d.margenEstimadoPct)}</p></div>
           <div><p class="stat-label">Competencia</p><p class="stat-value stat-value--sm mt-1">${d.competencia ? `${formatCLPReal(d.competencia.rangoPrecioMinimo)} – ${formatCLPReal(d.competencia.rangoPrecioMaximo)}` : "Sin datos"}</p></div>
         </div>
         ${etiquetaComisionMl(d.comisionMlFuente)}
         ${etiquetaTipoDecision(d)}
         <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">${escapeHtml(d.razon)}</p>
+        ${d.avisoMargenObjetivo ? `<p class="text-sm text-amber-600 dark:text-amber-400 mb-4">${escapeHtml(d.avisoMargenObjetivo)}</p>` : ""}
         ${d.faltantes && d.faltantes.length ? `
           <div class="space-y-1.5 mb-4">
             ${d.faltantes.map((f) => `<p class="text-sm flex items-center gap-2"><span class="dot dot--gray"></span> Falta cargar: ${escapeHtml(f)}</p>`).join("")}
@@ -314,7 +318,7 @@ window.LC = window.LC || {};
       return `<p class="text-xs text-emerald-600 dark:text-emerald-400 mb-3 flex items-center gap-1">${icon("checkCircle")} Comisión Mercado Libre: Real</p>`;
     }
     if (fuente === "manual") {
-      return `<p class="text-xs text-amber-600 dark:text-amber-400 mb-3">Comisión estimada — puede variar del cobro real de Mercado Libre</p>`;
+      return `<p class="text-xs text-amber-600 dark:text-amber-400 mb-3">Comisión de respaldo de Configuración — Mercado Libre todavía no informó la comisión real de este producto</p>`;
     }
     return "";
   }

@@ -30,7 +30,7 @@ window.LC = window.LC || {};
   const SOPORTE_ESTADO_CLASE = { abierto: "reco-activo", en_revision: "reco-trial", resuelto: "reco-rentable", cerrado: "reco-pendiente_configuracion" };
   const ESTADO_SUSCRIPCION_LABEL = { trialing: "Prueba gratuita", active: "Activa", past_due: "Pago pendiente", canceled: "Cancelada", expired: "Vencida" };
   // Historial real de sincronizaciones con Mercado Libre (14 de septiembre de 2026).
-  const SYNC_DIRECCION_LABEL = { ml_importar_ventas: "Importar ventas", ml_costos_envio: "Costos de envío", ml_stock: "Stock" };
+  const SYNC_DIRECCION_LABEL = { ml_importar_ventas: "Importar ventas", ml_costos_envio: "Costos de envío", ml_stock: "Stock", ml_devoluciones: "Devoluciones" };
   const SYNC_ESTADO_LABEL = { success: "Correcto", partial_error: "Con errores", error: "Error", running: "En curso" };
   const SYNC_ESTADO_CLASE = { success: "reco-activo", partial_error: "reco-pendiente_configuracion", error: "reco-suspendido", running: "reco-trial" };
 
@@ -678,6 +678,24 @@ window.LC = window.LC || {};
               </tbody>
             </table></div>
           ` : `<p class="text-sm text-slate-500 dark:text-slate-400">Todavía no hay sincronizaciones registradas.</p>`}
+        </div>
+
+        <div class="panel-card mb-5">
+          <h3 class="panel-title mb-1">Devoluciones de Mercado Libre</h3>
+          ${(c.devoluciones || []).length ? `
+            <div class="table-wrap"><table class="w-full text-sm">
+              <thead><tr class="text-left border-b border-slate-200 dark:border-slate-700"><th class="px-3 py-2 font-medium">Fecha</th><th class="px-3 py-2 font-medium">Pedido</th><th class="px-3 py-2 font-medium">Devolución</th><th class="px-3 py-2 font-medium">Dinero</th></tr></thead>
+              <tbody>
+                ${c.devoluciones.map((d) => `
+                  <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                    <td class="px-3 py-2.5 whitespace-nowrap">${d.fechaReclamo ? formatDate(new Date(d.fechaReclamo)) : "—"}</td>
+                    <td class="px-3 py-2.5">${escapeHtml(d.pedidoId || "—")}</td>
+                    <td class="px-3 py-2.5">${escapeHtml(d.estadoDevolucion || "Sin devolución todavía")}</td>
+                    <td class="px-3 py-2.5">${escapeHtml(d.estadoDinero || "—")}</td>
+                  </tr>`).join("")}
+              </tbody>
+            </table></div>
+          ` : `<p class="text-sm text-slate-500 dark:text-slate-400">Sin devoluciones registradas.</p>`}
         </div>
 
         <div class="panel-card mb-5">

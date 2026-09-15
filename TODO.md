@@ -21,14 +21,16 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
       Falta solo verla logueado como admin en el navegador.
 - [x] Errores de sincronización por empresa — hecho 14 sept 2026: se registran en
       `SyncJob`/`SyncLog` (ya existían, nadie escribía) y el admin los ve (atención + detalle).
-- [ ] Devoluciones por empresa — investigado 14 sept 2026 contra la API real:
-      `GET /post-purchase/v1/claims/search` (tipos mediations, cancel_purchase, return,
-      cancel_sale; vínculo con la orden por `resource_id`) y
-      `GET /post-purchase/v2/claims/{claim_id}/returns` (status, status_money, refund_at,
-      envío de vuelta, revisión del producto). La app YA tiene permiso (HTTP 200). Exige al
-      menos un filtro real (`type`/`status`/`stage`…); `players.role`+`players.user_id` solos
-      dan 400. Hoy: 0 reclamos y 0 órdenes en Nexo. Pendiente decidir construirlo (sincronizar
-      reclamos al importar ventas y mostrarlos por empresa) cuando haya ventas reales.
+- [x] Devoluciones por empresa — hecho 14 sept 2026: `order_returns` (migración
+      `e5a7c9b1d3f4`), se sincronizan al importar ventas (reclamos `return` + mediaciones con
+      devolución), `GET /api/mercadolibre/devoluciones`, panel en Mercado Libre y en el detalle
+      admin. Sincronización real OK (HTTP 200, 0 reclamos hoy). Falta verlo con una devolución
+      real. No descuenta todavía la venta devuelta de las métricas de ingresos.
+- [ ] Facturas — decisión del dueño pendiente. Nexo NO puede emitir boletas/facturas SII (hace
+      falta un proveedor autorizado). Mercado Libre ofrece: (a) subir la factura PDF/XML del
+      vendedor por pack (`POST /packs/{pack_id}/fiscal_documents`, máx 1 MB, no aplica a Full en
+      Chile) y (b) reportes de facturación de los cargos de ML (`/billing/integration/monthly/…`,
+      1 vez al día) para conciliar la comisión real cobrada por venta.
 
 ## Deploy (día del despliegue, ver backend/DEPLOY.md)
 - [ ] **Servicio de mail** (Resend/SendGrid) + `noreply` para los recordatorios de

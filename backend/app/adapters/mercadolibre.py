@@ -206,6 +206,28 @@ class MercadoLibreAdapter:
         verdad en esa venta)."""
         return await self._get_with_retry(f"/orders/{order_id}", access_token)
 
+    async def search_claims(
+        self, access_token: str, seller_id: str, *, claim_type: str, offset: int = 0, limit: int = 50
+    ) -> dict[str, Any]:
+        """GET /post-purchase/v1/claims/search — reclamos contra el vendedor.
+        Verificado en vivo (14/09/2026): players.role + players.user_id solos
+        dan 400, hace falta un filtro real como `type`."""
+        params = {
+            "type": claim_type, "players.role": "respondent", "players.user_id": seller_id,
+            "sort": "last_updated:desc", "offset": offset, "limit": limit,
+        }
+        return await self._get_with_retry(f"/post-purchase/v1/claims/search?{urlencode(params)}", access_token)
+
+    async def get_claim_return(self, access_token: str, claim_id: str) -> Optional[dict[str, Any]]:
+        """GET /post-purchase/v2/claims/{id}/returns — la devolución de un
+        reclamo, o None si ese reclamo no tiene devolución (404)."""
+        try:
+            return await self._get_with_retry(f"/post-purchase/v2/claims/{claim_id}/returns", access_token)
+        except MercadoLibreRequestError as err:
+            if err.status == 404:
+                return None
+            raise
+
     async def predict_category(self, title: str, site_id: str) -> Optional[dict[str, str]]:
         """GET /sites/{site_id}/domain_discovery/search — público, NO
         necesita access_token (verificado en vivo el 29 de agosto de 2026).

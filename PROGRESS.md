@@ -156,12 +156,22 @@ catálogo (52).
     producto conviene si alcanza el margen mínimo (%) **o** la ganancia neta mínima ($); una
     pérdida nunca se rescata. Aplicada igual en `classify_product` (Oportunidades, /seleccion,
     gate de /decision y de publicar), `recomendar_precio` y `/decision-lote`.
-    Nota de datos: los 201 productos de Empresa Demo no tienen categoría de ML, así que todos
-    usan la comisión manual de respaldo (19%) hasta correr "Actualizar comisiones reales".
-20. **Devoluciones — investigado, no construido** (14 sept 2026) — ver TODO.md: la app ya tiene
-    permiso sobre `/post-purchase/v1/claims/search` y `/post-purchase/v2/claims/{id}/returns`
-    (verificado en vivo, HTTP 200); hoy hay 0 reclamos y 0 órdenes, así que no hay nada que
-    mostrar todavía.
+    Nota de datos: resuelto en el punto 21 (los 201 productos ya tienen comisión real).
+20. **Devoluciones de Mercado Libre** (14 sept 2026, sin commitear) — tabla `order_returns`
+    (migración `e5a7c9b1d3f4`, aplicada a `nexo.db`), sin datos del comprador. Se sincronizan
+    al importar ventas (`services/ml_devoluciones_sync.py`, registra `SyncJob` ml_devoluciones),
+    `GET /api/mercadolibre/devoluciones`, panel en la sección Mercado Libre y en el detalle
+    admin. Sincronización real contra ML: HTTP 200, 0 reclamos hoy.
+21. **Comisiones siempre reales** (14 sept 2026, sin commitear) — `services/ml_comisiones.py`
+    (núcleo que antes vivía solo en `/comisiones/recalcular`) corre solo en segundo plano al
+    confirmar un import de Excel/CSV o Google Sheets y al conectar Mercado Libre. Backfill real:
+    Empresa Demo 201 productos con categoría, 197 combinaciones de comisión real, 0 errores. La
+    comisión manual queda solo como respaldo marcado para lo que ML aún no informó.
+22. **"¿Conviene?" con regla única** (14 sept 2026, decisión del dueño) — se decide siempre al
+    precio real con `classify_product` (la misma de Oportunidades): pérdida → no conviene;
+    margen % ≥ mínimo o ganancia ≥ ganancia neta mínima → conviene. El stock no participa. El
+    margen objetivo solo arma el precio recomendado y, si es imposible, un aviso. La
+    competencia ya no cambia la decisión. Ver `backend/DECISION_NEGOCIO.md`.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

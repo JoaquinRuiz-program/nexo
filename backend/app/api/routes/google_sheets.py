@@ -43,7 +43,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -63,6 +63,7 @@ from app.domain.catalog_import import IMPORT_FIELDS, ColumnMapping, build_rows, 
 from app.domain.catalog_writer import escribir_filas
 from app.domain.spreadsheet_io import MAX_FILAS, MENSAJE_DEMASIADAS_FILAS
 from app.domain.token_crypto import TokenEncryptionNotConfigured, decrypt_token, encrypt_token
+from app.services.ml_comisiones import actualizar_comisiones_en_segundo_plano
 
 logger = logging.getLogger(__name__)
 
@@ -481,6 +482,7 @@ class ConfirmarHojaBody(BaseModel):
 @router.post("/importar/confirmar")
 async def confirmar_hoja(
     body: ConfirmarHojaBody,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     store: Store = Depends(get_current_store),
 ) -> dict:
@@ -495,4 +497,7 @@ async def confirmar_hoja(
     mapping = ColumnMapping(mapping=body.mapeo)
     rows = build_rows(raw_rows, mapping)
 
-    return escribir_filas(db, store, rows, fuente="google_sheets", omitir_errores=body.omitirErrores)
+    resultado = escribir_filas(db, store, rows, fuente="google_sheets", omitir_errores=body.omitirErrores)
+    # Comisión real de Mercado Libre de lo importado, en segundo plano.
+    background_tasks.add_task(actualizar_comisiones_en_segundo_plano, db.get_bind(), store.id, get_settings())
+    return resultado

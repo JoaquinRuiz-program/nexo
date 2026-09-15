@@ -39,6 +39,7 @@ from app.api.deps import get_current_session, require_nexo_admin
 from app.domain.admin_overview import PERIODOS, SEVERIDAD_ORDEN, motivos_de_atencion, rango_de_periodo, serie_temporal, variacion_pct
 from app.api.routes.productos_db import build_producto_fila
 from app.db.models import (
+    OrderReturn,
     AdminActionLog,
     AuthSession,
     ChannelCostSettings,
@@ -60,6 +61,7 @@ from app.db.models import (
 from app.db.models.support import ESTADOS_VALIDOS as ESTADOS_SOPORTE_VALIDOS
 from app.db.session import get_db
 from app.domain.plans import ESTADOS_VALIDOS, ensure_default_plans
+from app.services.ml_devoluciones_sync import fila_devolucion
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -709,6 +711,11 @@ def detalle_cliente(store_id: int, db: Session = Depends(get_db), _admin: User =
         },
         "cantidadUsuarios": 1,  # ver comentario de "usuarios" más arriba
         "sincronizaciones": filas_sincronizaciones,
+        # Devoluciones reales de Mercado Libre (sin datos del comprador).
+        "devoluciones": [
+            fila_devolucion(d) for d in db.query(OrderReturn).filter_by(store_id=tienda.id)
+            .order_by(OrderReturn.claim_created_at.desc(), OrderReturn.id.desc()).limit(20).all()
+        ],
         "mercadoLibre": None if cuenta_ml is None else {
             # Nunca access_token_encrypted/refresh_token_encrypted — ni
             # siquiera el hecho de que existan como campo en la respuesta.

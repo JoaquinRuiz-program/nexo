@@ -75,6 +75,28 @@ _NOTA_VALIDACION_NO_ES_AUTORIZACION = (
 )
 
 
+def _criterios_conviene_ml(db: Session, store_id: int) -> SelectionCriteria:
+    """Regla ÚNICA de "¿Conviene?" en Mercado Libre (14 de septiembre de 2026,
+    decisión del dueño), la misma de Oportunidades: precio real, margen mínimo
+    % O ganancia neta mínima $. El stock nunca participa."""
+    config = db.query(ChannelCostSettings).filter_by(store_id=store_id, channel="mercadolibre").first()
+    return SelectionCriteria(
+        channel="mercadolibre", require_marketplace_stock=False,
+        min_margin_pct=float(config.min_margin_pct) if config and config.min_margin_pct is not None else None,
+        ganancia_minima_clp=float(config.min_profit_clp) if config and config.min_profit_clp is not None else None,
+    )
+
+
+def _decidir_ml(fila: Optional[dict], recomendacion, analisis_competencia, criterios: SelectionCriteria):
+    fila = fila or {}
+    return evaluar_decision(
+        classify_product(fila, criterios), recomendacion, analisis_competencia,
+        precio_actual=fila.get("precio"), ganancia_actual=fila.get("margenMercadoLibreClp"),
+        margen_actual_pct=fila.get("margenMercadoLibrePct"),
+        hay_piso_configurado=criterios.min_margin_pct is not None or criterios.ganancia_minima_clp is not None,
+    )
+
+
 def _build_one(db: Session, store: Store, variant_id: int, criteria: SelectionCriteria, filas: Optional[list[dict]] = None) -> Optional[dict]:
     # build_profitability_rows ya scopea por tienda — un variant_id de otra
     # empresa simplemente no aparece en `filas`, así que esto devuelve None
@@ -372,7 +394,7 @@ async def validar_publicacion_mercadolibre(
 
     resultado = evaluar_atributos(atributos_categoria, body.condition, datos_conocidos, {})
     sugerencias, sugerencias_catalogo = await _sugerencias_de_catalogo_ml(db, store, variante, producto, resultado.faltantes)
-    clasificacion = classify_product(fila, SelectionCriteria(channel="mercadolibre", require_marketplace_stock=True))
+    clasificacion = classify_product(fila, _criterios_conviene_ml(db, store.id))
 
     return {
         "categoryId": body.category_id.strip(),
@@ -683,28 +705,9 @@ async def decision_mercadolibre(
     producto = variante.product
 
     recomendacion, analisis_competencia, fuente_comision_ml = await _resolver_recomendacion_precio(db, store, variante, producto)
-    decision = evaluar_decision(recomendacion, analisis_competencia)
-
-    # El piso de margen configurado (ChannelCostSettings.min_margin_pct) es un
-    # gate DURO, el MISMO que corre al publicar (ver el gate de /confirmar).
-    # Tiene que decirse ACÁ, en el paso 1 ("¿Conviene?"), no recién cuando el
-    # dueño ya llenó los atributos y aprieta publicar: si el producto no
-    # alcanza el mínimo a su precio actual, "no conviene" desde el principio.
-    # `_fila` ya trae el margen neto de ML al precio real de la variante.
-    config_canal = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
-    margen_minimo_pct = float(config_canal.min_margin_pct) if config_canal and config_canal.min_margin_pct is not None else None
-    gate = classify_product(
-        _fila,
-        SelectionCriteria(
-            channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct,
-            ganancia_minima_clp=float(config_canal.min_profit_clp) if config_canal and config_canal.min_profit_clp is not None else None,
-        ),
-    )
-    decision_valor = decision.decision
-    razon_valor = decision.razon
-    if gate["clasificacion"] in ("margen_bajo", "no_rentable"):
-        decision_valor = "no_conviene"
-        razon_valor = gate["razon"]
+    # Regla única (mismo gate que Oportunidades y /confirmar): se decide con
+    # `_fila`, que trae la ganancia neta de ML al precio REAL de la variante.
+    decision = _decidir_ml(_fila, recomendacion, analisis_competencia, _criterios_conviene_ml(db, store.id))
 
     competencia_resumen = None
     if analisis_competencia is not None and analisis_competencia.hay_competencia:
@@ -719,8 +722,12 @@ async def decision_mercadolibre(
         # Nunca publica, nunca modifica precio/stock — solo lectura y
         # cálculo (ver domain/decision.py).
         "tipo": "DECISION",
-        "decision": decision_valor,  # "conviene" | "revisar" | "no_conviene"
-        "razon": razon_valor,
+        "decision": decision.decision,  # "conviene" | "revisar" | "no_conviene"
+        "razon": decision.razon,
+        "precioActual": decision.precio_actual,
+        "gananciaActual": decision.ganancia_actual,
+        "margenActualPct": decision.margen_actual_pct,
+        "avisoMargenObjetivo": decision.aviso_margen_objetivo,
         "precioRecomendado": decision.precio_recomendado,
         "precioMinimoRentable": decision.precio_minimo_rentable,
         "gananciaEstimada": decision.ganancia_estimada,
@@ -771,9 +778,7 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
     # Oportunidades y "¿Conviene?" marcan como que no conviene.
     filas_por_variante = {f["id"]: f for f in build_profitability_rows(db, store)[0]}
     ganancia_minima_clp = float(config_canal.min_profit_clp) if config_canal and config_canal.min_profit_clp is not None else None
-    criterios_gate = SelectionCriteria(
-        channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct, ganancia_minima_clp=ganancia_minima_clp,
-    )
+    criterios_gate = _criterios_conviene_ml(db, store.id)
     resultado = []
     for variante in variantes:
         precio_actual = float(variante.price) if variante.price is not None else None
@@ -788,17 +793,12 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
             analisis_competencia=None,
             ganancia_minima_clp=ganancia_minima_clp,
         )
-        decision = evaluar_decision(recomendacion, analisis_competencia=None)
-        decision_valor, razon_valor = decision.decision, decision.razon
-        fila = filas_por_variante.get(variante.id)
-        if fila is not None:
-            gate = classify_product(fila, criterios_gate)
-            if gate["clasificacion"] in ("margen_bajo", "no_rentable"):
-                decision_valor, razon_valor = "no_conviene", gate["razon"]
+        decision = _decidir_ml(filas_por_variante.get(variante.id), recomendacion, None, criterios_gate)
         resultado.append({
             "variantId": variante.id,
-            "decision": decision_valor,
-            "razon": razon_valor,
+            "decision": decision.decision,
+            "razon": decision.razon,
+            "avisoMargenObjetivo": decision.aviso_margen_objetivo,
             "precioRecomendado": decision.precio_recomendado,
             "margenEstimadoPct": decision.margen_estimado_pct,
             "faltantes": decision.faltantes,
@@ -1039,13 +1039,7 @@ async def _resolver_publicacion(
     # es rentable", que confunde: el problema no es la plata, es que falta
     # decir cuántas unidades vender. Ahora la rentabilidad se juzga solo por
     # el margen, y el stock se pregunta aparte.
-    clasificacion = classify_product(
-        fila,
-        SelectionCriteria(
-            channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct,
-            ganancia_minima_clp=float(config_canal_gate.min_profit_clp) if config_canal_gate and config_canal_gate.min_profit_clp is not None else None,
-        ),
-    )
+    clasificacion = classify_product(fila, _criterios_conviene_ml(db, store.id))
     if clasificacion["clasificacion"] != "rentable":
         raise HTTPException(
             status_code=400,

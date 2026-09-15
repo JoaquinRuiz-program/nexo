@@ -1376,7 +1376,9 @@ def test_precio_recomendado_de_variante_de_otra_empresa_da_404(client, db_sessio
 # ------------------------------------------------------------------
 
 
-def test_decision_datos_insuficientes_nunca_inventa_una_decision(client, db_session, a_store):
+def test_decision_sin_margen_objetivo_igual_decide_con_el_precio_real(client, db_session, a_store):
+    # 14/09/2026 — el margen objetivo no participa de "¿Conviene?": sin él
+    # solo falta el precio recomendado. $5.000 − $3.000 − 15% = $1.250, sin pérdida.
     variant_id = _producto_publicable(db_session, a_store, sku="DECISION-SIN-MARGEN")  # sin target_margin_pct
 
     res = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/decision")
@@ -1384,9 +1386,21 @@ def test_decision_datos_insuficientes_nunca_inventa_una_decision(client, db_sess
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["tipo"] == "DECISION"
-    assert body["decision"] == "revisar"
+    assert body["decision"] == "conviene"
+    assert body["precioActual"] == 5000
+    assert body["gananciaActual"] == 1250
     assert "margen objetivo del canal" in body["faltantes"]
     assert body["precioRecomendado"] is None
+
+
+def test_decision_margen_objetivo_imposible_solo_avisa(client, db_session, a_store):
+    variant_id = _producto_publicable(db_session, a_store, sku="DECISION-OBJETIVO-IMPOSIBLE", costo=8000, precio=20000)
+    _configurar_margen(db_session, a_store, objetivo=90.0, minimo=10.0)  # 90% + 15% comisión >= 100%
+
+    body = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/decision").json()
+
+    assert body["decision"] == "conviene"
+    assert body["avisoMargenObjetivo"] == "No es posible alcanzar tu margen objetivo con estas condiciones."
 
 
 def test_decision_conviene_sin_cuenta_ml_conectada(client, db_session, a_store):
@@ -1404,8 +1418,10 @@ def test_decision_conviene_sin_cuenta_ml_conectada(client, db_session, a_store):
 
 
 def test_decision_no_conviene_no_alcanza_margen_minimo(client, db_session, a_store):
+    # Precio real $20.000: ganancia $9.000 (45%) < mínimo 50%. Antes se miraba
+    # el precio recomendado (objetivo 5%), que nunca decidía de verdad.
     variant_id = _producto_publicable(db_session, a_store, sku="DECISION-NO-CONVIENE", costo=8000, precio=20000)
-    _configurar_margen(db_session, a_store, objetivo=5.0, minimo=20.0)
+    _configurar_margen(db_session, a_store, objetivo=5.0, minimo=50.0)
 
     res = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/decision")
 
@@ -1414,7 +1430,7 @@ def test_decision_no_conviene_no_alcanza_margen_minimo(client, db_session, a_sto
 
 
 @respx.mock
-def test_decision_revisar_precio_por_encima_de_la_competencia(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
+def test_decision_la_competencia_es_informativa_no_cambia_la_decision(client, db_session, a_store, cuenta_ml_conectada, monkeypatch):
     monkeypatch.setattr("app.api.routes.publicaciones.get_settings", lambda: CONFIGURED_SETTINGS)
     variant_id = _producto_publicable(db_session, a_store, sku="DECISION-CARO", costo=8000, precio=20000, barcode="7891234567895")
     _configurar_margen(db_session, a_store, objetivo=40.0, minimo=10.0)
@@ -1437,7 +1453,7 @@ def test_decision_revisar_precio_por_encima_de_la_competencia(client, db_session
 
     assert res.status_code == 200, res.text
     body = res.json()
-    assert body["decision"] == "revisar"
+    assert body["decision"] == "conviene"
     assert body["competencia"]["posicionPrecioPropio"] == "por_encima"
 
 
@@ -1559,7 +1575,7 @@ def test_ganancia_neta_minima_hace_convenir_igual_en_decision_lote_y_seleccion(c
     assert next(f for f in seleccion["productos"] if f["id"] == variant_id)["clasificacion"] == "rentable"
 
 
-def test_decision_lote_sin_margen_configurado_es_revisar_para_todos(client, db_session, a_store):
+def test_decision_lote_sin_margenes_configurados_decide_por_ganancia_real(client, db_session, a_store):
     _producto_publicable(db_session, a_store, sku="LOTE-SIN-MARGEN", costo=8000, precio=20000)
 
     res = client.get("/api/publicaciones/mercadolibre/decision-lote")
@@ -1567,7 +1583,7 @@ def test_decision_lote_sin_margen_configurado_es_revisar_para_todos(client, db_s
     assert res.status_code == 200, res.text
     body = res.json()
     assert len(body) >= 1
-    assert all(fila["decision"] == "revisar" for fila in body)
+    assert all(fila["decision"] == "conviene" for fila in body)  # sin pérdida y sin pisos configurados
     assert all("margen objetivo del canal" in fila["faltantes"] for fila in body)
 
 
