@@ -64,6 +64,10 @@ def _get_valid_session(request: Request, db: Session) -> AuthSession:
         raise _NO_AUTENTICADO
     if session.expires_at <= datetime.now():
         raise _NO_AUTENTICADO
+    # 15 de septiembre de 2026 (QA integral): suspender una cuenta bloqueaba el
+    # login, pero una sesión que ya estaba abierta seguía funcionando.
+    if session.user.status == "suspended":
+        raise _NO_AUTENTICADO
     return session
 
 

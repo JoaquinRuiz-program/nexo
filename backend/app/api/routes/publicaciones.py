@@ -23,7 +23,7 @@ desde cero (rentabilidad incluida) en vez de confiar en lo que devolvió
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Optional
 
@@ -584,6 +584,22 @@ async def analizar_competencia_mercadolibre(
 # ------------------------------------------------------------------
 
 
+def _recomendar_con_envio_del_precio_recomendado(
+    envio_ml: dict, envio_manual: Optional[float], envio_desde: Optional[float], channel_costs: ChannelCosts, **kwargs
+) -> RecomendacionPrecio:
+    """15 de septiembre de 2026 (QA integral) — con "envío desde $X", si el
+    envío manual se descuenta o no se decide con el precio RECOMENDADO, no con
+    el actual. Antes un producto a $19.980 (sin envío) recomendaba $22.990
+    "para ganar 30 %" sin descontar el envío que sí aplica a ese precio (el
+    margen real quedaba en 14 %). Con envío real de Mercado Libre no cambia."""
+    if envio_ml["envioMlFuente"] == "mercadolibre" or envio_desde is None or not envio_manual:
+        return recomendar_precio(channel_costs=channel_costs, **kwargs)
+    sin_envio = recomendar_precio(channel_costs=replace(channel_costs, shipping_cost=0.0), **kwargs)
+    if sin_envio.estado == ESTADO_RECOMENDACION and sin_envio.precio_recomendado < envio_desde:
+        return sin_envio
+    return recomendar_precio(channel_costs=replace(channel_costs, shipping_cost=envio_manual), **kwargs)
+
+
 async def _resolver_recomendacion_precio(
     db: Session, store: Store, variante: ProductVariant, producto: Product
 ) -> tuple[RecomendacionPrecio, Optional[AnalisisCompetencia], str]:
@@ -651,9 +667,10 @@ async def _resolver_recomendacion_precio(
             except (HTTPException, MercadoLibreAuthError, MercadoLibreRequestError):
                 analisis_competencia = None
 
-    recomendacion = recomendar_precio(
+    envio_manual = float(config_canal.shipping_cost) if config_canal and config_canal.shipping_cost is not None else None
+    recomendacion = _recomendar_con_envio_del_precio_recomendado(
+        _envio_ml, envio_manual, envio_desde, channel_costs,
         costo=float(variante.cost_price) if variante.cost_price is not None else None,
-        channel_costs=channel_costs,
         margen_objetivo_pct=margen_objetivo_pct,
         margen_minimo_pct=margen_minimo_pct,
         analisis_competencia=analisis_competencia,
@@ -798,9 +815,9 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
         costo_actual = float(variante.cost_price) if variante.cost_price is not None else None
         pref_efectiva, _tipo = preferencia_efectiva(listing_type_pref, precio_actual, costo_actual, comisiones, costos_con_envio, margen_objetivo_pct)
         channel_costs, _fuente = resolver_costos_ml(comisiones, costos_con_envio, pref_efectiva)
-        recomendacion = recomendar_precio(
+        recomendacion = _recomendar_con_envio_del_precio_recomendado(
+            _envio_ml, channel_costs_manual.shipping_cost, envio_desde, channel_costs,
             costo=float(variante.cost_price) if variante.cost_price is not None else None,
-            channel_costs=channel_costs,
             margen_objetivo_pct=margen_objetivo_pct,
             margen_minimo_pct=margen_minimo_pct,
             analisis_competencia=None,

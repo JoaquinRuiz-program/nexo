@@ -268,6 +268,20 @@ def test_usuario_suspendido_no_puede_iniciar_sesion(client, db_session):
     assert res.status_code == 403
 
 
+def test_suspender_corta_la_sesion_que_ya_estaba_abierta(client, db_session):
+    """QA integral (15/09/2026): suspender bloqueaba el login, pero el cliente
+    que ya tenía la sesión abierta seguía usando la app."""
+    usuario, tienda = _crear_empresa(db_session, email="sesion-abierta@empresas.cl", nombre_empresa="Empresa con Sesión")
+    autenticar(client, db_session, usuario, tienda, ahora=NOW)
+    assert client.get("/api/productos").status_code == 200
+
+    usuario.status = "suspended"
+    db_session.commit()
+
+    assert client.get("/api/productos").status_code == 401
+    assert client.get("/api/auth/me").status_code == 401
+
+
 # ------------------------------------------------------------------
 # GET /api/admin/usuarios — vista cruzada de usuarios (todas las empresas)
 # ------------------------------------------------------------------

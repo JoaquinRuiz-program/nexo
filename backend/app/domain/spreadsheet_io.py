@@ -130,16 +130,22 @@ def _read_xlsx(fileobj: BinaryIO) -> tuple[list[str], list[dict[str, Any]]]:
     raw_header = ventana[idx_header]
     headers = [str(h).strip() if h is not None else f"columna_{i + 1}" for i, h in enumerate(raw_header)]
     rows: list[dict[str, Any]] = []
+    despues_de_fila_en_blanco = False
     # Las filas que ya se leyeron después del encabezado se procesan primero, y
     # después se sigue con el iterador perezoso desde donde quedó.
     for values in chain(ventana[idx_header + 1 :], rows_iter):
         if values is None or all(v is None or str(v).strip() == "" for v in values):
-            # Una fila en blanco DESPUÉS de que ya empezó la tabla marca su
-            # final: lo que viene abajo (notas o aclaraciones al pie, como en
-            # la "Calculadora de precios" del piloto) no son productos. Antes
-            # de la primera fila de datos, las filas en blanco sólo se saltan.
+            # Las filas en blanco se saltan. 15 de septiembre de 2026 (QA
+            # integral): antes la primera fila en blanco después de la tabla
+            # cortaba la lectura, y un catálogo con una fila vacía en el medio
+            # perdía en silencio todos los productos de abajo.
             if rows:
-                break
+                despues_de_fila_en_blanco = True
+            continue
+        if despues_de_fila_en_blanco and _cuenta_celdas_con_texto(values) < 2:
+            # Después de una fila en blanco, una fila con una sola celda escrita
+            # es una nota al pie (como en la "Calculadora de precios" del
+            # piloto), no un producto.
             continue
         # Se corta DURANTE la iteración (read_only=True es perezoso): así el
         # tope protege de verdad la memoria, en vez de comprobarlo cuando ya

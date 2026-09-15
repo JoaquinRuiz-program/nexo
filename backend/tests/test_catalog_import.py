@@ -154,6 +154,18 @@ def test_precio_no_numerico_es_bloqueante():
     assert any("Precio no válido" in p for p in rows[0].problemas)
 
 
+def test_costo_o_precio_negativo_es_bloqueante():
+    """QA integral (15/09/2026): "-500" en el costo se importaba como válido."""
+    mapping = detect_columns(["Nombre", "Costo", "Precio"])
+    rows = build_rows([
+        {"Nombre": "Costo negativo", "Costo": "-500", "Precio": "5990"},
+        {"Nombre": "Precio negativo", "Costo": "1000", "Precio": "-5.990"},
+    ], mapping)
+    assert rows[1].precio == -5990  # el separador de miles se sigue leyendo bien
+    assert rows[0].estado == "error" and any("Costo no válido" in p for p in rows[0].problemas)
+    assert rows[1].estado == "error" and any("Precio no válido" in p for p in rows[1].problemas)
+
+
 def test_acepta_formato_chileno_de_numero():
     mapping = detect_columns(["Nombre", "Precio"])
     rows = build_rows([{"Nombre": "Producto", "Precio": "18.500,50"}], mapping)
@@ -185,8 +197,7 @@ def test_acepta_formato_chileno_de_numero():
         ("1.234.567,89", 1234567.89),
         # Con símbolo de moneda y espacios alrededor.
         ("$ 3.990", 3990),
-        # Negativos.
-        ("-3.990", -3990),
+        # Negativos: se leen bien pero son error (ver test_costo_o_precio_negativo_es_bloqueante).
     ],
 )
 def test_separador_de_miles_vs_decimal(crudo, esperado):

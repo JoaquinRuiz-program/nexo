@@ -1720,6 +1720,41 @@ def test_precio_recomendado_de_comision_real_nunca_usa_la_de_otra_empresa(client
     assert body_b["precioRecomendado"] == 22990.0  # 8000/(1-0.25-0.40) redondeado; 40% de B, nunca el 10% de A
 
 
+def _configurar_envio_desde(db_session, tienda, *, envio, desde, comision, objetivo, minimo):
+    canal = db_session.query(ChannelCostSettings).filter_by(store_id=tienda.id, channel="mercadolibre").first()
+    canal.commission_pct = comision
+    canal.shipping_cost = envio
+    canal.shipping_min_price_clp = desde
+    canal.target_margin_pct = objetivo
+    canal.min_margin_pct = minimo
+    db_session.commit()
+
+
+def test_precio_recomendado_descuenta_el_envio_si_el_precio_recomendado_lo_paga(client, db_session, a_store):
+    """QA integral (15/09/2026): producto a $19.980 con "envío desde $19.990".
+    Sin envío el precio para el 30 % sería $22.990, pero a ese precio sí se paga
+    el envío: la recomendación tiene que incluirlo (antes prometía 31,8 % y el
+    margen real era 14 %)."""
+    variant_id = _producto_publicable(db_session, a_store, sku="QA-ENVIO", costo=12000, precio=19980)
+    _configurar_envio_desde(db_session, a_store, envio=3990.0, desde=19990.0, comision=16.0, objetivo=30.0, minimo=15.0)
+
+    body = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/precio-recomendado").json()
+    # (12000 + 3990) / (1 - 0.30 - 0.16) = 29.611,11 -> 29.990
+    assert body["precioRecomendado"] == 29990.0
+    assert body["margenEstimadoPct"] >= 30.0
+    fila = next(f for f in client.get("/api/publicaciones/mercadolibre/decision-lote").json() if f["variantId"] == variant_id)
+    assert fila["precioRecomendado"] == body["precioRecomendado"]
+
+
+def test_precio_recomendado_bajo_el_umbral_no_descuenta_envio(client, db_session, a_store):
+    variant_id = _producto_publicable(db_session, a_store, sku="QA-SIN-ENVIO", costo=4500, precio=24990)
+    _configurar_envio_desde(db_session, a_store, envio=3990.0, desde=19990.0, comision=16.0, objetivo=30.0, minimo=15.0)
+
+    body = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/precio-recomendado").json()
+    # 4500 / (1 - 0.30 - 0.16) = 8.333,33 -> 8.990, bajo $19.990: sin envío.
+    assert body["precioRecomendado"] == 8990.0
+
+
 def _quitar_comision_manual(db_session, tienda):
     canal = db_session.query(ChannelCostSettings).filter_by(store_id=tienda.id, channel="mercadolibre").first()
     canal.commission_pct = None

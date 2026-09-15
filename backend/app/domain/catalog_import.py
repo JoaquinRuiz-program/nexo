@@ -391,15 +391,18 @@ def build_rows(raw_rows: list[dict[str, Any]], mapping: ColumnMapping) -> list[R
         precio_valido = True
         costo_valido = True
 
+        # 15 de septiembre de 2026 (QA integral): un precio o costo negativo
+        # (error de tipeo, ej. "-500") pasaba como válido e inflaba la ganancia;
+        # editar el costo a mano ya lo rechazaba ("El costo no puede ser negativo").
         precio = None
         if precio_raw:
             precio = _to_number(precio_raw)
-            precio_valido = precio is not None
+            precio_valido = precio is not None and precio >= 0
 
         costo = None
         if costo_raw:
             costo = _to_number(costo_raw)
-            costo_valido = costo is not None
+            costo_valido = costo is not None and costo >= 0
 
         # 13 de septiembre de 2026 — el stock NUNCA bloquea la importación.
         # Un valor no numérico se ignora (se trata como "sin stock") en vez

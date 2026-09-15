@@ -248,6 +248,34 @@ def test_analizar_xlsx_con_titulo_arriba_y_notas_abajo(client, a_store):
     assert body["resumen"]["totalFilas"] == 2
 
 
+def test_analizar_xlsx_con_fila_en_blanco_en_el_medio_no_pierde_productos(client, a_store):
+    """QA integral (15/09/2026): una fila vacía en medio del catálogo cortaba la
+    lectura y los productos de abajo se perdían sin ningún aviso."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["SKU", "Nombre", "Costo", "Precio"])
+    ws.append(["A-1", "Producto uno", 1000, 2990])
+    ws.append(["A-2", "Producto dos", 1500, 3990])
+    ws.append([])                                    # fila en blanco en el medio
+    ws.append(["A-3", "Producto tres", 2000, 4990])
+    ws.append(["A-4", "Producto cuatro", 2500, 5990])
+    ws.append([])
+    ws.append(["Nota: precios con IVA incluido."])  # nota al pie (1 celda)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    res = client.post(
+        "/api/catalogo/importar/analizar",
+        files={"file": ("catalogo.xlsx", buffer, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["resumen"]["totalFilas"] == 4
+    assert [f["sku"] for f in body["filas"]] == ["A-1", "A-2", "A-3", "A-4"]
+
+
 def test_formato_no_soportado_devuelve_400(client, a_store):
     archivo = io.BytesIO(b"esto no es una planilla")
     res = client.post("/api/catalogo/importar/analizar", files={"file": ("archivo.pdf", archivo, "application/pdf")})

@@ -250,6 +250,12 @@ catálogo (52).
     redondea hacia arriba al precio terminado en 990 ($84.134 → $84.990); el margen estimado
     se calcula con ese precio, así nunca queda bajo el objetivo. El caso imposible (sin
     margen objetivo alcanzable) sigue devolviendo el mínimo rentable exacto.
+35. **QA integral** (15 sept 2026, ver `QA_INTEGRAL.md`) — 4 vendedores ficticios + admin,
+    datos borrados al terminar. 6 bugs corregidos con pruebas: fila en blanco en el Excel
+    cortaba la importación, precio recomendado ignoraba el envío al cruzar "envío desde",
+    suspender no cortaba la sesión abierta, `/api/rentabilidad` 500 con costo sin precio,
+    importador aceptaba costo/precio negativo, vendedor veía el esqueleto de `#/admin`.
+    Regla de rentabilidad: 0 diferencias en 1.232 productos; aislamiento: 0 fugas.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

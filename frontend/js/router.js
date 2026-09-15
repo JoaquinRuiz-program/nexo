@@ -64,6 +64,13 @@ window.LC = window.LC || {};
         window.location.hash = "/admin";
         return;
       }
+      // 15 de septiembre de 2026 (QA integral): un vendedor que escribía
+      // #/admin veía el esqueleto del panel de administrador con "No
+      // encontrado" (el backend ya respondía 404). Ahora vuelve a su Dashboard.
+      if (session && !session.esNexoAdmin && RUTAS_ADMIN.includes(name)) {
+        window.location.hash = "/dashboard";
+        return;
+      }
     }
     LC.app.render(name, param);
   }

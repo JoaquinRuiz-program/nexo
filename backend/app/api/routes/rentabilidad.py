@@ -379,14 +379,17 @@ def reporte_rentabilidad(db: Session = Depends(get_db), store: Store = Depends(g
     # Prioriza lo que más conviene (mayor margen en tienda) primero; lo que
     # todavía no tiene costo cargado va al final, no se mezcla ordenado como
     # si valiera $0 (eso lo haría parecer lo menos rentable, y no lo sabemos).
-    con_costo = sorted((f for f in filas if f["tieneCosto"]), key=lambda f: f["margenTiendaClp"], reverse=True)
-    sin_costo = [f for f in filas if not f["tieneCosto"]]
+    # 15 de septiembre de 2026 (QA integral): un producto con costo pero SIN
+    # precio tiene margenTiendaClp None y rompía este orden (error 500 en toda
+    # la pantalla). Sin margen calculable va al final, igual que sin costo.
+    con_margen = sorted((f for f in filas if f["margenTiendaClp"] is not None), key=lambda f: f["margenTiendaClp"], reverse=True)
+    sin_margen = [f for f in filas if f["margenTiendaClp"] is None]
 
     return {
         "resumen": {
             "totalProductos": len(filas),
-            "productosConCosto": len(con_costo),
+            "productosConCosto": sum(1 for f in filas if f["tieneCosto"]),
             "canalesConfigurados": [CHANNEL_MERCADO_LIBRE] if ml_configurado else [],
         },
-        "productos": con_costo + sin_costo,
+        "productos": con_margen + sin_margen,
     }

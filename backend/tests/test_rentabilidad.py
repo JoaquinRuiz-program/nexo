@@ -237,6 +237,22 @@ def test_configurar_margen_objetivo_via_endpoint_habilita_precio_recomendado(cli
 # ------------------------------------------------------------------
 
 
+def test_producto_con_costo_y_sin_precio_no_rompe_el_reporte(client, db_session, a_store):
+    """QA integral (15/09/2026): un producto importado con costo pero sin precio
+    de venta hacía fallar GET /api/rentabilidad con un error 500."""
+    _producto_con_precio_y_costo(db_session, a_store, sku="CON-PRECIO", nombre="Con precio", precio=5000, costo=3000)
+    _producto_con_precio_y_costo(db_session, a_store, sku="SIN-PRECIO", nombre="Sin precio", precio=None, costo=15000)
+    _producto_con_precio_y_costo(db_session, a_store, sku="SIN-COSTO", nombre="Sin costo", precio=4000, costo=None)
+
+    res = client.get("/api/rentabilidad")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["resumen"]["productosConCosto"] == 2
+    assert [p["sku"] for p in body["productos"]][0] == "CON-PRECIO"
+    assert {p["sku"] for p in body["productos"]} == {"CON-PRECIO", "SIN-PRECIO", "SIN-COSTO"}
+
+
 def _producto_con_categoria_ml(db_session, tienda, *, sku, nombre, precio, costo, category_id="MLC180937"):
     _producto_con_precio_y_costo(db_session, tienda, sku=sku, nombre=nombre, precio=precio, costo=costo)
     producto = db_session.query(Product).filter_by(store_id=tienda.id, internal_sku=sku).one()
