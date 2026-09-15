@@ -38,6 +38,10 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
       render.yaml). Falta del dueño: cuenta Resend, dominio verificado y la API key.
 - [ ] **Cron diario** — definido en render.yaml (`python -m app.services.lifecycle`). Se activa
       solo al desplegar en Render.
+- [x] Migraciones verificadas para el deploy (15 sept 2026): `upgrade head` desde una base
+      vacía OK, downgrade/upgrade de las últimas OK, 0 diferencias entre el esquema migrado y
+      los modelos, y SQL offline para Postgres generado sin errores (la migración de datos
+      `c9e1a3b5d7f2` solo corre online, que es lo que hace el preDeploy de Render).
 - [ ] Despliegue real: Render (backend) + Supabase (Postgres) + dominio. Reemplaza el
       túnel ngrok por el dominio HTTPS propio en el redirect de OAuth de ML.
 - [ ] **Términos y Condiciones + Privacidad**. Redactar con cuidado: el claim "los
