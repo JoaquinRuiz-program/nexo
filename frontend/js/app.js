@@ -1823,6 +1823,7 @@ window.LC = window.LC || {};
           </p>
           <div id="ml-devoluciones" class="mt-4"></div>
           <div id="ml-conciliacion" class="mt-4"></div>
+          <div id="ml-facturas" class="mt-4"></div>
         </div>`;
     }
     return `
@@ -2022,9 +2023,11 @@ window.LC = window.LC || {};
         importarVentasBtn.textContent = "Importar ventas ahora";
         cargarDevolucionesML();
         cargarConciliacionML();
+        cargarFacturasML();
       });
       cargarDevolucionesML();
       cargarConciliacionML();
+      cargarFacturasML();
     }
 
     document.getElementById("ml-search-input").addEventListener("input", (e) => {
@@ -2185,6 +2188,90 @@ window.LC = window.LC || {};
             </tr>`).join("")}
         </tbody>
       </table></div>`;
+  }
+
+  // Facturas propias por venta (15 de septiembre de 2026): el dueño adjunta a
+  // cada venta la factura que emitió con su proveedor autorizado por el SII.
+  // Nexo no emite facturas ni guarda el archivo: lo reenvía a Mercado Libre.
+  async function cargarFacturasML() {
+    const cont = document.getElementById("ml-facturas");
+    if (!cont) return;
+    const res = await LC.backendApi.listarFacturasMercadoLibre();
+    if (!res.ok) {
+      cont.innerHTML = `<p class="text-xs text-slate-400">No pudimos cargar las facturas de tus ventas ahora mismo.</p>`;
+      return;
+    }
+    const titulo = `
+      <p class="text-sm font-medium mb-1">Facturas de tus ventas</p>
+      <p class="text-xs text-slate-400 mb-2">Adjunta a cada venta la factura que emitiste con tu proveedor autorizado por el SII: un PDF de hasta 1 MB y, si quieres, su XML. Nexo no emite facturas. No aplica a ventas con envío Full.</p>`;
+    const ventas = res.data.ventas;
+    if (!ventas.length) {
+      cont.innerHTML = `${titulo}<p class="text-xs text-slate-400">Sin datos suficientes: todavía no hay ventas importadas.</p>`;
+      return;
+    }
+    cont.innerHTML = `${titulo}
+      <div class="table-wrap"><table class="w-full text-sm">
+        <thead><tr class="text-left border-b border-slate-200 dark:border-slate-700"><th class="px-3 py-2 font-medium">Fecha</th><th class="px-3 py-2 font-medium">Pedido</th><th class="px-3 py-2 font-medium">Factura</th><th class="px-3 py-2 font-medium"></th></tr></thead>
+        <tbody>
+          ${ventas.map((v) => {
+            const id = escapeHtml(v.pedidoId);
+            const estado = v.factura
+              ? `<span class="inline-flex items-center gap-1.5"><span class="dot dot--green"></span>${escapeHtml(v.factura.archivos.join(", "))}</span>`
+              : `<span class="inline-flex items-center gap-1.5"><span class="dot dot--gray"></span>Sin factura</span>`;
+            const accion = v.factura
+              ? `<button class="btn-secondary !py-1.5 !text-xs" data-quitar-factura="${id}">Quitar</button>`
+              : `<div class="flex flex-wrap items-center gap-2">
+                  <label class="text-xs">PDF <input type="file" accept="application/pdf,.pdf" data-factura-pdf="${id}" class="text-xs" /></label>
+                  <label class="text-xs">XML (opcional) <input type="file" accept=".xml,application/xml,text/xml" data-factura-xml="${id}" class="text-xs" /></label>
+                  <button class="btn-secondary !py-1.5 !text-xs" data-subir-factura="${id}">Subir factura</button>
+                </div>`;
+            return `
+              <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0 align-top">
+                <td class="px-3 py-2 whitespace-nowrap">${escapeHtml(new Date(v.fecha).toLocaleDateString("es-CL"))}</td>
+                <td class="px-3 py-2">${id}</td>
+                <td class="px-3 py-2">${estado}</td>
+                <td class="px-3 py-2">${accion}</td>
+              </tr>`;
+          }).join("")}
+        </tbody>
+      </table></div>`;
+
+    cont.querySelectorAll("[data-subir-factura]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.subirFactura;
+        const pdf = cont.querySelector(`[data-factura-pdf="${CSS.escape(id)}"]`).files[0];
+        const xml = cont.querySelector(`[data-factura-xml="${CSS.escape(id)}"]`).files[0];
+        if (!pdf) {
+          toast("error", "Elige el PDF de la factura.");
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = "Subiendo…";
+        const r = await LC.backendApi.subirFacturaMercadoLibre(id, pdf, xml);
+        if (!r.ok) {
+          btn.disabled = false;
+          btn.textContent = "Subir factura";
+          toast("error", r.error.mensaje);
+          return;
+        }
+        toast("success", "Factura adjuntada a la venta en Mercado Libre.");
+        cargarFacturasML();
+      });
+    });
+    cont.querySelectorAll("[data-quitar-factura]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!window.confirm("¿Quitar la factura de esta venta en Mercado Libre?")) return;
+        btn.disabled = true;
+        const r = await LC.backendApi.quitarFacturaMercadoLibre(btn.dataset.quitarFactura);
+        if (!r.ok) {
+          btn.disabled = false;
+          toast("error", r.error.mensaje);
+          return;
+        }
+        toast("success", "Factura quitada de la venta.");
+        cargarFacturasML();
+      });
+    });
   }
 
   async function renderMLPedidos() {

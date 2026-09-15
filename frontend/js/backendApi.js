@@ -266,6 +266,22 @@ window.LC = window.LC || {};
     return request("/api/mercadolibre/desconectar", { method: "POST" });
   }
 
+  // Facturas propias adjuntas a cada venta de Mercado Libre (15/09/2026).
+  async function listarFacturasMercadoLibre() {
+    return request("/api/mercadolibre/facturas");
+  }
+
+  async function subirFacturaMercadoLibre(pedidoId, pdf, xml) {
+    const form = new FormData();
+    form.append("pdf", pdf);
+    if (xml) form.append("xml", xml);
+    return request(`/api/mercadolibre/facturas/${encodeURIComponent(pedidoId)}`, { method: "POST", body: form, isFormData: true, timeoutMs: UPLOAD_TIMEOUT_MS });
+  }
+
+  async function quitarFacturaMercadoLibre(pedidoId) {
+    return request(`/api/mercadolibre/facturas/${encodeURIComponent(pedidoId)}`, { method: "DELETE" });
+  }
+
   async function conciliacionComisionesMercadoLibre() {
     return request("/api/mercadolibre/conciliacion");
   }
@@ -594,6 +610,9 @@ window.LC = window.LC || {};
     importarVentasMercadoLibre,
     listarDevolucionesMercadoLibre,
     conciliacionComisionesMercadoLibre,
+    listarFacturasMercadoLibre,
+    subirFacturaMercadoLibre,
+    quitarFacturaMercadoLibre,
     recalcularComisionesMercadoLibre,
     fetchGoogleSheetsEstado,
     conectarGoogleSheets,

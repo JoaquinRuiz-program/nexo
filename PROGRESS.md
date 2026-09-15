@@ -187,6 +187,12 @@ catálogo (52).
     calcula Nexo (MercadoLibreCategoryFee al precio vendido). `GET /api/mercadolibre/conciliacion`
     + panel en Mercado Libre: coincide (±$1) / diferencia / sin cálculo de Nexo / aún sin facturar.
     Verificado en vivo: HTTP 200, 0 cargos hoy.
+26. **Facturas propias por venta** (15 sept 2026) — `app/api/routes/facturas_ml.py`: el dueño
+    adjunta a cada venta importada el PDF (máx 1 MB, se valida `%PDF`) y opcionalmente el XML
+    de la factura que emitió con su proveedor SII; se reenvía a Mercado Libre
+    (`POST /packs/{pack_id}/fiscal_documents`, pack_id de `/orders/{id}` o el ID del pedido) y
+    se registra en `order_invoices` (migración `b9d1f3a5c7e9`). Quitar = `DELETE` en ML. Envío
+    Full en Chile no admite facturas propias: mensaje claro. Panel en la sección Mercado Libre.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

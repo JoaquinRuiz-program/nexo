@@ -30,8 +30,9 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
 - [x] Conciliación de comisiones con la facturación de ML — hecha 14 sept 2026
       (`GET /billing/integration/group/ML/order/details`, verificado en vivo HTTP 200 con 0
       cargos). Falta verla con ventas reales facturadas.
-- [ ] Subir la factura PDF/XML del vendedor por pack (`POST /packs/{pack_id}/fiscal_documents`)
-      — no pedido todavía. Nexo NO puede emitir boletas/facturas SII.
+- [x] Adjuntar la factura PDF/XML del vendedor a cada venta — hecho 15 sept 2026
+      (`/api/mercadolibre/facturas`, `POST`/`DELETE /packs/{pack_id}/fiscal_documents`). Nexo
+      NO emite boletas/facturas SII ni guarda el archivo. Falta probarlo con una venta real.
 
 ## Deploy (día del despliegue, ver backend/DEPLOY.md)
 - [ ] **Servicio de mail** — código listo (`EnviadorResend`, `RESEND_API_KEY`/`EMAIL_FROM` en

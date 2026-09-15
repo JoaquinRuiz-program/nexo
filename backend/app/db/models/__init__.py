@@ -18,6 +18,7 @@ from app.db.models.orders import Order, OrderItem  # noqa: F401
 from app.db.models.products import Product, ProductImage, ProductVariant  # noqa: F401
 from app.db.models.returns import OrderReturn  # noqa: F401
 from app.db.models.order_billing import OrderBilling  # noqa: F401
+from app.db.models.order_invoice import OrderInvoice  # noqa: F401
 from app.db.models.stock import StockMovement  # noqa: F401
 from app.db.models.stores import Store, StoreSettings  # noqa: F401
 from app.db.models.subscriptions import Plan, Subscription  # noqa: F401
@@ -55,6 +56,7 @@ __all__ = [
     "OrderItem",
     "OrderReturn",
     "OrderBilling",
+    "OrderInvoice",
     "SyncJob",
     "SyncLog",
     "StockMovement",

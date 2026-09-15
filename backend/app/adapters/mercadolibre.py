@@ -396,6 +396,24 @@ class MercadoLibreAdapter:
         )
         return response.json()
 
+    async def upload_fiscal_documents(self, access_token: str, pack_id: str, archivos: list[tuple[str, bytes, str]]) -> dict[str, Any]:
+        """POST /packs/{pack_id}/fiscal_documents (multipart, campo
+        `fiscal_document` repetido: un PDF y opcionalmente un XML) — doc
+        oficial "Cargar y Obtener Facturas - Emisión Propia" (Chile, 16/03/2026).
+        Responde {"ids": [...]}. Nunca se reintenta: no es idempotente."""
+        url = f"{API_BASE_URL}/packs/{pack_id}/fiscal_documents"
+        response = await self._request_with_retry(
+            "POST", url, access_token, retry_on_failure=False, files=[("fiscal_document", archivo) for archivo in archivos]
+        )
+        return response.json()
+
+    async def delete_fiscal_documents(self, access_token: str, pack_id: str) -> dict[str, Any]:
+        """DELETE /packs/{pack_id}/fiscal_documents — borra TODOS los archivos
+        que el vendedor adjuntó al pack (misma doc oficial)."""
+        url = f"{API_BASE_URL}/packs/{pack_id}/fiscal_documents"
+        response = await self._request_with_retry("DELETE", url, access_token)
+        return response.json() if response.content else {}
+
     async def update_item_status(self, access_token: str, item_id: str, status: str) -> dict[str, Any]:
         """PUT /items/{id} con {"status": ...} — pausar ("paused"),
         reactivar ("active") o cerrar ("closed", el equivalente real de
@@ -448,8 +466,11 @@ class MercadoLibreAdapter:
                     # de PUT en este adaptador. Igual que create_item: JSON
                     # real, nunca form-urlencoded.
                     response = await self._client.put(url, json=json_body, headers=headers, timeout=self._cfg.timeout_s)
+                elif method == "DELETE":
+                    # delete_fiscal_documents (quitar la factura de una venta).
+                    response = await self._client.delete(url, headers=headers, timeout=self._cfg.timeout_s)
                 elif files is not None:
-                    # Subida multipart real (ver upload_picture) — único uso.
+                    # Subida multipart real (upload_picture, upload_fiscal_documents).
                     response = await self._client.post(url, files=files, headers=headers, timeout=self._cfg.timeout_s)
                 elif json_body is not None:
                     # POST con cuerpo JSON real (ej. crear una publicación,
