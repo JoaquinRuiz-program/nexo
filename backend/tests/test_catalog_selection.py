@@ -24,9 +24,11 @@ def _row(**overrides):
     return base
 
 
-def test_producto_sin_costo_es_sin_datos():
+def test_producto_sin_costo_se_evalua_con_su_margen():
+    """15 de septiembre de 2026: sin costo registrado el margen ya viene
+    calculado con costo $0 (rentabilidad.py::_fila) — no es "sin datos"."""
     resultado = classify_product(_row(tieneCosto=False), SelectionCriteria())
-    assert resultado["clasificacion"] == "sin_datos"
+    assert resultado["clasificacion"] == "rentable"
 
 
 def test_producto_con_costo_pero_sin_precio_es_sin_datos_no_rentable():
@@ -104,7 +106,7 @@ def test_resumen_cuenta_cada_clasificacion():
     rows = select(
         [
             _row(id=1, margenTiendaClp=9000),
-            _row(id=2, tieneCosto=False),
+            _row(id=2, margenTiendaClp=None, margenTiendaPct=None),  # sin precio de venta
             _row(id=3, marketplaceStock=0),   # sin stock YA NO afecta: es rentable
             _row(id=4, margenTiendaClp=-500),
         ],

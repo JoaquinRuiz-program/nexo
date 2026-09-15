@@ -138,13 +138,13 @@ def test_rentabilidad_cuenta_los_que_convienen_en_mercado_libre(client, db_sessi
     db_session.commit()
     _producto(db_session, a_store, sku="R1", nombre="Rentable", precio=10000, costo=6000)  # 10000-6000-1500 = 2500 (25 %)
     _producto(db_session, a_store, sku="R2", nombre="No rentable", precio=5000, costo=6000)  # margen negativo
-    _producto(db_session, a_store, sku="R3", nombre="Sin costo", precio=8000)
+    _producto(db_session, a_store, sku="R3", nombre="Sin costo", precio=8000)  # costo $0: 8000-1200 = 6800 (85 %)
 
     body = client.get("/api/dashboard/resumen").json()
     rent = body["rentabilidad"]
     assert rent["totalProductos"] == 3
     assert rent["productosConCosto"] == 2
-    assert rent["productosRentables"] == 1
+    assert rent["productosRentables"] == 2
 
 
 def test_rentabilidad_sin_mercado_libre_configurado_no_decide(client, db_session, a_store):

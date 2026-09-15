@@ -88,7 +88,12 @@ def recomendar_precio(
     domain/competencia.py::analizar_competencia, ya calculado por quien
     llama (nunca se vuelve a consultar la API acá — esto es dominio puro)."""
     faltantes: list[str] = []
-    if costo is None:
+    # 15 de septiembre de 2026 — un producto sin costo registrado (o con costo
+    # $0) SÍ se evalúa (ver rentabilidad.py::_fila), pero el precio para el
+    # margen objetivo sale del costo: sin costo no hay precio que recomendar
+    # (con costo $0 daba, p. ej., $8.990 para algo que se vende a $80.000) y se
+    # mantiene el precio de venta del dueño. Nunca se inventa uno.
+    if not costo:
         faltantes.append("costo de compra")
     if not channel_costs.is_configured():
         faltantes.append("comisión/costos del canal")

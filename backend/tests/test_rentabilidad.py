@@ -105,7 +105,9 @@ def test_rentabilidad_vacia_sin_productos(client, a_store):
     assert body["resumen"] == {"totalProductos": 0, "productosConCosto": 0, "canalesConfigurados": []}
 
 
-def test_producto_sin_costo_no_tiene_margen(client, db_session, a_store):
+def test_producto_sin_costo_se_calcula_con_costo_cero(client, db_session, a_store):
+    """15 de septiembre de 2026: sin costo de compra registrado (un producto que
+    la empresa ya tiene) el costo considerado es $0 — antes no tenía margen."""
     producto = Product(store=a_store, internal_sku="LIB-001", name="Libro sin costo", product_type="simple", created_at=NOW, updated_at=NOW)
     db_session.add(producto)
     db_session.flush()
@@ -116,10 +118,10 @@ def test_producto_sin_costo_no_tiene_margen(client, db_session, a_store):
     filas = body["productos"]
     assert len(filas) == 1
     assert filas[0]["tieneCosto"] is False
-    assert filas[0]["margenTiendaClp"] is None
+    assert filas[0]["costo"] is None
+    assert filas[0]["margenTiendaClp"] == 10000
+    # Sin costos de Mercado Libre configurados, el margen neto sigue sin calcularse.
     assert filas[0]["margenMercadoLibreClp"] is None
-    # El resumen es lo que un futuro frontend usa para mostrar el aviso
-    # "Aún no hay costos de compra cargados" en vez de una tabla vacía.
     assert body["resumen"]["productosConCosto"] == 0
     assert body["resumen"]["totalProductos"] == 1
 
@@ -159,7 +161,9 @@ def test_configurar_canal_mercado_libre_habilita_el_margen_neto(client, db_sessi
     assert fila["margenMercadoLibreClp"] == 300  # igual que el ejemplo del dueño: Libro B
 
 
-def test_productos_sin_costo_quedan_al_final_no_ordenados_como_cero(client, db_session, a_store):
+def test_productos_sin_costo_se_ordenan_por_su_margen_con_costo_cero(client, db_session, a_store):
+    """15 de septiembre de 2026: sin costo registrado el margen es venta − $0,
+    así que se ordena con los demás (antes quedaba al final, sin margen)."""
     _producto_con_precio_y_costo(db_session, a_store, sku="ALTO", nombre="Margen alto", precio=20000, costo=5000)
     producto_sin_costo = Product(store=a_store, internal_sku="SIN-COSTO", name="Sin costo", product_type="simple", created_at=NOW, updated_at=NOW)
     db_session.add(producto_sin_costo)
@@ -169,7 +173,7 @@ def test_productos_sin_costo_quedan_al_final_no_ordenados_como_cero(client, db_s
 
     body = client.get("/api/rentabilidad").json()
     skus_en_orden = [f["sku"] for f in body["productos"]]
-    assert skus_en_orden == ["ALTO", "BAJO", "SIN-COSTO"]
+    assert skus_en_orden == ["ALTO", "SIN-COSTO", "BAJO"]  # 15.000, 5.000 (costo $0), 200
     assert body["resumen"] == {"totalProductos": 3, "productosConCosto": 2, "canalesConfigurados": []}
 
 
@@ -249,7 +253,8 @@ def test_producto_con_costo_y_sin_precio_no_rompe_el_reporte(client, db_session,
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["resumen"]["productosConCosto"] == 2
-    assert [p["sku"] for p in body["productos"]][0] == "CON-PRECIO"
+    # Sin precio no hay margen: va al final (sin costo se calcula con costo $0).
+    assert [p["sku"] for p in body["productos"]][-1] == "SIN-PRECIO"
     assert {p["sku"] for p in body["productos"]} == {"CON-PRECIO", "SIN-PRECIO", "SIN-COSTO"}
 
 

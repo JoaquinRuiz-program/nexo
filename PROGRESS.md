@@ -256,6 +256,17 @@ catálogo (52).
     suspender no cortaba la sesión abierta, `/api/rentabilidad` 500 con costo sin precio,
     importador aceptaba costo/precio negativo, vendedor veía el esqueleto de `#/admin`.
     Regla de rentabilidad: 0 diferencias en 1.232 productos; aislamiento: 0 fugas.
+36. **Ventas reales de Mercado Libre** (15 sept 2026) — `app/domain/ventas_ml.py` +
+    `app/api/routes/ventas_ml.py`: `GET /api/mercadolibre/ventas/resumen|grafico|mas-vendidos` y
+    `GET /api/mercadolibre/pedidos`, sobre las ventas importadas (sin canceladas ni con dinero
+    devuelto). Dashboard y pantalla de Mercado Libre dejan de mostrar $0 fijo en modo real.
+    Pendientes/enviados/entregados quedan "—": Mercado Libre no lo informa en la importación.
+37. **Productos sin costo de compra** (15 sept 2026) — ej. un repuesto que la empresa ya tiene.
+    Sin costo registrado el costo considerado es $0 (`rentabilidad.py::_fila`; en la base sigue
+    vacío y `tieneCosto=False`): ganancia = venta − comisión − envío − otros costos, se evalúa
+    "¿Conviene?" con la regla de siempre y se publica al precio de venta del Excel. Importar sin
+    costo es solo un aviso. Sin costo (o con costo $0) no se calcula "precio para tu margen
+    objetivo". Sin precio de venta queda pendiente (no se inventa precio).
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

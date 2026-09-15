@@ -44,9 +44,10 @@ def classify_product(row: dict, criteria: SelectionCriteria) -> dict:
     """Devuelve {"clasificacion": ..., "razon": ...}. Clasificaciones
     posibles: rentable | margen_bajo | no_rentable | sin_stock | sin_datos."""
 
-    if not row.get("tieneCosto"):
-        return {"clasificacion": "sin_datos", "razon": "Todavía no se cargó el costo de compra de este producto."}
-
+    # 15 de septiembre de 2026 — un producto SIN costo de compra registrado
+    # (ej. un repuesto que la empresa ya tiene) ya no queda "sin datos": su
+    # costo considerado es $0 y la ganancia es lo que realmente queda después
+    # de los costos de Mercado Libre (ver rentabilidad.py::_fila).
     if criteria.channel == "mercadolibre":
         if not row.get("mercadoLibreConfigurado"):
             return {
@@ -59,14 +60,12 @@ def classify_product(row: dict, criteria: SelectionCriteria) -> dict:
         margen_clp = row.get("margenTiendaClp")
         margen_pct = row.get("margenTiendaPct")
 
-    # "tieneCosto" solo confirma que hay costo — el margen también necesita
-    # el precio de venta. Un producto con costo pero sin precio (o
-    # viceversa) llega hasta acá con margen_clp=None: sin esto, caería en
-    # "rentable" por descarte, sin haberse podido calcular nada de verdad.
+    # Sin precio de venta no hay margen que calcular: sin esto caería en
+    # "rentable" por descarte. Nunca se inventa un precio.
     if margen_clp is None:
         return {
             "clasificacion": "sin_datos",
-            "razon": "Falta el precio de venta o el costo de compra — no se puede calcular el margen.",
+            "razon": "Falta el precio de venta — no se puede calcular la ganancia.",
         }
 
     if criteria.require_marketplace_stock and not row.get("marketplaceStock"):

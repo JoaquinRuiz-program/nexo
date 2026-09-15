@@ -84,9 +84,10 @@ def resumen(db: Session = Depends(get_db), store: Store = Depends(get_current_st
     criterios_ml = SelectionCriteria(
         channel="mercadolibre", require_marketplace_stock=False, min_margin_pct=margen_minimo_pct, ganancia_minima_clp=ganancia_minima_clp,
     )
+    # Un producto sin costo registrado cuenta igual (costo considerado $0, ver _fila).
     rentables = (
-        len([f for f in con_costo if classify_product(f, criterios_ml)["clasificacion"] == "rentable"])
-        if con_costo and ml_configurado else None
+        len([f for f in filas_rentabilidad if classify_product(f, criterios_ml)["clasificacion"] == "rentable"])
+        if filas_rentabilidad and ml_configurado else None
     )
 
     total_pedidos = db.query(Order).filter_by(store_id=store.id).count()

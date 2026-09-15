@@ -205,11 +205,11 @@ def preferencia_efectiva(
     Rentabilidad hacía esta elección; ¿Conviene?, el precio recomendado y la
     decisión en lote caían a la comisión manual. Devuelve (preferencia,
     recomendación o None)."""
-    if listing_type_pref is not None or precio is None or costo is None:
+    if listing_type_pref is not None or precio is None:
         return listing_type_pref, None
     recomendacion = recomendar_tipo_publicacion(
         precio,
-        costo,
+        costo if costo is not None else 0.0,  # sin costo registrado: costo considerado $0
         comisiones,
         shipping_cost=costos.shipping_cost or 0.0,
         other_fixed_cost=costos.other_fixed_cost or 0.0,
@@ -267,6 +267,11 @@ def _fila(
 ) -> dict:
     precio = float(variante.price) if variante.price is not None else None
     costo = float(variante.cost_price) if variante.cost_price is not None else None
+    # 15 de septiembre de 2026 — sin costo de compra registrado (un producto que
+    # la empresa ya tiene, ej. un repuesto retirado) el costo considerado es $0:
+    # la ganancia es lo que queda después de comisión, envío y otros costos.
+    # `costo` sigue en None en la respuesta ("Sin registrar", tieneCosto=False).
+    costo_calculo = costo if costo is not None else 0.0
 
     comisiones = comisiones_ml_cacheadas(db, store_id, producto, precio)
     costos_ml_manual, envio_ml = aplicar_envio_real_ml(
@@ -294,11 +299,11 @@ def _fila(
         # domain/catalog_selection.py para saber si hay algo que publicar,
         # sin confundirlo con el stock físico (ver domain/marketplace_stock.py).
         "marketplaceStock": variante.marketplace_stock,
-        "margenTiendaClp": gross_margin(precio, costo),
-        "margenTiendaPct": gross_margin_pct(precio, costo),
+        "margenTiendaClp": gross_margin(precio, costo_calculo),
+        "margenTiendaPct": gross_margin_pct(precio, costo_calculo),
         "mercadoLibreConfigurado": ml_configurado,
-        "margenMercadoLibreClp": net_margin(precio, costo, costos_ml_efectivos),
-        "margenMercadoLibrePct": net_margin_pct(precio, costo, costos_ml_efectivos),
+        "margenMercadoLibreClp": net_margin(precio, costo_calculo, costos_ml_efectivos),
+        "margenMercadoLibrePct": net_margin_pct(precio, costo_calculo, costos_ml_efectivos),
         # Costo de envío real de Mercado Libre y su origen ("mercadolibre" |
         # "no_disponible"), ver aplicar_envio_real_ml. Sin envío real, el
         # margen de Mercado Libre de arriba es PROVISIONAL.
@@ -308,7 +313,7 @@ def _fila(
         # muestra los ya publicados en su propia sección, no como oportunidad.
         "publicacionMlEstado": publicacion_ml.status if publicacion_ml is not None else ("closed" if publicacion_ml_cerrada else None),
         "rentabilidadMlProvisional": (
-            net_margin(precio, costo, costos_ml_efectivos) is not None and envio_ml["envioMlFuente"] != "mercadolibre"
+            net_margin(precio, costo_calculo, costos_ml_efectivos) is not None and envio_ml["envioMlFuente"] != "mercadolibre"
         ),
         # 31 de agosto de 2026 — de qué fuente sale la comisión usada en
         # margenMercadoLibreClp/Pct de ARRIBA ("real"|"manual"), None si no
@@ -322,7 +327,7 @@ def _fila(
         # paralelo, para decidir cuál conviene. None hasta que se corra
         # POST /api/mercadolibre/comisiones/recalcular; nunca se calcula acá
         # con un valor estimado.
-        "comisionMlReal": _comision_ml_real(comisiones, costo, precio, costos_ml_manual),
+        "comisionMlReal": _comision_ml_real(comisiones, costo_calculo, precio, costos_ml_manual),
         # Tipo de publicación que el sistema recomienda para ESTE producto
         # (Clásica/Premium), elegido solo por margen con la comisión exacta —
         # None si hay preferencia manual o si no hay comisión real todavía.

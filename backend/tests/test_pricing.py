@@ -157,12 +157,16 @@ def test_margen_minimo_negativo_es_datos_insuficientes():
     assert any("margen mínimo" in f and "no puede ser negativo" in f for f in resultado.faltantes)
 
 
-def test_costo_cero_y_precio_propio_cero_no_se_tratan_como_dato_faltante():
-    # costo=0.0 es un valor real (producto sin costo de compra registrado
-    # como cero, no "sin dato") — no debe confundirse con costo=None.
-    resultado = recomendar_precio(costo=0.0, channel_costs=ChannelCosts(commission_pct=15.0), margen_objetivo_pct=25.0)
-    assert resultado.estado == ESTADO_RECOMENDACION
-    assert resultado.precio_recomendado is not None
+def test_sin_costo_o_costo_cero_no_recomienda_un_precio_por_margen_objetivo():
+    # 15 de septiembre de 2026: el costo $0 es un dato real para la ganancia
+    # (rentabilidad.py::_fila), pero un precio "costo + margen objetivo" sobre
+    # $0 no tiene sentido (daba $8.990 para algo que se vende a $80.000): sin
+    # costo se mantiene el precio de venta del dueño.
+    for costo in (None, 0.0):
+        resultado = recomendar_precio(costo=costo, channel_costs=ChannelCosts(commission_pct=15.0), margen_objetivo_pct=25.0)
+        assert resultado.estado == ESTADO_DATOS_INSUFICIENTES
+        assert resultado.precio_recomendado is None
+        assert "costo de compra" in resultado.faltantes
 
 
 def test_clasificacion_es_un_campo_historico_el_motor_real_esta_en_decision_py():

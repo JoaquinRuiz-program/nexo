@@ -77,11 +77,11 @@ def test_analizar_con_mapeo_corregido_recalcula_las_filas(client, a_store):
     antes = client.post("/api/catalogo/importar/analizar", files={"file": ("r.csv", io.BytesIO(archivo), "text/csv")}, data={"mapeo": json.dumps(sin_costo)}).json()
     despues = client.post("/api/catalogo/importar/analizar", files={"file": ("r.csv", io.BytesIO(archivo), "text/csv")}, data={"mapeo": json.dumps(corregido)}).json()
 
-    assert "Falta costo de compra" in antes["filas"][0]["problemas"]
+    assert "Sin costo de compra: se calcula con costo $0" in antes["filas"][0]["problemas"]
     assert despues["mapeoPropuesto"] == corregido
     assert despues["filas"][0]["costo"] == 6500
     assert despues["filas"][0]["precio"] == 14990
-    assert "Falta costo de compra" not in despues["filas"][0]["problemas"]
+    assert "Sin costo de compra: se calcula con costo $0" not in despues["filas"][0]["problemas"]
 
 
 def test_analizar_con_mapeo_invalido_da_400(client, a_store):

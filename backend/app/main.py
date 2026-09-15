@@ -41,6 +41,7 @@ from app.api.routes import (
     seleccion,
     soporte,
     suscripcion,
+    ventas_ml,
 )
 from app.config import get_settings, print_env_diagnostics
 
@@ -133,6 +134,7 @@ app.include_router(configuracion.router)
 app.include_router(costos.router)
 app.include_router(mercadolibre.router)
 app.include_router(facturas_ml.router)
+app.include_router(ventas_ml.router)
 app.include_router(google_sheets.router)
 app.include_router(catalogo.router)
 app.include_router(seleccion.router)

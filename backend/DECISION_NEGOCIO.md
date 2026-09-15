@@ -26,7 +26,7 @@ mezclan las dos responsabilidades.
 | Resultado | Qué significa para el dueño |
 |---|---|
 | `conviene` | Con el precio real, la venta no deja pérdida y alcanza el margen mínimo % o la ganancia neta mínima $ (o no hay ninguno configurado). |
-| `revisar` | Faltan datos para calcular la ganancia (costo, precio o costos del canal). |
+| `revisar` | Faltan datos para calcular la ganancia (precio o costos del canal). Sin costo de compra registrado se calcula con costo $0. |
 | `no_conviene` | La venta deja pérdida, o no alcanza ni el margen mínimo ni la ganancia neta mínima. |
 
 `razon` siempre trae una explicación en texto plano de por qué se llegó a
@@ -42,7 +42,11 @@ clasificación que Oportunidades (`classify_product`, vía
 `/validar` y el gate de `/confirmar`):
 
 1. Ganancia neta = precio real − costo − comisión (real de ML si existe) −
-   envío (real de ML si existe) − otros costos.
+   envío (real de ML si existe) − otros costos. Sin costo de compra registrado
+   (un producto que la empresa ya tiene, ej. un repuesto retirado) el costo
+   considerado es $0: la ganancia es lo que queda después de los costos de ML.
+   Sin costo tampoco hay precio para el margen objetivo: se publica al precio
+   de venta del dueño.
 2. Ganancia < 0 → `no_conviene`.
 3. Ganancia ≥ 0 → `conviene` si margen % ≥ margen mínimo **o** ganancia ≥
    ganancia neta mínima $; si no cumple ninguna → `no_conviene`.

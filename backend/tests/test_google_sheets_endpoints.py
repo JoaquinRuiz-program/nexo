@@ -419,13 +419,13 @@ def test_analizar_hoja_con_mapeo_corregido_revalida_las_filas(client, a_store, c
     """Corregir una columna en la revisión vuelve a validar con ESE mapeo."""
     monkeypatch.setattr("app.api.routes.google_sheets.get_settings", lambda: CONFIGURED_SETTINGS)
     _mock_values(SPREADSHEET_ID, "Hoja1", FILAS_LIBRERIA)
-    mapeo = {"sku": "SKU", "nombre": "Nombre", "marca": "Marca", "categoria": "Categoría", "precio": "Precio", "costo": None, "stock": "Stock", "descripcion": "Descripción", "imagen_url": "Imagen", "codigo_barras": None}
+    mapeo = {"sku": "SKU", "nombre": "Nombre", "marca": "Marca", "categoria": "Categoría", "precio": None, "costo": "Costo", "stock": "Stock", "descripcion": "Descripción", "imagen_url": "Imagen", "codigo_barras": None}
 
     res = client.post("/api/google-sheets/importar/analizar", json={"mapeo": mapeo})
 
     assert res.status_code == 200
     body = res.json()
-    assert body["mapeoPropuesto"]["costo"] is None
+    assert body["mapeoPropuesto"]["precio"] is None  # sin precio de venta -> para revisar
     assert body["resumen"]["validos"] == 0
     assert body["resumen"]["revision"] == 2
 
@@ -442,10 +442,10 @@ def test_analizar_hoja_con_filas_invalidas_las_marca_sin_bloquear_las_demas(clie
     filas_por_estado = {f["estado"] for f in body["filas"]}
     assert "error" in filas_por_estado  # fila sin nombre / precio inválido
     fila_valida = next(f for f in body["filas"] if f["sku"] == "LIB-010")
-    # No es "error" (nombre y precio están bien) — queda en "revisión" por
-    # los campos opcionales que esa hoja no trae (categoría, descripción,
-    # imagen, costo), igual que un Excel/CSV con las mismas columnas.
-    assert fila_valida["estado"] == "revision"
+    # No es "error" (nombre y precio están bien). Desde el 15/09/2026 la falta
+    # de imagen o de costo de compra (costo considerado $0) son solo avisos:
+    # queda lista, igual que un Excel/CSV con las mismas columnas.
+    assert fila_valida["estado"] == "valido"
 
 
 @respx.mock

@@ -279,7 +279,7 @@ async def preparar_publicacion_mercadolibre(
     if categoria_sugerida is None:
         advertencias.append("No pudimos sugerir una categoría — buscala manualmente en el siguiente paso.")
     if not fila.get("tieneCosto"):
-        advertencias.append("Todavía no se cargó el costo de compra de este producto.")
+        advertencias.append("Sin costo de compra registrado: la ganancia se calcula con costo $0.")
     if not fila.get("marketplaceStock"):
         advertencias.append("No hay unidades reservadas para Mercado Libre todavía.")
 

@@ -93,15 +93,17 @@ def test_clasifica_rentable_no_rentable_sin_stock_y_sin_datos(client, db_session
     _producto(db_session, a_store, sku="A", precio=20000, costo=5000, marketplace_stock=3)  # rentable
     _producto(db_session, a_store, sku="B", precio=5000, costo=6000, marketplace_stock=3)  # no_rentable
     _producto(db_session, a_store, sku="C", precio=10000, costo=5000, marketplace_stock=0)  # sin_stock
-    _producto(db_session, a_store, sku="D", precio=10000, marketplace_stock=3)  # sin costo -> sin_datos
+    _producto(db_session, a_store, sku="D", precio=10000, marketplace_stock=3)  # sin costo -> costo $0
+    _producto(db_session, a_store, sku="E", precio=None, costo=5000, marketplace_stock=3)  # sin precio -> sin_datos
 
     body = client.get("/api/seleccion").json()
     por_sku = {p["sku"]: p["clasificacion"] for p in body["productos"]}
     # 13 de septiembre de 2026 — la rentabilidad se juzga SOLO por el margen;
     # el sin-stock (C) ahora es rentable (el stock se completa en la revisión).
-    assert por_sku == {"A": "rentable", "B": "no_rentable", "C": "rentable", "D": "sin_datos"}
+    # 15 de septiembre de 2026 — sin costo (D) se evalúa con costo $0.
+    assert por_sku == {"A": "rentable", "B": "no_rentable", "C": "rentable", "D": "rentable", "E": "sin_datos"}
     assert body["resumen"] == {
-        "total": 4, "rentables": 2, "margenBajo": 0, "noRentables": 1,
+        "total": 5, "rentables": 3, "margenBajo": 0, "noRentables": 1,
         "sinStock": 0, "sinDatos": 1, "noSeleccionados": 0,
     }
 

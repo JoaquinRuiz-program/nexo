@@ -44,9 +44,9 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
 
 ## QA integral (15 sept 2026) — ver `QA_INTEGRAL.md`
 - [x] 6 bugs corregidos (PROGRESS.md #35).
-- [ ] **P1 — Ventas en modo real**: "Ventas Mercado Libre", gráfico, "Productos más vendidos" y
-      pedidos muestran $0/vacío fijo (`dataSource.js`) aunque haya ventas importadas. Requiere
-      endpoints de métricas de ventas — decidir antes de conectar un cliente con ventas.
+- [x] **P1 — Ventas en modo real** — hecho 15 sept 2026 (PROGRESS.md #36). Falta verlo con
+      ventas reales importadas de Mercado Libre.
+- [x] Productos sin costo de compra (costo considerado $0) — hecho 15 sept 2026 (PROGRESS.md #37).
 
 ## Deploy (día del despliegue, ver backend/DEPLOY.md)
 - [ ] **Servicio de mail** — código listo (`EnviadorResend`, `RESEND_API_KEY`/`EMAIL_FROM` en

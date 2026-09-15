@@ -143,7 +143,8 @@ def test_falta_sku_no_es_bloqueante_solo_revision():
     trae así) — no debería bloquear la importación."""
     mapping = detect_columns(["Nombre", "Precio"])
     rows = build_rows([{"Nombre": "Producto sin SKU", "Precio": "1000"}], mapping)
-    assert rows[0].estado == "revision"
+    # Sin SKU y sin costo son avisos informativos: la fila queda lista.
+    assert rows[0].estado == "valido"
     assert "Falta SKU" in rows[0].problemas
 
 
@@ -238,15 +239,17 @@ def test_resumen_cuenta_por_estado():
     mapping = detect_columns(["Nombre", "Precio"])
     rows = build_rows(
         [
-            {"Nombre": "Producto A", "Precio": "1000"},  # revision (falta sku/categoria/etc)
+            {"Nombre": "Producto A", "Precio": "1000"},  # valido (sin SKU ni costo: solo avisos)
+            {"Nombre": "Producto B"},  # revision (falta precio de venta)
             {"Nombre": "", "Precio": "1000"},  # error (falta nombre)
         ],
         mapping,
     )
     resumen = summarize_rows(rows)
-    assert resumen["totalFilas"] == 2
+    assert resumen["totalFilas"] == 3
     assert resumen["errores"] == 1
     assert resumen["revision"] == 1
+    assert resumen["validos"] == 1
 
 
 # ------------------------------------------------------------------

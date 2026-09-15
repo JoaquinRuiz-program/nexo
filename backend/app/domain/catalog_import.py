@@ -356,7 +356,10 @@ AVISO_COMPLETAR_STOCK = "Completa el stock al revisar"
 # 15 de septiembre de 2026 — revisión por perfil: un archivo completo quedaba
 # "Para revisar" en todas sus filas solo por no traer imagen o SKU. Estos avisos
 # se siguen informando, pero por sí solos no dejan la fila en revisión.
-PROBLEMAS_INFORMATIVOS = frozenset({"Falta imagen", "Falta SKU", AVISO_COMPLETAR_STOCK})
+# 15 de septiembre de 2026 — sin costo de compra el producto se importa listo:
+# su costo considerado es $0 (ej. un repuesto que la empresa ya tiene).
+AVISO_SIN_COSTO = "Sin costo de compra: se calcula con costo $0"
+PROBLEMAS_INFORMATIVOS = frozenset({"Falta imagen", "Falta SKU", AVISO_COMPLETAR_STOCK, AVISO_SIN_COSTO})
 
 
 def build_rows(raw_rows: list[dict[str, Any]], mapping: ColumnMapping) -> list[RowResult]:
@@ -427,7 +430,7 @@ def build_rows(raw_rows: list[dict[str, Any]], mapping: ColumnMapping) -> list[R
         if not imagen_url:
             problemas.append("Falta imagen")
         if not costo_raw:
-            problemas.append("Falta costo de compra")
+            problemas.append(AVISO_SIN_COSTO)
         if not precio_raw:
             problemas.append("Falta precio de venta")
         if stock is None:

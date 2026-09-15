@@ -27,8 +27,10 @@ window.LC = window.LC || {};
     descripcion: "Descripción", imagen_url: "Imagen (URL)", codigo_barras: "Código de barras",
   };
   // Sin estas columnas no se puede importar (nombre) o no se puede calcular si
-  // conviene publicar (costo y precio) — revisión por perfil, 15/09/2026.
-  const CAMPOS_CLAVE = ["nombre", "costo", "precio"];
+  // conviene publicar (precio) — revisión por perfil, 15/09/2026. El costo no
+  // es clave: sin costo de compra se calcula con costo $0 (producto que la
+  // empresa ya tiene).
+  const CAMPOS_CLAVE = ["nombre", "precio"];
 
   const PASOS = [
     { fase: "subir", titulo: "Sube tu catálogo" },
@@ -289,7 +291,7 @@ window.LC = window.LC || {};
         <p class="text-sm font-medium text-amber-700 dark:text-amber-400">Falta elegir: ${escapeHtml(faltanClave.map((c) => CAMPOS_LABEL[c]).join(", "))}</p>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">${!state.mapeo.nombre
           ? "Sin la columna del nombre no se puede importar. Elígela arriba."
-          : "Sin costo de compra y precio de venta no podemos calcular si te conviene publicar cada producto. Elige esas columnas arriba."}</p>
+          : "Sin precio de venta no podemos calcular si te conviene publicar cada producto. Elige esa columna arriba."}</p>
       </div>` : ""}
 
       <div class="flex items-center justify-between gap-4 flex-wrap">
@@ -536,7 +538,7 @@ window.LC = window.LC || {};
             <li>${r.rentables} recomendados</li>
             <li>${r.margenBajo} con margen bajo</li>
             <li>${r.noRentables} no recomendados (perderías dinero)</li>
-            <li>${r.sinDatos} sin costo cargado todavía</li>
+            <li>${r.sinDatos} sin datos suficientes (precio de venta o costos de Mercado Libre)</li>
           </ul>
           <p class="mt-2">No vamos a publicar nada todavía — solo prepararemos el borrador para que lo revises.</p>`,
         primaryLabel: "Seleccionar todos igual",
@@ -685,7 +687,7 @@ window.LC = window.LC || {};
               <p class="panel-subtitle mb-4">${totalProcesados != null ? `${totalProcesados} productos procesados en tu catálogo.` : "Así quedó tu catálogo después de importar."}</p>
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
                 <div><p class="stat-label">Buenas oportunidades</p><p class="stat-value stat-value--sm stat-value--success">${selResumen.rentables}</p></div>
-                <div><p class="stat-label">Sin costo cargado</p><p class="stat-value stat-value--sm stat-value--warning">${selResumen.sinDatos}</p></div>
+                <div><p class="stat-label">Sin datos suficientes</p><p class="stat-value stat-value--sm stat-value--warning">${selResumen.sinDatos}</p></div>
                 <div><p class="stat-label">Margen bajo</p><p class="stat-value stat-value--sm stat-value--warning">${selResumen.margenBajo}</p></div>
                 <div><p class="stat-label">No conviene</p><p class="stat-value stat-value--sm stat-value--danger">${selResumen.noRentables}</p></div>
               </div>

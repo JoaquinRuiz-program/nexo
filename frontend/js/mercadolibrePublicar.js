@@ -228,7 +228,10 @@ window.LC = window.LC || {};
         ${d.avisoMargenObjetivo ? `<p class="text-sm text-amber-600 dark:text-amber-400 mb-4">${escapeHtml(d.avisoMargenObjetivo)}</p>` : ""}
         ${d.faltantes && d.faltantes.length ? `
           <div class="space-y-1.5 mb-4">
-            ${d.faltantes.map((f) => `<p class="text-sm flex items-center gap-2"><span class="dot dot--gray"></span> Falta cargar: ${escapeHtml(f)}</p>`).join("")}
+            ${d.faltantes.map((f) => `<p class="text-sm flex items-center gap-2"><span class="dot dot--gray"></span> ${f === "costo de compra"
+              // 15/09/2026: sin costo la ganancia se calcula con costo $0; lo único que falta es el precio por margen objetivo.
+              ? "Sin costo de compra: la ganancia se calcula con costo $0 y no hay precio para tu margen objetivo (se usa tu precio de venta)."
+              : `Falta cargar: ${escapeHtml(f)}`}</p>`).join("")}
           </div>` : ""}
         <div class="flex flex-wrap items-center justify-between gap-3">
           <button id="ml-ver-analisis" class="btn-secondary">${state.verAnalisis ? "Ocultar análisis" : "Ver análisis"}</button>

@@ -573,7 +573,7 @@ window.LC = window.LC || {};
           <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
             <div class="flex items-center gap-2">
               <h3 class="panel-title">Ventas Mercado Libre</h3>
-              ${esReal ? `<span class="text-xs text-slate-400">Sin sincronización de ventas todavía</span>` : `<span class="demo-pill">Datos de demostración</span>`}
+              ${esReal ? `<span class="text-xs text-slate-400">Ventas importadas de Mercado Libre</span>` : `<span class="demo-pill">Datos de demostración</span>`}
             </div>
             <button data-nav="/mercadolibre" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Ver Mercado Libre →</button>
           </div>
@@ -596,7 +596,7 @@ window.LC = window.LC || {};
             </div>
             <div>
               <p class="stat-label">Pedidos pendientes</p>
-              <p class="stat-value stat-value--sm ${resumenML.pedidosPendientes > 0 ? "stat-value--warning" : ""}">${resumenML.pedidosPendientes}</p>
+              <p class="stat-value stat-value--sm ${resumenML.pedidosPendientes > 0 ? "stat-value--warning" : ""}">${resumenML.pedidosPendientes ?? "—"}</p>
             </div>
           </div>
         </div>
@@ -748,8 +748,8 @@ window.LC = window.LC || {};
       const faltan = rent.totalProductos - rent.productosConCosto;
       acciones.push({
         tono: "warning",
-        texto: `${faltan} producto${faltan === 1 ? "" : "s"} sin costo registrado`,
-        detalle: "Sin costo no podemos calcular si conviene venderlos.",
+        texto: `${faltan} producto${faltan === 1 ? "" : "s"} sin costo de compra`,
+        detalle: "Se calculan con costo $0. Si los compraste, agrega el costo para ver la ganancia real.",
         cta: "Revisar productos",
         ruta: "/oportunidades",
       });
@@ -757,7 +757,7 @@ window.LC = window.LC || {};
     // 15 de septiembre de 2026 — revisión por perfil: "rentables" es la misma
     // regla de Oportunidades (margen neto de Mercado Libre contra los mínimos),
     // no venta − compra. Sin costos de Mercado Libre configurados, se pide eso.
-    if (rent && rent.productosConCosto > 0 && !rent.canalesConfigurados.includes("mercadolibre")) {
+    if (rent && rent.totalProductos > 0 && !rent.canalesConfigurados.includes("mercadolibre")) {
       acciones.push({
         tono: "warning",
         texto: "Configura los costos de Mercado Libre",
@@ -837,7 +837,7 @@ window.LC = window.LC || {};
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
         <div class="panel-card">
           <h3 class="panel-title mb-1">Rentabilidad</h3>
-          <p class="panel-subtitle mb-3">${rent.productosConCosto === 0 ? "Todavía no hay costos de compra cargados — importa un Excel/CSV con costo para ver esto." : "Con la comisión y el envío de Mercado Libre y tus mínimos de margen y ganancia."}</p>
+          <p class="panel-subtitle mb-3">Con la comisión y el envío de Mercado Libre y tus mínimos de margen y ganancia. Sin costo de compra se calcula con costo $0.</p>
           <div class="grid grid-cols-3 gap-3">
             <div><p class="stat-label">Con costo cargado</p><p class="stat-value stat-value--sm mt-1">${rent.productosConCosto} / ${rent.totalProductos}</p></div>
             <div><p class="stat-label">Convienen en Mercado Libre</p><p class="stat-value stat-value--sm stat-value--success mt-1">${rent.productosRentables ?? "—"}</p></div>
@@ -1255,7 +1255,7 @@ window.LC = window.LC || {};
       <div class="panel-card mb-5">
         <div class="flex items-center justify-between gap-3 mb-4">
           <h3 class="panel-title">Rentabilidad</h3>
-          ${sinCosto ? "" : `<span class="reco-badge reco-${rentabilidad.clasificacion}">${EVALUACION_LABEL[rentabilidad.clasificacion] || rentabilidad.clasificacion}</span>`}
+          <span class="reco-badge reco-${rentabilidad.clasificacion}">${EVALUACION_LABEL[rentabilidad.clasificacion] || rentabilidad.clasificacion}</span>
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
           <div><p class="stat-label">Costo de compra</p><p class="text-lg font-semibold mt-1">${rentabilidad.costo != null ? formatCLP(rentabilidad.costo) : "Sin registrar"}</p></div>
@@ -1847,7 +1847,7 @@ window.LC = window.LC || {};
   // ------------------------------------------------------------------
 
   function orderStatusBadge(estado) {
-    const labels = { pendiente: "Pendiente", enviado: "Enviado", entregado: "Entregado", cancelado: "Cancelado" };
+    const labels = { recibido: "Recibido", pendiente: "Pendiente", enviado: "Enviado", entregado: "Entregado", cancelado: "Cancelado" };
     return `<span class="order-status order-status--${estado}">${labels[estado] || estado}</span>`;
   }
 
@@ -1944,7 +1944,7 @@ window.LC = window.LC || {};
         <div class="panel-card mb-6">
           <div class="flex items-center gap-2">
             ${esReal
-              ? `<p class="text-sm text-slate-500 dark:text-slate-400">Todavía no hay sincronización real de ventas de Mercado Libre — las cifras de acá abajo reflejan eso (en cero), no son datos de ejemplo.</p>`
+              ? `<p class="text-sm text-slate-500 dark:text-slate-400">Ventas reales importadas de Mercado Libre. No suman los pedidos cancelados ni los que tuvieron devolución de dinero. Mercado Libre no informa acá si el pedido fue enviado o entregado.</p>`
               : `<span class="demo-pill">Datos de demostración</span><p class="text-sm text-slate-500 dark:text-slate-400">Ventas, pedidos e ingresos de acá abajo son de ejemplo, para poder evaluar la interfaz.</p>`}
           </div>
         </div>
@@ -1954,9 +1954,9 @@ window.LC = window.LC || {};
           <div class="stat-card"><p class="stat-label">Pedidos del mes</p><p class="stat-value stat-value--sm">${resumen.pedidosMes}</p></div>
           <div class="stat-card"><p class="stat-label">Productos vendidos</p><p class="stat-value stat-value--sm">${resumen.productosVendidosMes}</p></div>
           <div class="stat-card"><p class="stat-label">Ticket promedio</p><p class="stat-value stat-value--sm">${formatCLP(resumen.ticketPromedioMes)}</p></div>
-          <div class="stat-card"><p class="stat-label">Pedidos pendientes</p><p class="stat-value stat-value--sm stat-value--warning">${resumen.pedidosPendientes}</p></div>
-          <div class="stat-card"><p class="stat-label">Pedidos enviados</p><p class="stat-value stat-value--sm">${resumen.pedidosEnviados}</p></div>
-          <div class="stat-card"><p class="stat-label">Pedidos entregados</p><p class="stat-value stat-value--sm stat-value--success">${resumen.pedidosEntregados}</p></div>
+          <div class="stat-card"><p class="stat-label">Pedidos pendientes</p><p class="stat-value stat-value--sm stat-value--warning">${resumen.pedidosPendientes ?? "—"}</p></div>
+          <div class="stat-card"><p class="stat-label">Pedidos enviados</p><p class="stat-value stat-value--sm">${resumen.pedidosEnviados ?? "—"}</p></div>
+          <div class="stat-card"><p class="stat-label">Pedidos entregados</p><p class="stat-value stat-value--sm stat-value--success">${resumen.pedidosEntregados ?? "—"}</p></div>
           <div class="stat-card"><p class="stat-label">Pedidos cancelados</p><p class="stat-value stat-value--sm stat-value--danger">${resumen.pedidosCancelados}</p></div>
         </div>
 
@@ -2000,9 +2000,11 @@ window.LC = window.LC || {};
             </div>
             <select id="ml-filter-estado" class="text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5">
               <option value="todos">Todos los estados</option>
-              <option value="pendiente">Pendiente</option>
+              ${esReal
+                ? `<option value="recibido">Recibido</option>`
+                : `<option value="pendiente">Pendiente</option>
               <option value="enviado">Enviado</option>
-              <option value="entregado">Entregado</option>
+              <option value="entregado">Entregado</option>`}
               <option value="cancelado">Cancelado</option>
             </select>
             <select id="ml-filter-producto" class="text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 max-w-full md:max-w-xs">

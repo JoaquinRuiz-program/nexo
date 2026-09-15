@@ -5,8 +5,10 @@ debe poder decir qué productos convienen realmente, no solo cuáles se
 venden más.
 
 Reglas explícitas del dueño, todas aplicadas acá:
-- Sin costo de compra cargado -> no se calcula NINGÚN margen (ni bruto ni
-  neto). Nunca se muestra un 0 o un margen a medias que parezca un dato real.
+- Estas funciones no asumen ningún costo: sin costo devuelven None. Desde el
+  15 de septiembre de 2026, quien arma la rentabilidad (rentabilidad.py::_fila)
+  considera $0 un costo de compra NO registrado (producto que la empresa ya
+  tiene) y lo informa con tieneCosto=False.
 - El margen neto de un canal (ej. Mercado Libre) requiere que ese canal
   tenga sus costos configurados (ChannelCostSettings). Si no están
   configurados, tampoco se inventa un número — se devuelve None y quien

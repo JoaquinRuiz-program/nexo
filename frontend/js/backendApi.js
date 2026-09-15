@@ -295,6 +295,24 @@ window.LC = window.LC || {};
     return request("/api/mercadolibre/devoluciones");
   }
 
+  // Ventas reales importadas de Mercado Libre (15 de septiembre de 2026).
+  async function ventasResumenMercadoLibre() {
+    return request("/api/mercadolibre/ventas/resumen");
+  }
+
+  async function ventasGraficoMercadoLibre(rango) {
+    return request(`/api/mercadolibre/ventas/grafico?rango=${encodeURIComponent(rango)}`);
+  }
+
+  async function ventasMasVendidasMercadoLibre(rango, limite) {
+    return request(`/api/mercadolibre/ventas/mas-vendidos?rango=${encodeURIComponent(rango)}&limite=${limite}`);
+  }
+
+  async function pedidosMercadoLibre({ search = "", estado = "todos", producto = "todos", page = 1, pageSize = 10 } = {}) {
+    const q = new URLSearchParams({ search, estado, producto, page: String(page), pageSize: String(pageSize) });
+    return request(`/api/mercadolibre/pedidos?${q}`);
+  }
+
   async function importarVentasMercadoLibre() {
     return request("/api/mercadolibre/importar-ventas", { method: "POST", timeoutMs: UPLOAD_TIMEOUT_MS });
   }
@@ -623,6 +641,10 @@ window.LC = window.LC || {};
     desconectarMercadoLibre,
     importarVentasMercadoLibre,
     listarDevolucionesMercadoLibre,
+    ventasResumenMercadoLibre,
+    ventasGraficoMercadoLibre,
+    ventasMasVendidasMercadoLibre,
+    pedidosMercadoLibre,
     conciliacionComisionesMercadoLibre,
     listarFacturasMercadoLibre,
     subirFacturaMercadoLibre,

@@ -39,12 +39,9 @@
  * de LC.demoData.pedidosML (datos de ejemplo, nunca en modo real desde el
  * 6 de septiembre de 2026 — hallazgo de auditoría comercial: antes se
  * usaban SIEMPRE, así que una empresa real sin ventas veía cifras
- * inventadas). En modo real devuelven honestamente "sin ventas todavía"
- * (no hay ningún job que sincronice pedidos reales de Mercado Libre a la
- * tabla `orders`/`order_items` todavía) — el día que exista, acá es donde
- * hay que reemplazar esa rama por la consulta real; las pantallas de
- * Mercado Libre y el Dashboard siguen llamando exactamente a estas mismas
- * funciones, sin cambios.
+ * inventadas). 15 de septiembre de 2026: en modo real leen las ventas
+ * reales importadas de Mercado Libre (GET /api/mercadolibre/ventas/* y
+ * /api/mercadolibre/pedidos).
  */
 
 window.LC = window.LC || {};
@@ -347,27 +344,18 @@ window.LC = window.LC || {};
     };
   }
 
-  // 6 de septiembre de 2026 — hallazgo de auditoría comercial: estas 5
-  // funciones leían SIEMPRE de LC.demoData.pedidosML, incluso con el
-  // backend real conectado — una empresa real, recién registrada, sin
-  // ninguna venta real, veía cifras de ventas y "más vendidos" inventados
-  // en su propio Dashboard. Nunca hay hoy ningún job que importe pedidos
-  // reales de Mercado Libre a la tabla `orders` (confirmado: ningún
-  // endpoint hace `db.add(Order(...))` todavía) — así que en modo real la
-  // respuesta honesta es "sin ventas todavía", nunca datos de ejemplo.
-  // Mismo criterio que getSincronizacion() de abajo, que ya devuelve
-  // "no_conectado" fijo por la misma razón. El día que exista sincronización
-  // real de ventas, acá es donde hay que reemplazar el bloque `if` de abajo
-  // por la consulta real a `orders`/`order_items`.
-  const RESUMEN_ML_VACIO = {
-    ventasHoy: 0, pedidosHoy: 0, ventasAyer: 0, pedidosAyer: 0,
-    ventasUltimos7Dias: 0, pedidosUltimos7Dias: 0, ventasMes: 0, pedidosMes: 0,
-    productosVendidosMes: 0, ticketPromedioMes: 0,
-    pedidosPendientes: 0, pedidosEnviados: 0, pedidosEntregados: 0, pedidosCancelados: 0,
-  };
-
+  // 15 de septiembre de 2026 — en modo real estas funciones leen las ventas
+  // REALES importadas de Mercado Libre (GET /api/mercadolibre/ventas/* y
+  // /api/mercadolibre/pedidos, cálculo en backend app/domain/ventas_ml.py).
+  // Antes devolvían $0 fijo aunque hubiera ventas importadas. Los pedidos de
+  // ejemplo de LC.demoData siguen sirviendo SOLO al modo demo (6 de
+  // septiembre de 2026: nunca datos de ejemplo en modo real).
   async function getResumenMercadoLibre() {
-    if ((await getModo()) === "real") return { ...RESUMEN_ML_VACIO };
+    if ((await getModo()) === "real") {
+      const res = await LC.backendApi.ventasResumenMercadoLibre();
+      if (!res.ok) throw new ErrorDatosReales(res.error);
+      return res.data;
+    }
     const pedidos = LC.demoData.pedidosML;
     const hoy = new Date();
     const ayer = new Date(hoy);
@@ -424,15 +412,17 @@ window.LC = window.LC || {};
   }
 
   async function getGraficoVentasMercadoLibre(rango) {
+    if ((await getModo()) === "real") {
+      const res = await LC.backendApi.ventasGraficoMercadoLibre(rango || "30d");
+      if (!res.ok) throw new ErrorDatosReales(res.error);
+      return res.data.map((p) => ({ fecha: fechaLocal(p.fecha), ingresos: p.ingresos, pedidos: p.pedidos }));
+    }
     const hoy = new Date();
     const desde = rangoAFechaInicio(rango || "30d", hoy);
     const dias = [];
     for (let d = new Date(desde); d <= startOfDay(hoy); d.setDate(d.getDate() + 1)) {
       dias.push(new Date(d));
     }
-    // Real: sin sincronización de ventas todavía, ver comentario de
-    // getResumenMercadoLibre — el gráfico se muestra igual, en cero.
-    if ((await getModo()) === "real") return dias.map((fecha) => ({ fecha, ingresos: 0, pedidos: 0 }));
     const pedidos = LC.demoData.pedidosML.filter((p) => p.estado !== "cancelado" && startOfDay(p.fecha) >= desde);
 
     return dias.map((fecha) => {
@@ -446,7 +436,11 @@ window.LC = window.LC || {};
   }
 
   async function getProductosMasVendidosMercadoLibre(rango, limite) {
-    if ((await getModo()) === "real") return [];
+    if ((await getModo()) === "real") {
+      const res = await LC.backendApi.ventasMasVendidasMercadoLibre(rango || "30d", limite || 10);
+      if (!res.ok) throw new ErrorDatosReales(res.error);
+      return res.data;
+    }
     const hoy = new Date();
     const desde = rangoAFechaInicio(rango || "30d", hoy);
     const pedidos = LC.demoData.pedidosML.filter((p) => p.estado !== "cancelado" && startOfDay(p.fecha) >= desde);
@@ -463,7 +457,11 @@ window.LC = window.LC || {};
 
   async function getPedidosMercadoLibre(opts) {
     const { search = "", estado = "todos", producto = "todos", page = 1, pageSize = 10 } = opts || {};
-    if ((await getModo()) === "real") return { rows: [], total: 0, page: 1, totalPages: 1 };
+    if ((await getModo()) === "real") {
+      const res = await LC.backendApi.pedidosMercadoLibre({ search, estado, producto, page, pageSize });
+      if (!res.ok) throw new ErrorDatosReales(res.error);
+      return { ...res.data, rows: res.data.rows.map((p) => ({ ...p, fecha: new Date(p.fecha) })) };
+    }
     let rows = [...LC.demoData.pedidosML].sort((a, b) => b.fecha - a.fecha);
 
     if (estado !== "todos") rows = rows.filter((p) => p.estado === estado);
@@ -484,7 +482,11 @@ window.LC = window.LC || {};
   }
 
   async function getProductosVendidosEnMercadoLibre() {
-    if ((await getModo()) === "real") return [];
+    if ((await getModo()) === "real") {
+      const res = await LC.backendApi.pedidosMercadoLibre({ pageSize: 1 });
+      if (!res.ok) throw new ErrorDatosReales(res.error);
+      return res.data.productos;
+    }
     // Lista de nombres de producto distintos que aparecen en pedidos —
     // usada para el filtro "Producto" de la tabla de pedidos.
     const nombres = new Set(LC.demoData.pedidosML.map((p) => p.productoNombre));
