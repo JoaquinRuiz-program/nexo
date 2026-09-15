@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_store
 from app.api.routes.mercadolibre import build_estado_conexion
@@ -45,8 +45,8 @@ def _umbral_stock_bajo(store: Store) -> int:
 def resumen(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> dict:
     umbral = _umbral_stock_bajo(store)
 
-    productos = db.query(Product).filter_by(store_id=store.id).order_by(Product.name).all()
-    pares = [(producto, variante) for producto in productos for variante in producto.variants]
+    productos = db.query(Product).options(selectinload(Product.variants)).filter_by(store_id=store.id).order_by(Product.name).all()
+    pares =[(producto, variante) for producto in productos for variante in producto.variants]
 
     con_stock = [par for par in pares if par[1].stock_status == "instock"]
     sin_stock_gestionado = [

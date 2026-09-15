@@ -19,8 +19,10 @@ primera tienda que exista". Ver DATABASE.md para el detalle de cada fase.
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DataError
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import (
@@ -151,6 +153,14 @@ app.include_router(soporte.router)
 # (`Settings.uploads_dir`). Se crea si no existe todavía (primer arranque).
 _uploads_dir = Path(get_settings().uploads_dir)
 _uploads_dir.mkdir(parents=True, exist_ok=True)
+@app.exception_handler(OverflowError)
+@app.exception_handler(DataError)
+async def valor_fuera_de_rango(request: Request, exc: Exception) -> JSONResponse:  # noqa: ARG001
+    # 15 de septiembre de 2026 (QA fase 2): un ID o un número gigante (ej.
+    # /api/productos/9223372036854775808) llegaba a la base y respondía 500.
+    return JSONResponse(status_code=400, content={"detail": "Algún valor está fuera del rango permitido."})
+
+
 app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
 
 

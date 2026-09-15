@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_store
 from app.db.models import (
@@ -363,7 +363,8 @@ def build_profitability_rows(db: Session, store: Store) -> tuple[list[dict], boo
     target_margin_pct = (
         float(config_ml.target_margin_pct) if config_ml and config_ml.target_margin_pct is not None else None
     )
-    productos = db.query(Product).filter_by(store_id=store.id).order_by(Product.name).all()
+    # QA fase 2 (15/09/2026): variantes en una consulta, no una por producto.
+    productos = db.query(Product).options(selectinload(Product.variants)).filter_by(store_id=store.id).order_by(Product.name).all()
     publicaciones_ml = publicaciones_ml_por_producto(db, store.id)
     publicaciones_ml_cerradas = publicaciones_ml_por_producto(db, store.id, estados=("closed",))
     filas = [

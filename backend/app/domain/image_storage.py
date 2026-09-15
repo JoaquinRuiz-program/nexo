@@ -60,7 +60,9 @@ def _validar_bytes_de_imagen(contenido: bytes) -> str:
         # ver documentación de Image.verify().
         with Image.open(io.BytesIO(contenido)) as img2:
             formato = img2.format
-    except (UnidentifiedImageError, OSError, ValueError):
+    # SyntaxError: Pillow lo levanta en verify() con un PNG corrupto (checksum
+    # malo) — sin esto la subida respondía 500 (QA fase 2, 15/09/2026).
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError):
         raise ImagenInvalida("No pudimos abrir ese archivo como imagen — prueba con otro.") from None
     if formato not in FORMATOS_PERMITIDOS:
         raise ImagenInvalida(MENSAJE_REQUISITOS)

@@ -416,7 +416,7 @@ window.LC = window.LC || {};
                   <td class="px-3 py-2.5 font-medium text-slate-800 dark:text-slate-100">${escapeHtml(u.nombre)}</td>
                   <td class="px-3 py-2.5 text-slate-500 dark:text-slate-400">${escapeHtml(u.email)}</td>
                   <td class="px-3 py-2.5">${u.empresa ? escapeHtml(u.empresa.nombre) : "—"}</td>
-                  <td class="px-3 py-2.5">${u.esNexoAdmin ? '<span class="badge badge-variable">Administrador</span>' : "Cliente"}${u.esVos ? ' <span class="text-xs text-slate-400">(vos)</span>' : ""}</td>
+                  <td class="px-3 py-2.5">${u.esNexoAdmin ? '<span class="badge badge-variable">Administrador</span>' : "Cliente"}${u.esVos ? ' <span class="text-xs text-slate-400">(tú)</span>' : ""}</td>
                   <td class="px-3 py-2.5">${u.estadoCuenta === "suspended" ? "Suspendida" : "Activa"}</td>
                   <td class="px-3 py-2.5 text-slate-500 dark:text-slate-400">${formatDate(new Date(u.creadoEn))}</td>
                   <td class="px-3 py-2.5 text-right">${u.esVos ? "" : `<button data-rol="${u.id}" data-rol-nuevo="${u.esNexoAdmin ? "quitar" : "dar"}" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline whitespace-nowrap">${u.esNexoAdmin ? "Quitar administrador" : "Hacer administrador"}</button>`}</td>
@@ -786,7 +786,7 @@ window.LC = window.LC || {};
     document.getElementById("admin-entrar-soporte").addEventListener("click", () => {
       openModal({
         title: "¿Ver esta empresa?",
-        body: `<p>Vas a ver Nexo exactamente como lo ve <strong>${escapeHtml(c.nombre)}</strong> (usuario ${escapeHtml(dueno.email)}). Tu sesión de administrador sigue abierta: salís cuando quieras desde el aviso de arriba. Queda registrado en el historial de acciones administrativas.</p>`,
+        body: `<p>Vas a ver Nexo exactamente como lo ve <strong>${escapeHtml(c.nombre)}</strong> (usuario ${escapeHtml(dueno.email)}). Tu sesión de administrador sigue abierta: sales cuando quieras desde el aviso de arriba. Queda registrado en el historial de acciones administrativas.</p>`,
         primaryLabel: "Ver esta empresa",
         secondaryLabel: "Cancelar",
         onPrimary: async () => {

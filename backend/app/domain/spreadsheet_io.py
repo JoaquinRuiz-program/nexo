@@ -52,7 +52,7 @@ MENSAJE_ARCHIVO_GRANDE = (
     "Divídelo en partes más chicas o quita columnas/hojas que no uses."
 )
 MENSAJE_DEMASIADAS_FILAS = (
-    f"El archivo tiene más de {MAX_FILAS:,} filas. Importalo por partes.".replace(",", ".")
+    f"El archivo tiene más de {MAX_FILAS:,} filas. Impórtalo por partes.".replace(",", ".")
 )
 
 
@@ -78,7 +78,16 @@ def read_rows(fileobj: BinaryIO, filename: str) -> tuple[list[str], list[dict[st
 
 def _read_csv(fileobj: BinaryIO) -> tuple[list[str], list[dict[str, Any]]]:
     raw = fileobj.read()
-    text = raw.decode("utf-8-sig") if isinstance(raw, bytes) else raw
+    if isinstance(raw, bytes):
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            # 15 de septiembre de 2026 (QA fase 2): un CSV guardado desde Excel en
+            # Windows viene en Windows-1252 (tildes, ñ) y se rechazaba con el error
+            # técnico "'utf-8' codec can't decode byte...".
+            text = raw.decode("cp1252", errors="replace")
+    else:
+        text = raw
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
         raise ValueError("El archivo CSV no tiene encabezado.")

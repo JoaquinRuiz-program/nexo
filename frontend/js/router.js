@@ -90,7 +90,17 @@ window.LC = window.LC || {};
     navigate("/login");
   });
 
-  window.addEventListener("hashchange", handleRoute);
+  // 15 de septiembre de 2026 (QA fase 2): el contexto "ver como empresa" vive
+  // en el servidor y lo comparten todas las pestañas del admin. Si otra pestaña
+  // cambiaba de empresa, esta seguía mostrando el aviso de la anterior mientras
+  // sus datos ya eran de la nueva. Para un admin se relee la sesión al navegar.
+  async function alCambiarRuta() {
+    const session = LC.auth.getSession();
+    if (session && session.esNexoAdmin) await LC.auth.hydrate();
+    handleRoute();
+  }
+
+  window.addEventListener("hashchange", alCambiarRuta);
   window.addEventListener("DOMContentLoaded", init);
 
   LC.router = { navigate, parseHash, handleRoute };

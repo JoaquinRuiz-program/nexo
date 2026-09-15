@@ -40,7 +40,7 @@ window.LC = window.LC || {};
   // para eso.
   // ------------------------------------------------------------------
   const TEXTO_TERMINOS_INTERINO =
-    "Nexo está en etapa piloto. Guardamos los datos que cargás para operar la plataforma (tu catálogo, costos, configuración de márgenes, y — si conectás Mercado Libre — los datos de tu cuenta vendedora, cifrados). No compartimos tus datos con terceros salvo lo estrictamente necesario para conectar los servicios que vos mismo autorices. Este texto es informativo, no un documento legal — antes de un lanzamiento público vamos a publicar términos de servicio y política de privacidad formales. Cualquier duda, escríbenos directamente.";
+    "Nexo está en etapa piloto. Guardamos los datos que cargás para operar la plataforma (tu catálogo, costos, configuración de márgenes, y — si conectás Mercado Libre — los datos de tu cuenta vendedora, cifrados). No compartimos tus datos con terceros salvo lo estrictamente necesario para conectar los servicios que tú mismo autorices. Este texto es informativo, no un documento legal — antes de un lanzamiento público vamos a publicar términos de servicio y política de privacidad formales. Cualquier duda, escríbenos directamente.";
 
   const state = {
     search: "",
@@ -1434,7 +1434,7 @@ window.LC = window.LC || {};
           <input id="stock-input" type="number" min="0" step="1" inputmode="numeric" class="form-input" placeholder="0" value="${producto.stock ?? ""}" />
           <p class="text-xs text-slate-400 mt-1.5">${producto.mercadoLibre
             ? "Cuántas unidades ofrecés en Mercado Libre. Si el producto ya está publicado, también se actualiza la publicación."
-            : "Dejalo vacio si este producto no lleva control de stock. Esto no cambia las unidades reservadas para Mercado Libre."}</p>
+            : "Déjalo vacío si este producto no lleva control de stock. Esto no cambia las unidades reservadas para Mercado Libre."}</p>
           <p id="stock-feedback" class="text-sm mt-2 min-h-[1.25rem]"></p>
           <div class="flex justify-end gap-3 mt-3">
             <button id="stock-cancelar" class="btn-secondary">Cancelar</button>
@@ -1644,7 +1644,7 @@ window.LC = window.LC || {};
       img.onerror = () => {
         const aviso = document.createElement("p");
         aviso.className = "text-xs text-red-600 dark:text-red-400";
-        aviso.textContent = "Esa URL no cargó como imagen — revisala.";
+        aviso.textContent = "Esa URL no cargó como imagen — revísala.";
         img.replaceWith(aviso);
       };
       preview.appendChild(img);
@@ -2194,7 +2194,7 @@ window.LC = window.LC || {};
     not_delivered: "No entregada", cancelled: "Cancelada", failed: "Falló", expired: "Vencida",
   };
   const DEVOLUCION_DINERO_LABEL = {
-    retained: "Dinero retenido por Mercado Libre", refunded: "Dinero devuelto al comprador", available: "Dinero liberado para vos",
+    retained: "Dinero retenido por Mercado Libre", refunded: "Dinero devuelto al comprador", available: "Dinero liberado para ti",
   };
 
   async function cargarDevolucionesML() {

@@ -269,6 +269,22 @@ catálogo (52).
     objetivo". Sin precio de venta queda pendiente (no se inventa precio) y al intentar
     publicarlo el bloqueo dice "Todavía no se puede publicar…: Falta el precio de venta"
     (antes decía "no es rentable").
+38. **QA fase 2 — estrés y seguridad** (15 sept 2026) — catálogos de 100 a 10.000 productos,
+    archivos grandes, límites de plan, multiempresa A/B/C, IDs raros, datos malformados, XSS,
+    concurrencia, impersonación y empresa vacía. Corregido:
+    - Un plan vencido publicaba en Mercado Libre llamando directo a `/confirmar` (solo la
+      vista previa lo bloqueaba); `canceled` pasado el período pagado y `expired` también.
+    - Tras varias importaciones grandes el backend dejaba de responder a todas las empresas:
+      la predicción de categorías mantenía la conexión de la base tomada mientras esperaba a
+      Mercado Libre (pool agotado), las tareas se apilaban y un reinicio quedaba esperándolas.
+      Ahora libera la conexión, una tarea por empresa y máximo 200 predicciones por corrida.
+    - IDs gigantes (`/api/productos/9223372036854775808`) y PNG corruptos respondían 500.
+    - CSV guardado desde Excel en Windows (Windows-1252) se rechazaba con un error técnico.
+    - Costo NaN/Infinity/1e308 y configuración de Mercado Libre fuera de rango se aceptaban.
+    - Consultas por producto (N+1): con 10.000 productos Productos 13,9 s → 2,8 s,
+      Oportunidades 9,4 s → 0,7 s, decisión en lote 14,5 s → 1,2 s, Dashboard 9,3 s → 1,2 s.
+    - Dos pestañas del admin en "ver como empresa" mostraban la empresa anterior.
+    - Textos con voseo que quedaban.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

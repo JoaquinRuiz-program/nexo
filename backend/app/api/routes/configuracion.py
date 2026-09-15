@@ -140,6 +140,20 @@ def listar_canales(db: Session = Depends(get_db), store: Store = Depends(get_cur
 def configurar_canal(
     channel: str, body: ChannelCostsUpdate, db: Session = Depends(get_db), store: Store = Depends(get_current_store)
 ) -> dict:
+    # QA fase 2 (15/09/2026): se aceptaba una comisión de -50 % o 1000 %, un
+    # envío de 1e308 o un margen objetivo de 150 %, y la rentabilidad de toda la
+    # empresa quedaba calculada sobre esos valores. Un porcentaje va de 0 a 100
+    # y un monto no puede ser negativo (la comparación encadenada rechaza NaN).
+    rangos = {
+        "commission_pct": ("La comisión", 100), "target_margin_pct": ("El margen objetivo", 99.99), "min_margin_pct": ("El margen mínimo", 100),
+        "shipping_cost": ("El costo de envío", 9_999_999_999), "other_fixed_cost": ("Otros costos", 9_999_999_999),
+        "min_profit_clp": ("La ganancia neta mínima", 9_999_999_999), "shipping_min_price_clp": ("El precio desde el que se descuenta el envío", 9_999_999_999),
+    }
+    for campo, (nombre, maximo) in rangos.items():
+        valor = getattr(body, campo)
+        if valor is not None and not (0 <= valor <= maximo):
+            raise HTTPException(status_code=400, detail=f"{nombre} no es un valor válido.")
+
     costos = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel=channel).first()
     if costos is None:
         costos = ChannelCostSettings(store=store, channel=channel, updated_at=datetime.now())

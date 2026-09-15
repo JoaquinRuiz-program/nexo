@@ -30,7 +30,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.adapters.mercadolibre import MercadoLibreAdapter, MercadoLibreAuthError, MercadoLibreRequestError
 from app.api.deps import get_current_store
@@ -277,7 +277,7 @@ async def preparar_publicacion_mercadolibre(
     if not imagenes:
         advertencias.append("Sin imagen cargada.")
     if categoria_sugerida is None:
-        advertencias.append("No pudimos sugerir una categoría — buscala manualmente en el siguiente paso.")
+        advertencias.append("No pudimos sugerir una categoría — búscala manualmente en el siguiente paso.")
     if not fila.get("tieneCosto"):
         advertencias.append("Sin costo de compra registrado: la ganancia se calcula con costo $0.")
     if not fila.get("marketplaceStock"):
@@ -797,7 +797,7 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
     # product-reviewer que _resolver_recomendacion_precio): esta era la
     # razón real por la que la columna "Decisión" de Oportunidades podía
     # contradecir el margen de la misma fila.
-    variantes = db.query(ProductVariant).filter_by(store_id=store.id).all()
+    variantes = db.query(ProductVariant).options(selectinload(ProductVariant.product)).filter_by(store_id=store.id).all()
     publicaciones_ml = publicaciones_ml_por_producto(db, store.id)
     # Mismo gate de margen mínimo que /decision (paso "¿Conviene?"): sin esto
     # la columna "Decisión preliminar" podía decir "Conviene" en una fila que
@@ -1331,11 +1331,21 @@ def _verificar_plan_vigente(store: Store) -> None:
     sub = store.subscription
     if sub is None:
         return
+    hoy = date.today()
     vig = DatosVigencia(status=sub.status, current_period_end=sub.current_period_end, ultimo_hito_recordatorio=sub.ultimo_hito_recordatorio)
-    if estado_efectivo(vig, date.today()) == VENCIDA:
+    # QA fase 2 (15 de septiembre de 2026): estado_efectivo solo mira trial y
+    # past_due (lo que pausa el proceso diario), así que una suscripción
+    # `expired`, o `canceled` con el período pagado ya terminado, seguía
+    # publicando como si estuviera vigente.
+    no_vigente = (
+        estado_efectivo(vig, hoy) == VENCIDA
+        or sub.status == "expired"
+        or (sub.status == "canceled" and hoy > sub.current_period_end)
+    )
+    if no_vigente:
         raise HTTPException(
             status_code=403,
-            detail="Tu plan venció y el período de gracia terminó. Renová tu plan en \"Mi plan\" para volver a publicar en Mercado Libre.",
+            detail="Tu plan no está vigente (venció o fue cancelado). Renuévalo en \"Mi plan\" para volver a publicar en Mercado Libre.",
         )
 
 
@@ -1346,6 +1356,9 @@ async def confirmar_publicacion_mercadolibre(
     db: Session = Depends(get_db),
     store: Store = Depends(get_current_store),
 ) -> dict:
+    # QA fase 2 (15 de septiembre de 2026): solo la vista previa verificaba el
+    # plan; llamando directo a /confirmar un plan vencido publicaba igual.
+    _verificar_plan_vigente(store)
     resolucion, adapter = await _resolver_publicacion(db, store, variant_id, body)
     variante = resolucion.variante
     producto = resolucion.producto

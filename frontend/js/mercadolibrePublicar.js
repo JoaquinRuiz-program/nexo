@@ -417,7 +417,7 @@ window.LC = window.LC || {};
           <div>
             <label class="form-label">Categoría de Mercado Libre (ID)</label>
             <input id="ml-category-id" type="text" class="form-input" value="${escapeHtml(state.categoryId || (p.categoriaSugerida ? p.categoriaSugerida.id : ""))}" placeholder="ej. MLC180937" />
-            ${p.categoriaSugerida ? `<p class="text-xs text-slate-400 mt-1">Sugerida: ${escapeHtml(p.categoriaSugerida.nombre)} — revisala antes de continuar.</p>` : `<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">No pudimos sugerir una categoría automáticamente. Para encontrar el ID: buscá un producto parecido en <a href="https://listado.mercadolibre.cl" target="_blank" rel="noopener" class="underline">mercadolibre.cl</a> y copiá el código que empieza con "MLC" de la URL de esa publicación (ej. MLC180937).</p>`}
+            ${p.categoriaSugerida ? `<p class="text-xs text-slate-400 mt-1">Sugerida: ${escapeHtml(p.categoriaSugerida.nombre)} — revísala antes de continuar.</p>` : `<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">No pudimos sugerir una categoría automáticamente. Para encontrar el ID: busca un producto parecido en <a href="https://listado.mercadolibre.cl" target="_blank" rel="noopener" class="underline">mercadolibre.cl</a> y copia el código que empieza con "MLC" de la URL de esa publicación (ej. MLC180937).</p>`}
           </div>
           <div>
             <label class="form-label">Condición</label>
@@ -472,7 +472,7 @@ window.LC = window.LC || {};
       <div class="mb-3">
         <label class="form-label">${escapeHtml(f.nombre)}</label>
         ${campo}
-        ${f.valorSugerido && valorActual === f.valorSugerido ? `<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">Por confirmar: dato del catálogo de Mercado Libre. Revisalo antes de publicar.</p>` : ""}
+        ${f.valorSugerido && valorActual === f.valorSugerido ? `<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">Por confirmar: dato del catálogo de Mercado Libre. Revísalo antes de publicar.</p>` : ""}
         ${eligioSinCodigo ? `
           <label class="flex items-center gap-2 mt-2 text-sm text-slate-600 dark:text-slate-300">
             <input type="checkbox" id="ml-confirmar-sin-codigo" class="form-checkbox" ${state.gtinSinCodigoConfirmado ? "checked" : ""} ${state.confirmandoSinCodigo ? "disabled" : ""} />
@@ -519,7 +519,7 @@ window.LC = window.LC || {};
 
     return `
       <div class="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950 px-4 py-3 mb-5 text-sm text-indigo-800 dark:text-indigo-200">
-        Esto es exactamente lo que se va a enviar a Mercado Libre si confirmás. Todavía no se publicó nada.
+        Esto es exactamente lo que se va a enviar a Mercado Libre si confirmas. Todavía no se publicó nada.
       </div>
 
       <div class="panel-card mb-5">

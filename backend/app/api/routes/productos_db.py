@@ -25,7 +25,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_store
 from app.config import get_settings
@@ -164,7 +164,12 @@ def _estado_publicacion_por_producto(db: Session, store: Store) -> dict[int, str
 
 @router.get("")
 def listar_productos(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> list[dict]:
-    productos = db.query(Product).filter_by(store_id=store.id).order_by(Product.name).all()
+    # QA fase 2 (15/09/2026): variantes e imágenes en 2 consultas, no 2 por
+    # producto (con 5.000 productos la lista tardaba 5 s).
+    productos = (
+        db.query(Product).options(selectinload(Product.variants), selectinload(Product.images))
+        .filter_by(store_id=store.id).order_by(Product.name).all()
+    )
     estado_publicacion = _estado_publicacion_por_producto(db, store)
     filas = []
     for producto in productos:
@@ -329,6 +334,10 @@ def configurar_costo(
     variante = _variante_de_la_tienda(db, store, variant_id)
     if body.costo is not None and body.costo < 0:
         raise HTTPException(status_code=400, detail="El costo no puede ser negativo.")
+    # QA fase 2 (15/09/2026): 1e308, NaN o Infinity se guardaban como costo.
+    # La comparación encadenada también rechaza NaN (toda comparación con NaN es False).
+    if body.costo is not None and not (0 <= body.costo <= 9_999_999_999):
+        raise HTTPException(status_code=400, detail="El costo es demasiado grande o no es un número válido.")
 
     variante.cost_price = body.costo
     db.commit()
@@ -376,7 +385,7 @@ def configurar_codigo_barras(
         if not gtin_checksum_valido(codigo):
             raise HTTPException(
                 status_code=400,
-                detail="Ese código no es válido (no pasa el checksum GTIN/EAN) — revisalo antes de guardarlo.",
+                detail="Ese código no es válido (no pasa el checksum GTIN/EAN) — revísalo antes de guardarlo.",
             )
         variante.barcode = codigo
         variante.gtin_confirmado_ausente = False
