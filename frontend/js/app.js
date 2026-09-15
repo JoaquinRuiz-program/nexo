@@ -1270,6 +1270,63 @@ window.LC = window.LC || {};
   // habia ninguna forma de cambiarla. Pide la actual a proposito (ver
   // app/api/routes/auth.py::cambiar_password) y el backend cierra las demas
   // sesiones abiertas de esa cuenta.
+  // 15 de septiembre de 2026 — eliminar la cuenta desde la aplicación (ver
+  // app/services/eliminar_cuenta.py). Pide la contraseña y escribir ELIMINAR.
+  function abrirEliminarCuenta() {
+    const root = document.getElementById("modal-root");
+    root.innerHTML = `
+      <div class="modal-overlay fixed inset-0 bg-slate-900/50 dark:bg-slate-950/70 flex items-center justify-center z-[60] p-4">
+        <div class="modal-card bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full p-6">
+          <h3 class="text-lg font-semibold mb-2">Eliminar cuenta</h3>
+          <p class="text-sm text-slate-600 dark:text-slate-300 mb-2">Se borran para siempre tu empresa, catálogo, imágenes, configuración, ventas importadas, facturas adjuntas en Nexo y todo el historial. Si tienes un plan mensual, se cancela el cobro en Mercado Pago.</p>
+          <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Tus publicaciones en Mercado Libre no se cierran: siguen en tu cuenta de Mercado Libre.</p>
+          <label class="form-label" for="del-password">Contraseña</label>
+          <input id="del-password" type="password" class="form-input" autocomplete="current-password" />
+          <label class="form-label mt-3" for="del-confirmacion">Escribe ELIMINAR para confirmar</label>
+          <input id="del-confirmacion" type="text" class="form-input" autocomplete="off" />
+          <p id="del-feedback" class="text-sm mt-2 min-h-[1.25rem]"></p>
+          <div class="flex justify-end gap-3 mt-3">
+            <button id="del-cancelar" class="btn-secondary">Cancelar</button>
+            <button id="del-confirmar" class="btn-secondary btn-secondary--danger">Eliminar cuenta</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const close = () => { root.innerHTML = ""; };
+    root.querySelector(".modal-overlay").addEventListener("click", (e) => {
+      if (e.target.classList.contains("modal-overlay")) close();
+    });
+    document.getElementById("del-cancelar").addEventListener("click", close);
+    document.getElementById("del-password").focus();
+
+    document.getElementById("del-confirmar").addEventListener("click", async () => {
+      const feedback = document.getElementById("del-feedback");
+      const error = (texto) => {
+        feedback.textContent = texto;
+        feedback.className = "text-sm mt-2 min-h-[1.25rem] text-red-600 dark:text-red-400";
+      };
+      const password = document.getElementById("del-password").value;
+      const confirmacion = document.getElementById("del-confirmacion").value;
+      if (!password) return error("Ingresa tu contraseña.");
+      if (confirmacion.trim().toUpperCase() !== "ELIMINAR") return error("Escribe ELIMINAR para confirmar.");
+
+      const btn = document.getElementById("del-confirmar");
+      btn.disabled = true;
+      btn.textContent = "Eliminando…";
+      feedback.textContent = "";
+      const res = await LC.backendApi.eliminarCuenta(password, confirmacion);
+      if (!res.ok) {
+        btn.disabled = false;
+        btn.textContent = "Eliminar cuenta";
+        return error(res.error.mensaje);
+      }
+      close();
+      LC.auth.clearCachedSession();
+      toast("info", "Tu cuenta fue eliminada.");
+      LC.router.navigate("/login");
+    });
+  }
+
   function abrirCambioDePassword() {
     const root = document.getElementById("modal-root");
     root.innerHTML = `
@@ -3096,6 +3153,11 @@ window.LC = window.LC || {};
             <button id="cfg-change-password" class="btn-secondary">Cambiar contraseña</button>
             <button id="cfg-logout" class="btn-secondary btn-secondary--danger">Cerrar sesión</button>
           </div>
+          <div class="border-t border-slate-200 dark:border-slate-700 mt-5 pt-4">
+            <p class="text-sm font-medium">Eliminar cuenta</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-3">Borra para siempre tu empresa y todos sus datos en Nexo. No se puede deshacer.</p>
+            <button id="cfg-eliminar-cuenta" class="btn-secondary btn-secondary--danger">Eliminar cuenta</button>
+          </div>
         </div>
       </div>
     `;
@@ -3186,6 +3248,7 @@ window.LC = window.LC || {};
     });
 
     document.getElementById("cfg-change-password").addEventListener("click", abrirCambioDePassword);
+    document.getElementById("cfg-eliminar-cuenta").addEventListener("click", abrirEliminarCuenta);
     document.getElementById("cfg-logout").addEventListener("click", async () => {
       await LC.auth.logout();
       toast("info", "Sesión cerrada.");

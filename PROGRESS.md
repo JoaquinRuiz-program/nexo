@@ -197,6 +197,14 @@ catálogo (52).
     `legal/POLITICA_DE_PRIVACIDAD_BORRADOR.md`, escritos a partir de lo que el código guarda
     (sin datos de compradores, tokens cifrados, modo soporte registrado, planes y gracia
     reales). No publicados: requieren abogado y completar datos de la empresa.
+28. **Eliminar cuenta** (15 sept 2026) — botón en Configuración → Cuenta, pide contraseña y
+    escribir ELIMINAR (`POST /api/auth/eliminar-cuenta`, `services/eliminar_cuenta.py`). Cancela
+    antes el cobro mensual de Mercado Pago (si falla, no borra), borra todos los datos de la
+    empresa y sus imágenes en disco, y no toca las publicaciones de Mercado Libre. Bloqueado para
+    admins de Nexo y en modo soporte.
+29. **Revisión de experiencia por perfil** (15 sept 2026) — ver `REVISION_EXPERIENCIA.md`: 4
+    cuentas de prueba (pyme, importador, retailer, emprendedor) en `nexo.db` de desarrollo,
+    recorrido como admin y como cliente, 28 hallazgos priorizados.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

@@ -571,6 +571,10 @@ window.LC = window.LC || {};
 
   // Cambiar la propia contrasena. Pide la actual: el backend cierra las
   // demas sesiones abiertas de la cuenta al cambiarla.
+  async function eliminarCuenta(password, confirmacion) {
+    return request("/api/auth/eliminar-cuenta", { method: "POST", body: { password, confirmacion } });
+  }
+
   async function cambiarPassword(passwordActual, passwordNueva) {
     return request("/api/auth/cambiar-password", {
       method: "POST",
@@ -641,6 +645,7 @@ window.LC = window.LC || {};
     obtenerDatosGenerales,
     guardarDatosGenerales,
     cambiarPassword,
+    eliminarCuenta,
     configurarCanal,
     obtenerAdminOverview,
     listarClientesAdmin,

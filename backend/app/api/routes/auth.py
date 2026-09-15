@@ -16,6 +16,7 @@ para enumerar qué emails están registrados.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, field_validator
@@ -34,6 +35,7 @@ from app.db.session import get_db
 from app.domain.plans import crear_suscripcion_inicial
 from app.domain.rate_limit import esta_bloqueado, ip_del_request, registrar_exito, registrar_fallo
 from app.domain.security import generate_session_token, hash_password, hash_session_token, verify_password
+from app.services.eliminar_cuenta import cancelar_cobros_recurrentes, eliminar_datos_de_la_cuenta
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -272,6 +274,44 @@ def cambiar_password(
         s.revoked_at = ahora
     db.commit()
     return {"ok": True, "sesionesCerradas": len(otras)}
+
+
+class EliminarCuentaRequest(BaseModel):
+    password: str
+    confirmacion: str
+
+
+@router.post("/eliminar-cuenta")
+async def eliminar_cuenta(
+    body: EliminarCuentaRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    usuario: User = Depends(get_current_user),
+    sesion: AuthSession = Depends(get_current_session),
+) -> dict:
+    """15 de septiembre de 2026 — el cliente elimina su propia cuenta (ver
+    app/services/eliminar_cuenta.py). Pide la contraseña y escribir
+    ELIMINAR: es irreversible. Siempre la cuenta del usuario autenticado,
+    nunca la empresa que un admin esté viendo en modo soporte."""
+    if sesion.viewing_store_id is not None:
+        raise HTTPException(status_code=400, detail="Estás viendo otra empresa en modo soporte. Sal de ese modo antes de eliminar una cuenta.")
+    if usuario.is_nexo_admin:
+        raise HTTPException(status_code=400, detail="Una cuenta de administrador de Nexo no se puede eliminar desde la aplicación.")
+    if (body.confirmacion or "").strip().upper() != "ELIMINAR":
+        raise HTTPException(status_code=400, detail="Escribe ELIMINAR para confirmar.")
+    ip = ip_del_request(request)
+    if esta_bloqueado(email=usuario.email, ip=ip):
+        raise HTTPException(status_code=429, detail="Demasiados intentos fallidos. Espera unos minutos antes de volver a intentar.")
+    if not verify_password(body.password, usuario.password_hash):
+        registrar_fallo(email=usuario.email, ip=ip)
+        raise HTTPException(status_code=400, detail="La contraseña no es correcta.")
+
+    settings = get_settings()
+    await cancelar_cobros_recurrentes(db, usuario, settings)
+    eliminar_datos_de_la_cuenta(db, usuario, Path(settings.uploads_dir))
+    clear_session_cookie(response)
+    return {"ok": True}
 
 
 @router.get("/me")

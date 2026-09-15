@@ -34,6 +34,15 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
       (`/api/mercadolibre/facturas`, `POST`/`DELETE /packs/{pack_id}/fiscal_documents`). Nexo
       NO emite boletas/facturas SII ni guarda el archivo. Falta probarlo con una venta real.
 
+## Revisión de experiencia (15 sept 2026) — decidir qué corregir
+- [ ] Críticos 1–8 de `REVISION_EXPERIENCIA.md`: comisión real por defecto, Dashboard vs
+      Oportunidades, envío fijo en productos baratos, detección de columnas del importador
+      (Descripción, precio mayorista/retail, encabezados informales), pantalla de revisión del
+      importador y aviso del límite del plan.
+- [ ] Importantes 9–18 y menores 19–28 del mismo documento.
+- [ ] Cuentas de prueba `*@revision.nexo.local` en `nexo.db` de desarrollo: borrarlas cuando se
+      termine de revisar (respaldo previo en el scratchpad de la sesión).
+
 ## Deploy (día del despliegue, ver backend/DEPLOY.md)
 - [ ] **Servicio de mail** — código listo (`EnviadorResend`, `RESEND_API_KEY`/`EMAIL_FROM` en
       render.yaml). Falta del dueño: cuenta Resend, dominio verificado y la API key.
