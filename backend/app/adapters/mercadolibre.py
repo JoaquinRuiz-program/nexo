@@ -218,6 +218,14 @@ class MercadoLibreAdapter:
         }
         return await self._get_with_retry(f"/post-purchase/v1/claims/search?{urlencode(params)}", access_token)
 
+    async def get_billing_order_details(self, access_token: str, seller_id: str, order_ids: list[str]) -> dict[str, Any]:
+        """GET /billing/integration/group/ML/order/details — cargos que Mercado
+        Libre facturó por venta (doc oficial "Billing Reports by Orders and
+        Packs"): hasta 60 order_ids por llamada, solo para conciliación.
+        Verificado en vivo con una cuenta MLC (14/09/2026, HTTP 200)."""
+        ids = ",".join(str(i) for i in order_ids)
+        return await self._get_with_retry(f"/billing/integration/group/ML/order/details?order_ids={ids}&seller_id={seller_id}", access_token)
+
     async def get_claim_return(self, access_token: str, claim_id: str) -> Optional[dict[str, Any]]:
         """GET /post-purchase/v2/claims/{id}/returns — la devolución de un
         reclamo, o None si ese reclamo no tiene devolución (404)."""

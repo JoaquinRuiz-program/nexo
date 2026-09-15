@@ -30,7 +30,7 @@ window.LC = window.LC || {};
   const SOPORTE_ESTADO_CLASE = { abierto: "reco-activo", en_revision: "reco-trial", resuelto: "reco-rentable", cerrado: "reco-pendiente_configuracion" };
   const ESTADO_SUSCRIPCION_LABEL = { trialing: "Prueba gratuita", active: "Activa", past_due: "Pago pendiente", canceled: "Cancelada", expired: "Vencida" };
   // Historial real de sincronizaciones con Mercado Libre (14 de septiembre de 2026).
-  const SYNC_DIRECCION_LABEL = { ml_importar_ventas: "Importar ventas", ml_costos_envio: "Costos de envío", ml_stock: "Stock", ml_devoluciones: "Devoluciones" };
+  const SYNC_DIRECCION_LABEL = { ml_importar_ventas: "Importar ventas", ml_costos_envio: "Costos de envío", ml_stock: "Stock", ml_devoluciones: "Devoluciones", ml_conciliacion: "Conciliación de comisiones" };
   const SYNC_ESTADO_LABEL = { success: "Correcto", partial_error: "Con errores", error: "Error", running: "En curso" };
   const SYNC_ESTADO_CLASE = { success: "reco-activo", partial_error: "reco-pendiente_configuracion", error: "reco-suspendido", running: "reco-trial" };
 

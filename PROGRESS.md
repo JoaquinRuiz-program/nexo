@@ -179,6 +179,14 @@ catálogo (52).
 24. **Ventas reembolsadas fuera de las métricas** (14 sept 2026) — `_filtros_orden` (admin.py,
     única fuente de GMV/margen/ventas del admin) excluye las órdenes con devolución
     `money_status = "refunded"`. Retenida o liberada sigue contando.
+25. **Conciliación de comisiones con la facturación de ML** (14 sept 2026) — al importar ventas,
+    `services/ml_conciliacion.py` pide `GET /billing/integration/group/ML/order/details` (doc
+    "Billing Reports by Orders and Packs": lotes de 60, nunca re-pide un pedido facturado, uno
+    sin facturar se reintenta 1 vez por día) y guarda en `order_billing` (migración
+    `a7c9e1b3d5f6`) el cargo por venta (CV), envío (CXD) y otros, junto a la comisión que
+    calcula Nexo (MercadoLibreCategoryFee al precio vendido). `GET /api/mercadolibre/conciliacion`
+    + panel en Mercado Libre: coincide (±$1) / diferencia / sin cálculo de Nexo / aún sin facturar.
+    Verificado en vivo: HTTP 200, 0 cargos hoy.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

@@ -85,6 +85,7 @@ from app.services.ml_shipping_sync import sincronizar_costos_envio_de_la_cuenta
 from app.services.sync_registro import DIRECCION_ML_VENTAS, registrar_fallo, registrar_sincronizacion
 from app.services.ml_comisiones import actualizar_comisiones_en_segundo_plano, actualizar_comisiones_reales
 from app.services.ml_devoluciones_sync import fila_devolucion, sincronizar_devoluciones_de_la_cuenta
+from app.services.ml_conciliacion import conciliacion_de_la_tienda, conciliar_comisiones_de_la_cuenta
 
 logger = logging.getLogger(__name__)
 
@@ -514,6 +515,8 @@ async def importar_ventas(db: Session = Depends(get_db), store: Store = Depends(
     costos_envio = await sincronizar_costos_envio_de_la_cuenta(db, account, settings)
     # Y las devoluciones reales (best effort, services/ml_devoluciones_sync.py).
     devoluciones = await sincronizar_devoluciones_de_la_cuenta(db, account, settings)
+    # Y la conciliación de comisiones con la facturación real (services/ml_conciliacion.py).
+    conciliacion = await conciliar_comisiones_de_la_cuenta(db, account, settings)
 
     return {
         "ordenesNuevas": ordenes_nuevas,
@@ -522,6 +525,7 @@ async def importar_ventas(db: Session = Depends(get_db), store: Store = Depends(
         "desajustesStockReservado": desajustes_stock_reservado,
         "costosEnvio": costos_envio,
         "devoluciones": devoluciones,
+        "conciliacion": conciliacion,
     }
 
 
@@ -533,6 +537,12 @@ def listar_devoluciones(db: Session = Depends(get_db), store: Store = Depends(ge
         .order_by(OrderReturn.claim_created_at.desc(), OrderReturn.id.desc()).limit(100).all()
     )
     return {"devoluciones": [fila_devolucion(f) for f in filas]}
+
+
+@router.get("/conciliacion")
+def conciliacion_comisiones(db: Session = Depends(get_db), store: Store = Depends(get_current_store)) -> dict:
+    """Comisión que Mercado Libre facturó por venta vs. la que calcula Nexo."""
+    return conciliacion_de_la_tienda(db, store.id)
 
 
 @router.post("/comisiones/recalcular")

@@ -27,11 +27,11 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
       admin. Sincronización real OK (HTTP 200, 0 reclamos hoy). Falta verlo con una devolución
       real. Una venta con devolución reembolsada ("refunded") ya no suma a las métricas del
       admin (excluye la orden completa; un reembolso parcial todavía no se distingue).
-- [ ] Facturas — decisión del dueño pendiente. Nexo NO puede emitir boletas/facturas SII (hace
-      falta un proveedor autorizado). Mercado Libre ofrece: (a) subir la factura PDF/XML del
-      vendedor por pack (`POST /packs/{pack_id}/fiscal_documents`, máx 1 MB, no aplica a Full en
-      Chile) y (b) reportes de facturación de los cargos de ML (`/billing/integration/monthly/…`,
-      1 vez al día) para conciliar la comisión real cobrada por venta.
+- [x] Conciliación de comisiones con la facturación de ML — hecha 14 sept 2026
+      (`GET /billing/integration/group/ML/order/details`, verificado en vivo HTTP 200 con 0
+      cargos). Falta verla con ventas reales facturadas.
+- [ ] Subir la factura PDF/XML del vendedor por pack (`POST /packs/{pack_id}/fiscal_documents`)
+      — no pedido todavía. Nexo NO puede emitir boletas/facturas SII.
 
 ## Deploy (día del despliegue, ver backend/DEPLOY.md)
 - [ ] **Servicio de mail** — código listo (`EnviadorResend`, `RESEND_API_KEY`/`EMAIL_FROM` en

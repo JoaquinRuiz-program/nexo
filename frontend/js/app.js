@@ -1822,6 +1822,7 @@ window.LC = window.LC || {};
             Tu cuenta está conectada correctamente. Cuando importes tus ventas de Mercado Libre las vas a ver acá.
           </p>
           <div id="ml-devoluciones" class="mt-4"></div>
+          <div id="ml-conciliacion" class="mt-4"></div>
         </div>`;
     }
     return `
@@ -2020,8 +2021,10 @@ window.LC = window.LC || {};
         importarVentasBtn.disabled = false;
         importarVentasBtn.textContent = "Importar ventas ahora";
         cargarDevolucionesML();
+        cargarConciliacionML();
       });
       cargarDevolucionesML();
+      cargarConciliacionML();
     }
 
     document.getElementById("ml-search-input").addEventListener("input", (e) => {
@@ -2138,6 +2141,47 @@ window.LC = window.LC || {};
               <td class="px-3 py-2">${escapeHtml(d.pedidoId || "—")}${d.ventaImportada ? "" : ` <span class="text-xs text-slate-400">(venta no importada)</span>`}</td>
               <td class="px-3 py-2">${escapeHtml(DEVOLUCION_ESTADO_LABEL[d.estadoDevolucion] || (d.estadoDevolucion ? d.estadoDevolucion : "Reclamo sin devolución todavía"))}</td>
               <td class="px-3 py-2">${escapeHtml(DEVOLUCION_DINERO_LABEL[d.estadoDinero] || "—")}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table></div>`;
+  }
+
+  // Conciliación de comisiones (14 de septiembre de 2026): lo que Mercado
+  // Libre FACTURÓ por venta vs. la comisión que calcula Nexo. Solo datos reales.
+  const CONCILIACION_ESTADO_LABEL = {
+    coincide: "Coincide", diferencia: "Diferencia", sin_estimacion: "Sin cálculo de Nexo", sin_facturar: "Aún sin facturar",
+  };
+
+  async function cargarConciliacionML() {
+    const cont = document.getElementById("ml-conciliacion");
+    if (!cont) return;
+    const res = await LC.backendApi.conciliacionComisionesMercadoLibre();
+    if (!res.ok) {
+      cont.innerHTML = `<p class="text-xs text-slate-400">No pudimos cargar la conciliación de comisiones ahora mismo.</p>`;
+      return;
+    }
+    const clp = (n) => (n == null ? "—" : `$${Math.round(n).toLocaleString("es-CL")}`);
+    const { resumen, pedidos } = res.data;
+    if (!pedidos.length) {
+      cont.innerHTML = `<p class="text-sm font-medium mb-1">Conciliación de comisiones</p><p class="text-xs text-slate-400">Sin datos suficientes: todavía no hay ventas importadas para comparar con la facturación de Mercado Libre.</p>`;
+      return;
+    }
+    cont.innerHTML = `
+      <p class="text-sm font-medium mb-1">Conciliación de comisiones</p>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mb-2">${resumen.ventasComparadas
+        ? `En ${resumen.ventasComparadas} venta${resumen.ventasComparadas === 1 ? "" : "s"}: Mercado Libre facturó ${clp(resumen.comisionFacturada)} y Nexo calculó ${clp(resumen.comisionEstimada)} (diferencia ${clp(resumen.diferencia)}; ${resumen.ventasConDiferencia} con diferencia).`
+        : "Todavía no hay ventas con facturación y cálculo de Nexo para comparar."}${resumen.ventasSinFacturar ? ` ${resumen.ventasSinFacturar} aún sin facturar.` : ""}</p>
+      <div class="table-wrap"><table class="w-full text-sm">
+        <thead><tr class="text-left border-b border-slate-200 dark:border-slate-700"><th class="px-3 py-2 font-medium">Fecha</th><th class="px-3 py-2 font-medium">Pedido</th><th class="px-3 py-2 font-medium">Facturado por ML</th><th class="px-3 py-2 font-medium">Calculado por Nexo</th><th class="px-3 py-2 font-medium">Diferencia</th><th class="px-3 py-2 font-medium">Estado</th></tr></thead>
+        <tbody>
+          ${pedidos.map((p) => `
+            <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0">
+              <td class="px-3 py-2 whitespace-nowrap">${escapeHtml(new Date(p.fecha).toLocaleDateString("es-CL"))}</td>
+              <td class="px-3 py-2">${escapeHtml(p.pedidoId)}</td>
+              <td class="px-3 py-2">${clp(p.comisionFacturada)}</td>
+              <td class="px-3 py-2">${clp(p.comisionEstimada)}</td>
+              <td class="px-3 py-2">${clp(p.diferencia)}</td>
+              <td class="px-3 py-2"><span class="inline-flex items-center gap-1.5"><span class="dot ${p.estado === "coincide" ? "dot--green" : p.estado === "diferencia" ? "dot--red" : "dot--gray"}"></span>${escapeHtml(CONCILIACION_ESTADO_LABEL[p.estado] || p.estado)}</span></td>
             </tr>`).join("")}
         </tbody>
       </table></div>`;

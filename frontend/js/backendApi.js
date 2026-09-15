@@ -266,6 +266,10 @@ window.LC = window.LC || {};
     return request("/api/mercadolibre/desconectar", { method: "POST" });
   }
 
+  async function conciliacionComisionesMercadoLibre() {
+    return request("/api/mercadolibre/conciliacion");
+  }
+
   async function listarDevolucionesMercadoLibre() {
     return request("/api/mercadolibre/devoluciones");
   }
@@ -589,6 +593,7 @@ window.LC = window.LC || {};
     desconectarMercadoLibre,
     importarVentasMercadoLibre,
     listarDevolucionesMercadoLibre,
+    conciliacionComisionesMercadoLibre,
     recalcularComisionesMercadoLibre,
     fetchGoogleSheetsEstado,
     conectarGoogleSheets,

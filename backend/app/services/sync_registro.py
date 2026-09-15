@@ -25,6 +25,7 @@ DIRECCION_ML_VENTAS = "ml_importar_ventas"
 DIRECCION_ML_COSTOS_ENVIO = "ml_costos_envio"
 DIRECCION_ML_STOCK = "ml_stock"
 DIRECCION_ML_DEVOLUCIONES = "ml_devoluciones"
+DIRECCION_ML_CONCILIACION = "ml_conciliacion"
 
 _LARGO_MAXIMO_MENSAJE = 1000
 
