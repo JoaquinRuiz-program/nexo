@@ -58,3 +58,23 @@ class ChannelCostSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     store: Mapped["Store"] = relationship(back_populates="channel_cost_settings")  # noqa: F821
+
+
+# 14 de septiembre de 2026 — decisión del dueño: mínimos razonables por
+# defecto para "¿Conviene?" en Mercado Libre, modificables en Configuración.
+MARGEN_MINIMO_PCT_POR_DEFECTO = 15.0
+GANANCIA_MINIMA_CLP_POR_DEFECTO = 3000.0
+
+
+def umbrales_minimos(config: ChannelCostSettings | None) -> tuple[float | None, float | None]:
+    """(margen mínimo %, ganancia neta mínima $) efectivos del canal Mercado
+    Libre. Sin fila (la empresa nunca guardó su configuración) rigen los
+    valores por defecto; con fila, lo que guardó el usuario — un campo que
+    dejó vacío (NULL) es un mínimo que decidió no exigir (la migración
+    f6b8d0a2c4e5 completó con los defaults las filas que ya existían)."""
+    if config is None:
+        return MARGEN_MINIMO_PCT_POR_DEFECTO, GANANCIA_MINIMA_CLP_POR_DEFECTO
+    return (
+        float(config.min_margin_pct) if config.min_margin_pct is not None else None,
+        float(config.min_profit_clp) if config.min_profit_clp is not None else None,
+    )

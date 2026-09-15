@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_store
 from app.api.routes.rentabilidad import build_profitability_rows
 from app.db.models import ChannelCostSettings, Store
+from app.db.models.channel_costs import umbrales_minimos
 from app.db.session import get_db
 from app.domain.catalog_selection import SelectionCriteria, select, summarize_selection
 
@@ -39,11 +40,8 @@ def seleccionar_productos(
     ganancia_minima_clp = None
     if canal == "mercadolibre" and margen_minimo_pct is None:
         config_ml = db.query(ChannelCostSettings).filter_by(store_id=store.id, channel="mercadolibre").first()
-        if config_ml is not None and config_ml.min_margin_pct is not None:
-            margen_minimo_pct = float(config_ml.min_margin_pct)
-        # Misma ganancia neta mínima que /decision: margen % O ganancia $.
-        if config_ml is not None and config_ml.min_profit_clp is not None:
-            ganancia_minima_clp = float(config_ml.min_profit_clp)
+        # Mismos mínimos efectivos que /decision (defaults 15 % / $3.000).
+        margen_minimo_pct, ganancia_minima_clp = umbrales_minimos(config_ml)
     criterios = SelectionCriteria(
         min_margin_clp=margen_minimo_clp,
         min_margin_pct=margen_minimo_pct,

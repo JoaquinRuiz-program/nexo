@@ -50,6 +50,7 @@ from app.domain.ai_content import generate_full_description, generate_title
 from app.domain.catalog_selection import SelectionCriteria, classify_product
 from app.domain.competencia import AnalisisCompetencia, analizar_competencia
 from app.domain.decision import evaluar_decision
+from app.db.models.channel_costs import umbrales_minimos
 from app.domain.pricing import ESTADO_RECOMENDACION, RecomendacionPrecio, recomendar_precio
 from app.domain.profitability import ChannelCosts
 from app.domain.listing_draft import build_draft
@@ -80,10 +81,10 @@ def _criterios_conviene_ml(db: Session, store_id: int) -> SelectionCriteria:
     decisión del dueño), la misma de Oportunidades: precio real, margen mínimo
     % O ganancia neta mínima $. El stock nunca participa."""
     config = db.query(ChannelCostSettings).filter_by(store_id=store_id, channel="mercadolibre").first()
+    margen_minimo_pct, ganancia_minima_clp = umbrales_minimos(config)
     return SelectionCriteria(
         channel="mercadolibre", require_marketplace_stock=False,
-        min_margin_pct=float(config.min_margin_pct) if config and config.min_margin_pct is not None else None,
-        ganancia_minima_clp=float(config.min_profit_clp) if config and config.min_profit_clp is not None else None,
+        min_margin_pct=margen_minimo_pct, ganancia_minima_clp=ganancia_minima_clp,
     )
 
 
@@ -615,7 +616,7 @@ async def _resolver_recomendacion_precio(
     )
     channel_costs, fuente_comision_ml = resolver_costos_ml(comisiones, channel_costs_manual, listing_type_pref)
     margen_objetivo_pct = float(config_canal.target_margin_pct) if config_canal and config_canal.target_margin_pct is not None else None
-    margen_minimo_pct = float(config_canal.min_margin_pct) if config_canal and config_canal.min_margin_pct is not None else None
+    margen_minimo_pct = umbrales_minimos(config_canal)[0]
 
     # Competencia: agregado OPCIONAL — cualquier problema acá (sin cuenta
     # conectada, sin credenciales de la app, Mercado Libre no encontró el
@@ -649,7 +650,7 @@ async def _resolver_recomendacion_precio(
         margen_objetivo_pct=margen_objetivo_pct,
         margen_minimo_pct=margen_minimo_pct,
         analisis_competencia=analisis_competencia,
-        ganancia_minima_clp=float(config_canal.min_profit_clp) if config_canal and config_canal.min_profit_clp is not None else None,
+        ganancia_minima_clp=umbrales_minimos(config_canal)[1],
     )
     return recomendacion, analisis_competencia, fuente_comision_ml
 
@@ -764,7 +765,7 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
     )
     listing_type_pref = config_canal.listing_type_pref if config_canal else None
     margen_objetivo_pct = float(config_canal.target_margin_pct) if config_canal and config_canal.target_margin_pct is not None else None
-    margen_minimo_pct = float(config_canal.min_margin_pct) if config_canal and config_canal.min_margin_pct is not None else None
+    margen_minimo_pct = umbrales_minimos(config_canal)[0]
 
     # 31 de agosto de 2026 — antes armaba su propio ChannelCosts manual acá
     # mismo, en vez de reusar resolver_costos_ml (mismo hallazgo de
@@ -777,7 +778,7 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
     # la columna "Decisión preliminar" podía decir "Conviene" en una fila que
     # Oportunidades y "¿Conviene?" marcan como que no conviene.
     filas_por_variante = {f["id"]: f for f in build_profitability_rows(db, store)[0]}
-    ganancia_minima_clp = float(config_canal.min_profit_clp) if config_canal and config_canal.min_profit_clp is not None else None
+    ganancia_minima_clp = umbrales_minimos(config_canal)[1]
     criterios_gate = _criterios_conviene_ml(db, store.id)
     resultado = []
     for variante in variantes:

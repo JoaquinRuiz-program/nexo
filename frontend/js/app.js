@@ -2927,12 +2927,12 @@ window.LC = window.LC || {};
             </div>
             <div>
               <label class="form-label">Margen mínimo aceptable (%)</label>
-              <input id="cfg-ml-margen-minimo" type="number" min="0" step="0.1" class="form-input" value="${canalMl.minMarginPct ?? ""}" />
+              <input id="cfg-ml-margen-minimo" type="number" min="0" step="0.1" class="form-input" value="${canalMl.minMarginPct ?? (canalMl.channel ? "" : 15)}" />
             </div>
             <div>
               <label class="form-label">Ganancia neta mínima por unidad ($)</label>
-              <input id="cfg-ml-ganancia-minima" type="number" min="0" step="1" class="form-input" value="${canalMl.minProfitClp ?? ""}" />
-              <p class="text-xs text-slate-400 mt-1">Un producto conviene si alcanza el margen mínimo (%) <strong>o</strong> esta ganancia en pesos. Sirve para productos caros que dejan buena plata con poco margen. Vacío = solo cuenta el margen mínimo.</p>
+              <input id="cfg-ml-ganancia-minima" type="number" min="0" step="1" class="form-input" value="${canalMl.minProfitClp ?? (canalMl.channel ? "" : 3000)}" />
+              <p class="text-xs text-slate-400 mt-1">Un producto conviene si alcanza el margen mínimo (%) <strong>o</strong> esta ganancia en pesos. Por defecto: 15 % y $3.000. Vacío = ese mínimo no se exige.</p>
             </div>
             <div class="sm:col-span-2">
               <label class="form-label">Comisión real por producto</label>

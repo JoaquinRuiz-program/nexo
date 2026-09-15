@@ -172,6 +172,10 @@ catálogo (52).
     margen % ≥ mínimo o ganancia ≥ ganancia neta mínima → conviene. El stock no participa. El
     margen objetivo solo arma el precio recomendado y, si es imposible, un aviso. La
     competencia ya no cambia la decisión. Ver `backend/DECISION_NEGOCIO.md`.
+23. **Mínimos por defecto** (14 sept 2026, decisión del dueño) — margen mínimo 15 % y ganancia
+    neta mínima $3.000 (`umbrales_minimos` en `channel_costs.py`) si la empresa no guardó su
+    configuración; migración `f6b8d0a2c4e5` completa las filas existentes vacías. Modificables
+    en Configuración; un campo vaciado por el usuario no se exige.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas
