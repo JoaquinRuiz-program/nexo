@@ -120,21 +120,22 @@ def test_excel_real_minimo_no_se_queja_de_lo_que_nexo_resuelve_solo():
         [{"Codigo": "A-100", "Nombre": "Hervidor electrico 1.7L", "Precio compra": "14.900", "Precio venta": "32.990"}],
         mapping,
     )
-    assert rows[0].estado == "revision"
+    # 15/09/2026 — sin imagen ni stock la fila igual está lista: esos avisos son informativos.
+    assert rows[0].estado == "valido"
     assert rows[0].costo == 14900
     assert rows[0].precio == 32990
     assert "Falta categoría" not in rows[0].problemas
     assert "Falta descripción" not in rows[0].problemas
     # Lo que si requiere accion humana
     assert "Falta imagen" in rows[0].problemas
-    assert "Completá el stock al revisar" in rows[0].problemas
+    assert "Completa el stock al revisar" in rows[0].problemas
 
 
 def test_stock_cero_no_es_un_stock_faltante():
     mapping = detect_columns(["Nombre", "Precio", "Stock"])
     rows = build_rows([{"Nombre": "Producto", "Precio": "1000", "Stock": "0"}], mapping)
     assert rows[0].stock == 0
-    assert "Completá el stock al revisar" not in rows[0].problemas
+    assert "Completa el stock al revisar" not in rows[0].problemas
 
 
 def test_falta_sku_no_es_bloqueante_solo_revision():
@@ -247,7 +248,7 @@ def test_sin_columna_de_stock_el_producto_se_importa_igual():
     rows = build_rows([{"Nombre": "Producto", "Precio": "2000"}], mapping)
     assert rows[0].estado != "error"
     assert rows[0].stock is None
-    assert "Completá el stock al revisar" in rows[0].problemas
+    assert "Completa el stock al revisar" in rows[0].problemas
 
 
 def test_stock_no_numerico_no_bloquea_se_ignora():
@@ -261,7 +262,7 @@ def test_stock_cero_sigue_siendo_cero_no_falta():
     mapping = detect_columns(["Nombre", "Precio", "Stock"])
     rows = build_rows([{"Nombre": "Producto", "Precio": "2000", "Stock": "0"}], mapping)
     assert rows[0].stock == 0
-    assert "Completá el stock al revisar" not in rows[0].problemas
+    assert "Completa el stock al revisar" not in rows[0].problemas
 
 
 # ------------------------------------------------------------------

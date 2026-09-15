@@ -33,11 +33,11 @@ window.LC = window.LC || {};
     rechazado: "No se completó la autorización en Google.",
     error_autorizacion: "Google no pudo autorizar la conexión.",
     solicitud_invalida: "La respuesta de Google no fue la esperada.",
-    estado_invalido: "El enlace de conexión venció — probá conectar de nuevo.",
+    estado_invalido: "El enlace de conexión venció — prueba conectar de nuevo.",
     credenciales_faltantes: "Todavía no configuraste las credenciales de Google.",
-    conexion_fallida: "No pudimos conectar con Google. Probá de nuevo en un momento.",
-    cifrado_no_configurado: "Hay un problema de configuración interno — avisale a soporte.",
-    sin_refresh_token: "Google no autorizó el acceso permanente — probá conectar de nuevo y aceptá todos los permisos pedidos.",
+    conexion_fallida: "No pudimos conectar con Google. Prueba de nuevo en un momento.",
+    cifrado_no_configurado: "Hay un problema de configuración interno — avísale a soporte.",
+    sin_refresh_token: "Google no autorizó el acceso permanente — prueba conectar de nuevo y acepta todos los permisos pedidos.",
   };
 
   function estadoInicial() {
@@ -127,7 +127,7 @@ window.LC = window.LC || {};
           Vas a tener que autorizar el acceso de solo lectura a tus hojas de cálculo.
         </p>
         <button id="btn-conectar-gs" class="btn-primary" ${conf ? "" : "disabled"}>Conectar con Google</button>
-        ${conf ? "" : `<p class="text-xs text-slate-400 mt-3">Todavía no está lista esta conexión — contactanos para activarla.</p>`}
+        ${conf ? "" : `<p class="text-xs text-slate-400 mt-3">Todavía no está lista esta conexión — contáctanos para activarla.</p>`}
       </div>
     `;
   }

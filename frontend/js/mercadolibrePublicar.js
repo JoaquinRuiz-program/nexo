@@ -82,7 +82,7 @@ window.LC = window.LC || {};
 
   async function render(main, variantId) {
     if (!variantId) {
-      main.innerHTML = `<div class="page-wrap"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("box")}</div><p class="empty-state-title">Elegí un producto para publicarlo</p><p class="empty-state-desc">Entrá a Productos, abrí el que querés publicar en Mercado Libre y empezá desde ahí.</p><button data-ir-productos class="btn-primary mt-4">Ir a Productos</button></div></div>`;
+      main.innerHTML = `<div class="page-wrap"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("box")}</div><p class="empty-state-title">Elige un producto para publicarlo</p><p class="empty-state-desc">Entra a Productos, abre el que quieres publicar en Mercado Libre y empieza desde ahí.</p><button data-ir-productos class="btn-primary mt-4">Ir a Productos</button></div></div>`;
       main.querySelector("[data-ir-productos]").addEventListener("click", () => LC.router.navigate("/productos"));
       return;
     }
@@ -431,7 +431,7 @@ window.LC = window.LC || {};
 
       <div class="flex justify-between gap-3">
         <button id="ml-volver-decision" class="btn-secondary">← Volver</button>
-        <button id="ml-ir-revisar" class="btn-primary" ${puedeRevisar() ? "" : "disabled"} ${!(p.imagenes && p.imagenes.length) ? 'title="Cargá al menos una imagen antes de continuar — Mercado Libre no permite publicar sin imagen"' : ""}>Revisar publicación</button>
+        <button id="ml-ir-revisar" class="btn-primary" ${puedeRevisar() ? "" : "disabled"} ${!(p.imagenes && p.imagenes.length) ? 'title="Carga al menos una imagen antes de continuar — Mercado Libre no permite publicar sin imagen"' : ""}>Revisar publicación</button>
       </div>
     `;
   }
@@ -441,7 +441,7 @@ window.LC = window.LC || {};
     return `
       <div class="panel-card mb-5">
         <h3 class="panel-title mb-3">Atributos de la categoría</h3>
-        ${v.sugerenciasCatalogo ? `<p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Completamos lo que encontramos en el catálogo de Mercado Libre${v.sugerenciasCatalogo.coincidencia === "codigo" ? " por el código de barras" : ` buscando por nombre ("${escapeHtml(v.sugerenciasCatalogo.productoCatalogo || "")}")`}. Confirmá cada dato marcado.</p>` : ""}
+        ${v.sugerenciasCatalogo ? `<p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Completamos lo que encontramos en el catálogo de Mercado Libre${v.sugerenciasCatalogo.coincidencia === "codigo" ? " por el código de barras" : ` buscando por nombre ("${escapeHtml(v.sugerenciasCatalogo.productoCatalogo || "")}")`}. Confirma cada dato marcado.</p>` : ""}
         ${v.atributosFaltantes.length === 0 ? `<p class="text-sm text-slate-500 dark:text-slate-400 mb-2">No falta ningún atributo más.</p>` : ""}
         ${v.atributosFaltantes.map((f) => renderCampoAtributo(f)).join("")}
         ${v.atributosCompletos.length ? `
@@ -461,7 +461,7 @@ window.LC = window.LC || {};
     const eligioSinCodigo = esRazonGtinVacio && valorActual === "El producto no tiene código registrado";
     const campo = f.opciones && f.opciones.length
       ? `<select data-attr="${escapeHtml(f.id)}" class="form-input ml-attr-input">
-          <option value="">Elegí una opción</option>
+          <option value="">Elige una opción</option>
           ${f.opciones.map((o) => `<option value="${escapeHtml(o.name)}" ${valorActual === o.name ? "selected" : ""}>${escapeHtml(o.name)}</option>`).join("")}
         </select>`
       : `<input data-attr="${escapeHtml(f.id)}" type="text" class="form-input ml-attr-input" value="${escapeHtml(valorActual)}" />`;
@@ -813,7 +813,7 @@ window.LC = window.LC || {};
       // modal fijo, nunca solo el caso "integracion"/502.
       openModal({
         title: "No pudimos confirmar la publicación",
-        body: `<p>${escapeHtml(res.error.mensaje)}</p><p class="mt-2 text-xs text-slate-400">Si esto pasó después de intentar publicar, revisá tu cuenta de Mercado Libre antes de volver a intentar — para no duplicar la publicación.</p>`,
+        body: `<p>${escapeHtml(res.error.mensaje)}</p><p class="mt-2 text-xs text-slate-400">Si esto pasó después de intentar publicar, revisa tu cuenta de Mercado Libre antes de volver a intentar — para no duplicar la publicación.</p>`,
         primaryLabel: "Entendido",
       });
       if (sigueEnEstaPantalla) renderFase(main);
@@ -900,7 +900,7 @@ window.LC = window.LC || {};
         if (accion === "eliminar") {
           openModal({
             title: "¿Eliminar esta publicación?",
-            body: `<p>Mercado Libre va a cerrar esta publicación de forma <strong>definitiva</strong> — no se puede volver a activar después. Si querés dejar de venderla por ahora sin perder la publicación, usá "Pausar" en su lugar.</p>`,
+            body: `<p>Mercado Libre va a cerrar esta publicación de forma <strong>definitiva</strong> — no se puede volver a activar después. Si quieres dejar de venderla por ahora sin perder la publicación, usa "Pausar" en su lugar.</p>`,
             primaryLabel: "Sí, eliminar",
             secondaryLabel: "Cancelar",
             onPrimary: () => ejecutarAccionGestion(main, "eliminar"),

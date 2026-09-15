@@ -40,7 +40,7 @@ window.LC = window.LC || {};
   // para eso.
   // ------------------------------------------------------------------
   const TEXTO_TERMINOS_INTERINO =
-    "Nexo está en etapa piloto. Guardamos los datos que cargás para operar la plataforma (tu catálogo, costos, configuración de márgenes, y — si conectás Mercado Libre — los datos de tu cuenta vendedora, cifrados). No compartimos tus datos con terceros salvo lo estrictamente necesario para conectar los servicios que vos mismo autorices. Este texto es informativo, no un documento legal — antes de un lanzamiento público vamos a publicar términos de servicio y política de privacidad formales. Cualquier duda, escribinos directamente.";
+    "Nexo está en etapa piloto. Guardamos los datos que cargás para operar la plataforma (tu catálogo, costos, configuración de márgenes, y — si conectás Mercado Libre — los datos de tu cuenta vendedora, cifrados). No compartimos tus datos con terceros salvo lo estrictamente necesario para conectar los servicios que vos mismo autorices. Este texto es informativo, no un documento legal — antes de un lanzamiento público vamos a publicar términos de servicio y política de privacidad formales. Cualquier duda, escríbenos directamente.";
 
   const state = {
     search: "",
@@ -175,23 +175,23 @@ window.LC = window.LC || {};
   const CAUSA_ERROR_DATOS = {
     red: {
       titulo: "No pudimos conectar con el servidor",
-      desc: "Revisá tu conexión a internet y volvé a intentar. Tus datos están a salvo — no se perdió nada.",
+      desc: "Revisa tu conexión a internet y vuelve a intentar. Tus datos están a salvo — no se perdió nada.",
     },
     timeout: {
       titulo: "El servidor está tardando más de lo normal",
-      desc: "Puede ser algo momentáneo. Esperá unos segundos y volvé a intentar.",
+      desc: "Puede ser algo momentáneo. Espera unos segundos y vuelve a intentar.",
     },
     servidor: {
       titulo: "Tuvimos un problema al cargar tus datos",
-      desc: "Es un problema nuestro, no tuyo. Volvé a intentar en un momento; si sigue pasando, escribinos desde Ayuda y soporte.",
+      desc: "Es un problema nuestro, no tuyo. Vuelve a intentar en un momento; si sigue pasando, escríbenos desde Ayuda y soporte.",
     },
     integracion: {
       titulo: "No pudimos cargar tus datos en este momento",
-      desc: "Volvé a intentar en un momento. Si el problema sigue, escribinos desde Ayuda y soporte.",
+      desc: "Vuelve a intentar en un momento. Si el problema sigue, escríbenos desde Ayuda y soporte.",
     },
     sesion: {
       titulo: "Tu sesión expiró",
-      desc: "Por seguridad cerramos las sesiones después de un tiempo. Iniciá sesión de nuevo para seguir.",
+      desc: "Por seguridad cerramos las sesiones después de un tiempo. Inicia sesión de nuevo para seguir.",
     },
   };
 
@@ -214,7 +214,7 @@ window.LC = window.LC || {};
     }
     const causa = CAUSA_ERROR_DATOS[err.tipo] || {
       titulo: "No pudimos cargar tus datos",
-      desc: "Volvé a intentar en un momento. Si el problema sigue, escribinos desde Ayuda y soporte.",
+      desc: "Vuelve a intentar en un momento. Si el problema sigue, escríbenos desde Ayuda y soporte.",
     };
     main.innerHTML = `
       <div class="page-wrap app-fade">
@@ -422,7 +422,7 @@ window.LC = window.LC || {};
     document.getElementById("login-forgot").addEventListener("click", () => {
       infoModal(
         "Recuperar contraseña",
-        "Todavía no está disponible recuperar la contraseña desde acá — escribinos si necesitás ayuda para entrar a tu cuenta."
+        "Todavía no está disponible recuperar la contraseña desde acá — escríbenos si necesitas ayuda para entrar a tu cuenta."
       );
     });
 
@@ -536,7 +536,7 @@ window.LC = window.LC || {};
           <span>Estás viendo datos de demostración (catálogo y ventas de Mercado Libre). Importa tu catálogo real (Excel, CSV o Google Sheets) y conecta tu cuenta de Mercado Libre para ver tu negocio real.</span>
         </div>`}
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           <div class="stat-card">
             <p class="stat-label">Productos totales</p>
             <p class="stat-value">${resumen.total}</p>
@@ -608,7 +608,6 @@ window.LC = window.LC || {};
             <div>
               ${statusRow("Mercado Libre", estado.mercadoLibre)}
               ${statusRow("Google Sheets", estado.googleSheets)}
-              ${statusRow("Base de datos", estado.baseDeDatos)}
             </div>
           </div>
           <div class="panel-card">
@@ -676,7 +675,7 @@ window.LC = window.LC || {};
     const pctPublicaciones = plan && plan.limitePublicaciones ? Math.round((sus.uso.publicaciones / plan.limitePublicaciones) * 100) : null;
     const cercaDelLimite = (pctProductos !== null && pctProductos >= 80) || (pctPublicaciones !== null && pctPublicaciones >= 80);
     return `
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
         <div class="stat-card">
           <p class="stat-label">Publicaciones en Mercado Libre</p>
           <p class="stat-value">${pub ? pub.total : "—"}</p>
@@ -792,7 +791,7 @@ window.LC = window.LC || {};
           : {
               tono: "neutral",
               texto: "Mercado Libre todavía no está conectado",
-              detalle: ml.credencialesConfiguradas ? "Las credenciales ya están listas — falta autorizar la cuenta." : "Conéctalo para vender por ese canal.",
+              detalle: "Conéctalo para publicar y traer tus ventas.",
               cta: "Conectar",
               ruta: "/integraciones",
             }
@@ -1103,7 +1102,7 @@ window.LC = window.LC || {};
       // 6 de septiembre de 2026 — UX de estados vacíos: "ningún producto
       // coincide" era el mensaje SIEMPRE, incluso con el catálogo
       // realmente vacío (0 productos, sin ningún filtro aplicado) — ahí
-      // "probá con otro filtro" no tiene sentido, hay que decir cómo
+      // "prueba con otro filtro" no tiene sentido, hay que decir cómo
       // empezar.
       const catalogoRealmenteVacio = rows.length === 0;
       emptyEl.innerHTML = catalogoRealmenteVacio ? `
@@ -1210,7 +1209,7 @@ window.LC = window.LC || {};
     const nombre = (row && row.nombre) || "este producto";
     openModal({
       title: "Eliminar producto",
-      body: `<p>¿Seguro que querés eliminar <strong>${escapeHtml(nombre)}</strong>? Se borra del catálogo con sus variantes e imágenes. Las ventas ya registradas se conservan en el historial.</p>`,
+      body: `<p>¿Seguro que quieres eliminar <strong>${escapeHtml(nombre)}</strong>? Se borra del catálogo con sus variantes e imágenes. Las ventas ya registradas se conservan en el historial.</p>`,
       primaryLabel: "Eliminar",
       secondaryLabel: "Cancelar",
       onPrimary: async () => {
@@ -1352,12 +1351,12 @@ window.LC = window.LC || {};
       <div class="modal-overlay fixed inset-0 bg-slate-900/50 dark:bg-slate-950/70 flex items-center justify-center z-[60] p-4">
         <div class="modal-card bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-sm w-full p-6">
           <h3 class="text-lg font-semibold mb-1">Cambiar contraseña</h3>
-          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Si tenés la sesión abierta en otro dispositivo, se va a cerrar.</p>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Si tienes la sesión abierta en otro dispositivo, se va a cerrar.</p>
           <label class="form-label" for="pwd-actual">Contraseña actual</label>
           <input id="pwd-actual" type="password" class="form-input" autocomplete="current-password" />
           <label class="form-label mt-3" for="pwd-nueva">Contraseña nueva</label>
           <input id="pwd-nueva" type="password" class="form-input" autocomplete="new-password" />
-          <label class="form-label mt-3" for="pwd-confirmar">Repetí la contraseña nueva</label>
+          <label class="form-label mt-3" for="pwd-confirmar">Repite la contraseña nueva</label>
           <input id="pwd-confirmar" type="password" class="form-input" autocomplete="new-password" />
           <p class="text-xs text-slate-400 mt-1.5">Al menos 8 caracteres.</p>
           <p id="pwd-feedback" class="text-sm mt-2 min-h-[1.25rem]"></p>
@@ -1385,7 +1384,7 @@ window.LC = window.LC || {};
       const nueva = document.getElementById("pwd-nueva").value;
       const confirmar = document.getElementById("pwd-confirmar").value;
 
-      if (!actual) return error("Ingresá tu contraseña actual.");
+      if (!actual) return error("Ingresa tu contraseña actual.");
       if (nueva.length < 8) return error("La contraseña nueva tiene que tener al menos 8 caracteres.");
       if (nueva !== confirmar) return error("Las dos contraseñas nuevas no coinciden.");
 
@@ -1416,7 +1415,7 @@ window.LC = window.LC || {};
   // Resultado de mandar el stock a las publicaciones reales de Mercado Libre
   // (14 de septiembre de 2026) -> [tipo, mensaje] para toast().
   function mensajeStockMl(base, s) {
-    if (s === null) return ["info", `${base} No pudimos actualizar Mercado Libre ahora — probá de nuevo más tarde.`];
+    if (s === null) return ["info", `${base} No pudimos actualizar Mercado Libre ahora — prueba de nuevo más tarde.`];
     if (!s) return ["success", base];
     const partes = [base];
     if (s.publicacionesActualizadas) partes.push(`${s.publicacionesActualizadas} publicación(es) de Mercado Libre actualizada(s).`);
@@ -1557,7 +1556,7 @@ window.LC = window.LC || {};
     return `
       <div class="panel-card mb-5">
         <h3 class="panel-title mb-1">Imágenes</h3>
-        <p class="text-xs text-slate-400 dark:text-slate-500 mb-4">Arrastrá una miniatura para cambiar el orden — la primera es la que se usa como principal al publicar.</p>
+        <p class="text-xs text-slate-400 dark:text-slate-500 mb-4">Arrastra una miniatura para cambiar el orden — la primera es la que se usa como principal al publicar.</p>
         <div id="img-grid" class="flex flex-wrap gap-3 mb-4">
           ${imagenes.length === 0 ? `<p class="text-sm text-slate-500 dark:text-slate-400">Sin imágenes cargadas todavía.</p>` : ""}
           ${imagenes.map((img) => `
@@ -1571,7 +1570,7 @@ window.LC = window.LC || {};
 
         <div id="img-dropzone" class="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg p-5 text-center cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors">
           <input id="img-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple class="hidden" />
-          <p class="text-sm text-slate-500 dark:text-slate-400">Arrastrá imágenes acá o <span class="text-indigo-600 dark:text-indigo-400 font-medium">hacé clic para elegirlas</span></p>
+          <p class="text-sm text-slate-500 dark:text-slate-400">Arrastra imágenes acá o <span class="text-indigo-600 dark:text-indigo-400 font-medium">haz clic para elegirlas</span></p>
           <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">JPG, PNG o WEBP · hasta 5 MB cada una</p>
         </div>
         <div id="img-upload-progreso" class="mt-3 space-y-1.5"></div>
@@ -1859,10 +1858,10 @@ window.LC = window.LC || {};
     rechazado: "No se completó la autorización en Mercado Libre.",
     error_autorizacion: "Mercado Libre no pudo autorizar la conexión.",
     solicitud_invalida: "La respuesta de Mercado Libre no fue la esperada.",
-    estado_invalido: "El enlace de conexión venció — probá conectar de nuevo.",
+    estado_invalido: "El enlace de conexión venció — prueba conectar de nuevo.",
     credenciales_faltantes: "Todavía no configuraste las credenciales de Mercado Libre.",
-    conexion_fallida: "No pudimos conectar con Mercado Libre. Probá de nuevo en un momento.",
-    cifrado_no_configurado: "Hay un problema de configuración interno — avisale a soporte.",
+    conexion_fallida: "No pudimos conectar con Mercado Libre. Prueba de nuevo en un momento.",
+    cifrado_no_configurado: "Hay un problema de configuración interno — avísale a soporte.",
   };
 
   function renderConexionMercadoLibre(ml) {
@@ -1912,7 +1911,7 @@ window.LC = window.LC || {};
           <button id="connect-ml-btn" class="btn-primary">Conectar Mercado Libre</button>
         </div>
         <p class="text-sm text-slate-500 dark:text-slate-400 mt-3">
-          ${ml.credencialesConfiguradas ? "Conecta la cuenta de Mercado Libre de tu empresa para empezar a traer tus ventas reales." : "Todavía no está lista la conexión con Mercado Libre — contactanos para activarla."}
+          ${ml.credencialesConfiguradas ? "Conecta la cuenta de Mercado Libre de tu empresa para empezar a traer tus ventas reales." : "Todavía no está lista la conexión con Mercado Libre — contáctanos para activarla."}
         </p>
       </div>`;
   }
@@ -2605,7 +2604,7 @@ window.LC = window.LC || {};
         ${previewMl ? `
         <div class="panel-card mb-6">
           <h3 class="panel-title mb-1">Vista previa de publicación en Mercado Libre</h3>
-          <p class="panel-subtitle mb-4">Qué pasaría si preparás una publicación para cada producto de tu catálogo, hoy.</p>
+          <p class="panel-subtitle mb-4">Qué pasaría si preparas una publicación para cada producto de tu catálogo, hoy.</p>
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div class="stat-card"><p class="stat-label">Listos para publicar</p><p class="stat-value stat-value--sm stat-value--success">${previewMl.listos.length}</p></div>
             <div class="stat-card"><p class="stat-label">Requieren revisión</p><p class="stat-value stat-value--sm stat-value--warning">${previewMl.revision.length}</p></div>
@@ -2631,11 +2630,11 @@ window.LC = window.LC || {};
         ${
           esReal
             ? `<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-                <p class="text-sm text-slate-500 dark:text-slate-400 max-w-xl">La comisión real de Mercado Libre (según la categoría y el precio de cada producto) se consulta sola al importar el catálogo y al conectar Mercado Libre. Si recién agregaste productos, podés forzarla ahora.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 max-w-xl">La comisión real de Mercado Libre (según la categoría y el precio de cada producto) se consulta sola al importar el catálogo y al conectar Mercado Libre. Si recién agregaste productos, puedes forzarla ahora.</p>
                 ${
                   mlConectado
                     ? `<button id="recalcular-comisiones-btn" class="btn-secondary shrink-0">Actualizar comisiones reales de Mercado Libre</button>`
-                    : `<span class="text-xs text-slate-400 shrink-0">Conectá Mercado Libre en Integraciones para ver la comisión real.</span>`
+                    : `<span class="text-xs text-slate-400 shrink-0">Conecta Mercado Libre en Integraciones para ver la comisión real.</span>`
                 }
               </div>`
             : ""
@@ -2755,7 +2754,7 @@ window.LC = window.LC || {};
         const valor = document.getElementById("lote-stock-input").value.trim();
         const cantidad = valor === "" ? null : Number(valor);
         if (cantidad !== null && (!Number.isInteger(cantidad) || cantidad < 0)) {
-          toast("error", "Ingresá un número entero de 0 o más.");
+          toast("error", "Ingresa un número entero de 0 o más.");
           return;
         }
         loteStockBtn.disabled = true;
@@ -2788,7 +2787,7 @@ window.LC = window.LC || {};
         }
         const { combinacionesComisionActualizadas, productosSinCategoriaDetectada } = res.data;
         if (productosSinCategoriaDetectada.length) {
-          toast("info", `Comisiones actualizadas. ${productosSinCategoriaDetectada.length} producto(s) sin categoría detectada por Mercado Libre — revisá su nombre.`);
+          toast("info", `Comisiones actualizadas. ${productosSinCategoriaDetectada.length} producto(s) sin categoría detectada por Mercado Libre — revisa su nombre.`);
         } else {
           toast("success", combinacionesComisionActualizadas > 0 ? "Comisiones reales actualizadas." : "Las comisiones ya estaban actualizadas.");
         }
@@ -2887,7 +2886,7 @@ window.LC = window.LC || {};
   // — mismo criterio que RAZON_ERROR_ML: nunca un detalle técnico acá.
   const MENSAJE_PAGO = {
     procesando: { tono: "info", texto: "Estamos confirmando tu pago con Mercado Pago — puede tardar unos segundos. Esta pantalla se actualiza sola." },
-    rechazado: { tono: "error", texto: "El pago no se completó. Podés intentar de nuevo cuando quieras." },
+    rechazado: { tono: "error", texto: "El pago no se completó. Puedes intentar de nuevo cuando quieras." },
   };
 
   let cicloElegido = "mensual";
@@ -2913,7 +2912,7 @@ window.LC = window.LC || {};
         ${esActual
           ? '<span class="btn-disabled justify-center">Plan actual</span>'
           : sinPrecio
-            ? '<span class="btn-disabled justify-center">Escribinos para cotizar</span>'
+            ? '<span class="btn-disabled justify-center">Escríbenos para cotizar</span>'
             : `<button data-plan="${escapeHtml(p.codigo)}" data-ciclo="${ciclo}" class="btn-primary justify-center pagar-plan-btn">Elegir y pagar</button>`}
       </div>
     `;
@@ -2952,7 +2951,7 @@ window.LC = window.LC || {};
                 ${escapeHtml(sus.plan.precio)}${sus.real ? "" : " / mes"}
                 ${sus.real && sus.estado ? ` · ${escapeHtml(ESTADO_SUSCRIPCION_LABEL[sus.estado] || sus.estado)}` : ""}
                 ${sus.real && sus.cicloFacturacion ? ` · Facturación ${CICLO_LABEL[sus.cicloFacturacion] || sus.cicloFacturacion}` : ""}
-                ${sus.fechaRenovacion ? ` · Próxima renovación: ${formatDate(sus.fechaRenovacion)}` : ""}
+                ${sus.fechaRenovacion ? ` · ${sus.estado === "trialing" ? "La prueba termina el" : "Próxima renovación:"} ${formatDate(sus.fechaRenovacion)}` : ""}
               </p>
             </div>
             ${sus.real
@@ -3150,7 +3149,7 @@ window.LC = window.LC || {};
             <div>
               <label class="form-label">Email</label>
               <p class="form-input flex items-center text-slate-500 dark:text-slate-400">${escapeHtml(session.email)}</p>
-              <p class="text-xs text-slate-400 mt-1">Es el email con el que inicias sesión. Para cambiarlo, escribinos desde Ayuda y soporte.</p>
+              <p class="text-xs text-slate-400 mt-1">Es el email con el que inicias sesión. Para cambiarlo, escríbenos desde Ayuda y soporte.</p>
             </div>
           </div>
           <button id="cfg-general-save" class="btn-primary mt-4">Guardar cambios</button>
@@ -3172,16 +3171,6 @@ window.LC = window.LC || {};
         </div>
 
         <div class="panel-card">
-          <h3 class="panel-title mb-1">Notificaciones</h3>
-          <p class="panel-subtitle mb-4">Estas notificaciones son solo de demostración por ahora — no se envía nada realmente.</p>
-          <div class="space-y-3">
-            ${toggleRow("cfg-notif-stock", "Alertas de stock bajo", settings.notifStock)}
-            ${toggleRow("cfg-notif-sync", "Errores de sincronización", settings.notifSync)}
-            ${toggleRow("cfg-notif-important", "Cambios importantes", settings.notifImportant)}
-          </div>
-        </div>
-
-        <div class="panel-card">
           <h3 class="panel-title mb-1">Umbral de stock bajo</h3>
           <p class="panel-subtitle mb-3">Un producto se marca como stock bajo cuando su cantidad es mayor que cero y menor o igual a este número.</p>
           <div class="flex items-center gap-3">
@@ -3193,7 +3182,7 @@ window.LC = window.LC || {};
         ${canalMl !== null ? `
         <div class="panel-card">
           <h3 class="panel-title mb-1">Mercado Libre — costos y margen</h3>
-          <p class="panel-subtitle mb-4">Con esto Nexo calcula el precio recomendado y si te conviene publicar cada producto. Sin margen objetivo cargado, esas pantallas van a mostrar "faltan datos".</p>
+          <p class="panel-subtitle mb-4">Con esto Nexo calcula si te conviene publicar cada producto (margen mínimo o ganancia neta mínima) y el precio para llegar a tu margen objetivo.</p>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="form-label">Comisión de Mercado Libre (%)</label>
@@ -3335,13 +3324,8 @@ window.LC = window.LC || {};
       });
     });
 
-    ["cfg-notif-stock", "cfg-notif-sync", "cfg-notif-important"].forEach((id, i) => {
-      const keys = ["notifStock", "notifSync", "notifImportant"];
-      document.getElementById(id).addEventListener("change", (e) => {
-        LC.settings.update({ [keys[i]]: e.target.checked });
-        toast("success", "Preferencia guardada.");
-      });
-    });
+    // 15 de septiembre de 2026 — revisión por perfil: se quitó la sección
+    // "Notificaciones" (decía ser solo de demostración: no se enviaba nada).
 
     document.getElementById("cfg-low-stock").addEventListener("change", (e) => {
       const value = parseInt(e.target.value, 10);

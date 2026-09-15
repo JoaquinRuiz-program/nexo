@@ -124,6 +124,8 @@ def build_producto_fila(producto: Product, variante: ProductVariant) -> dict:
         "parentId": producto.id,
         "codigoBarras": variante.barcode,
         "estadoGtin": _estado_gtin(variante),
+        # 15 de septiembre de 2026 — el detalle mostraba "Creado: —".
+        "creadoEn": producto.created_at.isoformat() if producto.created_at else None,
         # 1 de septiembre de 2026 — gestión de imágenes: `position == 0` es
         # la imagen principal (ver ProductImage.position en el modelo,
         # "0 = imagen principal"), acá ya resuelto como `principal` para

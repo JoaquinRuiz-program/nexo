@@ -178,6 +178,7 @@ def motivos_de_atencion(
     tickets_sin_resolver: int,
     hoy: date,
     errores_sincronizacion: int = 0,
+    limite_productos: int | None = None,
 ) -> list[dict]:
     """Por qué una empresa cliente necesita que el admin la mire. Pura: recibe
     datos reales ya leídos y nunca inventa un motivo. Lista vacía = está bien.
@@ -217,6 +218,10 @@ def motivos_de_atencion(
 
     if cantidad_productos == 0:
         agregar("sin_productos", "baja", "Sin productos cargados")
+    elif limite_productos is not None and cantidad_productos >= limite_productos:
+        # 15 de septiembre de 2026 — revisión por perfil: el retailer llegó al
+        # límite de su plan y el admin no tenía ninguna señal.
+        agregar("limite_plan", "media", f"Llegó al límite de productos de su plan ({limite_productos})")
 
     if tickets_sin_resolver > 0:
         texto = "1 solicitud de soporte sin resolver" if tickets_sin_resolver == 1 else f"{tickets_sin_resolver} solicitudes de soporte sin resolver"

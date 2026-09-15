@@ -15,7 +15,7 @@ necesarios"): `https://www.googleapis.com/auth/spreadsheets.readonly`.
 Con este único scope alcanza para leer cualquier spreadsheet al que la
 cuenta de Google del dueño tenga acceso (propio o compartido) IDENTIFICADO
 POR SU ID — no hace falta ningún scope de Google Drive. Por eso esta
-primera versión no ofrece un selector visual "elegí un archivo de tu
+primera versión no ofrece un selector visual "elige un archivo de tu
 Drive" (eso exigiría drive.readonly, que Google somete a una revisión de
 seguridad mucho más estricta, o el Picker API con drive.file, que agrega
 una librería JS + API key adicionales): el dueño pega el link o el ID de

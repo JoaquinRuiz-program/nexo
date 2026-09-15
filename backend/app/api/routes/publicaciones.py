@@ -204,7 +204,7 @@ def _cuenta_ml_conectada(db: Session, store: Store):
     if account is None or account.status != "connected" or not account.external_account_site_id:
         raise HTTPException(
             status_code=400,
-            detail="Conectá tu cuenta de Mercado Libre (Integraciones → Mercado Libre) antes de publicar.",
+            detail="Conecta tu cuenta de Mercado Libre (Integraciones → Mercado Libre) antes de publicar.",
         )
     return account
 
@@ -378,16 +378,16 @@ async def validar_publicacion_mercadolibre(
     except MercadoLibreRequestError as err:
         if err.status == 404:
             raise HTTPException(
-                status_code=400, detail="La categoría no existe o no es válida. Verificá el ID e intentá de nuevo."
+                status_code=400, detail="La categoría no existe o no es válida. Verifica el ID e intenta de nuevo."
             ) from err
         raise HTTPException(
             status_code=502,
-            detail="No pudimos consultar los atributos de esa categoría en Mercado Libre en este momento. Intentá de nuevo más tarde.",
+            detail="No pudimos consultar los atributos de esa categoría en Mercado Libre en este momento. Intenta de nuevo más tarde.",
         ) from err
     except MercadoLibreAuthError as err:
         raise HTTPException(
             status_code=502,
-            detail="No pudimos consultar los atributos de esa categoría en Mercado Libre en este momento. Intentá de nuevo más tarde.",
+            detail="No pudimos consultar los atributos de esa categoría en Mercado Libre en este momento. Intenta de nuevo más tarde.",
         ) from err
     finally:
         await adapter.aclose()
@@ -528,7 +528,7 @@ async def analizar_competencia_mercadolibre(
         # al frontend (hallazgo de security-engineer, FASE 6, 30/08/2026).
         raise HTTPException(
             status_code=502,
-            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
+            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intenta de nuevo más tarde.",
         ) from err
 
     adapter = MercadoLibreAdapter(cfg)
@@ -540,7 +540,7 @@ async def analizar_competencia_mercadolibre(
         except (MercadoLibreAuthError, MercadoLibreRequestError) as err:
             raise HTTPException(
                 status_code=502,
-                detail="No pudimos consultar productos similares en Mercado Libre en este momento. Intentá de nuevo más tarde.",
+                detail="No pudimos consultar productos similares en Mercado Libre en este momento. Intenta de nuevo más tarde.",
             ) from err
     finally:
         await adapter.aclose()
@@ -868,7 +868,7 @@ async def _subir_imagenes_locales(adapter: MercadoLibreAdapter, access_token: st
         if not ruta.is_file():
             raise HTTPException(
                 status_code=400,
-                detail="No encontramos el archivo de una de las imágenes del producto. Volvé a subirla e intentá de nuevo.",
+                detail="No encontramos el archivo de una de las imágenes del producto. Vuelve a subirla e intenta de nuevo.",
             )
         # Caso real (volante, 14/09/2026): foto de 290 x 290 px rechazada por
         # Mercado Libre ("como mínimo 500 píxeles en uno de los lados"). Se
@@ -879,14 +879,14 @@ async def _subir_imagenes_locales(adapter: MercadoLibreAdapter, access_token: st
         except (UnidentifiedImageError, OSError) as err:
             raise HTTPException(
                 status_code=400,
-                detail="No pudimos abrir una de las imágenes del producto. Volvé a subirla e intentá de nuevo.",
+                detail="No pudimos abrir una de las imágenes del producto. Vuelve a subirla e intenta de nuevo.",
             ) from err
         if max(ancho, alto) < _MIN_LADO_IMAGEN_ML:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"La imagen del producto mide {ancho} × {alto} px y Mercado Libre pide al menos "
-                    f"{_MIN_LADO_IMAGEN_ML} px en uno de los lados (ideal 1200 × 1200). Subí una foto más grande en el producto."
+                    f"{_MIN_LADO_IMAGEN_ML} px en uno de los lados (ideal 1200 × 1200). Sube una foto más grande en el producto."
                 ),
             )
         try:
@@ -901,15 +901,15 @@ async def _subir_imagenes_locales(adapter: MercadoLibreAdapter, access_token: st
                     status_code=400,
                     detail=(
                         f"Mercado Libre rechazó la imagen por tamaño: tiene que medir al menos {_MIN_LADO_IMAGEN_ML} px "
-                        "en uno de los lados, sin contar los bordes blancos (ideal 1200 × 1200). Subí una foto más grande en el producto."
+                        "en uno de los lados, sin contar los bordes blancos (ideal 1200 × 1200). Sube una foto más grande en el producto."
                     ),
                 ) from err
             raise HTTPException(
                 status_code=400 if err.status is not None and err.status < 500 else 502,
-                detail="Mercado Libre no aceptó una de las imágenes. Revisá la foto del producto e intentá de nuevo.",
+                detail="Mercado Libre no aceptó una de las imágenes. Revisa la foto del producto e intenta de nuevo.",
             ) from err
         if not subida.get("id"):
-            raise HTTPException(status_code=502, detail="Mercado Libre no aceptó una de las imágenes. Intentá de nuevo más tarde.")
+            raise HTTPException(status_code=502, detail="Mercado Libre no aceptó una de las imágenes. Intenta de nuevo más tarde.")
         resultado.append({"id": subida["id"]})
     return resultado
 
@@ -1061,7 +1061,7 @@ async def _resolver_publicacion(
     if not variante.marketplace_stock:
         raise HTTPException(
             status_code=400,
-            detail="Definí cuántas unidades ofrecer en Mercado Libre antes de publicar (el stock reservado para el canal).",
+            detail="Define cuántas unidades ofrecer en Mercado Libre antes de publicar (el stock reservado para el canal).",
         )
 
     if variante.price is None:
@@ -1108,7 +1108,7 @@ async def _resolver_publicacion(
         raise HTTPException(
             status_code=400,
             detail=(
-                "Datos incompletos: antes de publicar sin código, confirmá explícitamente que este producto "
+                "Datos incompletos: antes de publicar sin código, confirma explícitamente que este producto "
                 "no tiene GTIN (PUT /api/productos/{id}/codigo-barras con confirmarSinCodigo=true) — no elijas "
                 "esa razón solo para completar el formulario si todavía no revisaste si el producto tiene uno real."
             ).format(id=variant_id),
@@ -1135,7 +1135,7 @@ async def _resolver_publicacion(
             ) from err
         raise HTTPException(
             status_code=502,
-            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
+            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intenta de nuevo más tarde.",
         ) from err
 
     datos_conocidos = _datos_conocidos_ml(producto, variante)
@@ -1154,7 +1154,7 @@ async def _resolver_publicacion(
         await adapter.aclose()
         raise HTTPException(
             status_code=502,
-            detail="No pudimos verificar el estado de tu cuenta de Mercado Libre en este momento. Intentá de nuevo más tarde.",
+            detail="No pudimos verificar el estado de tu cuenta de Mercado Libre en este momento. Intenta de nuevo más tarde.",
         ) from err
     es_up = es_user_product_seller(user_info)
 
@@ -1200,7 +1200,7 @@ async def _resolver_publicacion(
         except (MercadoLibreAuthError, MercadoLibreRequestError) as err:
             raise HTTPException(
                 status_code=502,
-                detail="No pudimos consultar la comisión de Mercado Libre en este momento. Intentá de nuevo más tarde.",
+                detail="No pudimos consultar la comisión de Mercado Libre en este momento. Intenta de nuevo más tarde.",
             ) from err
 
         listing_type_raw = resolver_listing_type(fees_crudo, body.listing_type)
@@ -1346,7 +1346,7 @@ async def confirmar_publicacion_mercadolibre(
                 variante.id, store.id, err,
             )
             raise HTTPException(
-                status_code=502, detail="Mercado Libre rechazó la autenticación al publicar. Reconectá la cuenta e intentá de nuevo."
+                status_code=502, detail="Mercado Libre rechazó la autenticación al publicar. Reconecta la cuenta e intenta de nuevo."
             ) from err
         except MercadoLibreRequestError as err:
             if err.status is not None and err.status < 500:
@@ -1385,7 +1385,7 @@ async def confirmar_publicacion_mercadolibre(
                 status_code=502,
                 detail=(
                     "Mercado Libre no confirmó si la publicación se creó (error del servidor o de conexión). "
-                    "Por seguridad NO reintentamos automáticamente — revisá tu cuenta de Mercado Libre antes "
+                    "Por seguridad NO reintentamos automáticamente — revisa tu cuenta de Mercado Libre antes "
                     "de volver a intentar, para evitar una publicación duplicada."
                 ),
             ) from err
@@ -1487,7 +1487,7 @@ async def confirmar_publicacion_mercadolibre(
             detail=(
                 f"Mercado Libre creó una publicación (item_id={item_id}) pero Nexo ya tenía otra publicación "
                 "registrada para este producto — probablemente se enviaron dos solicitudes de publicación al "
-                "mismo tiempo. Revisá tu cuenta de Mercado Libre: es posible que haya quedado una publicación "
+                "mismo tiempo. Revisa tu cuenta de Mercado Libre: es posible que haya quedado una publicación "
                 "duplicada que tengas que pausar o cerrar a mano."
             ),
         ) from err
@@ -1502,7 +1502,7 @@ async def confirmar_publicacion_mercadolibre(
             status_code=500,
             detail=(
                 f"Mercado Libre creó la publicación (item_id={item_id}) pero hubo un error al guardarla en Nexo. "
-                "La publicación SÍ existe en Mercado Libre — anotá este item_id y contactá soporte antes de "
+                "La publicación SÍ existe en Mercado Libre — anota este item_id y contacta soporte antes de "
                 "volver a intentar, para no duplicarla."
             ),
         ) from err
@@ -1595,7 +1595,7 @@ async def _consultar_estado_real_y_sincronizar(db: Session, store: Store, listin
             ) from err
         raise HTTPException(
             status_code=502,
-            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
+            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intenta de nuevo más tarde.",
         ) from err
 
     adapter = MercadoLibreAdapter(cfg)
@@ -1609,7 +1609,7 @@ async def _consultar_estado_real_y_sincronizar(db: Session, store: Store, listin
         # (cuenta sin habilitación completa para vender, revisión de
         # políticas, etc.) — no que el token de la cuenta esté mal. Un 401
         # sigue siendo un problema de token real; un 403 acá se trata como
-        # "no se pudo determinar el estado", nunca como "reconectá la
+        # "no se pudo determinar el estado", nunca como "reconecta la
         # cuenta" (sería un diagnóstico equivocado que no resuelve nada).
         if err.status == 403:
             logger.error(
@@ -1618,7 +1618,7 @@ async def _consultar_estado_real_y_sincronizar(db: Session, store: Store, listin
             )
             return {"estado": "desconocido", "accionesDisponibles": [], "permalink": None}
         raise HTTPException(
-            status_code=502, detail="Mercado Libre rechazó la autenticación al consultar la publicación. Reconectá la cuenta e intentá de nuevo."
+            status_code=502, detail="Mercado Libre rechazó la autenticación al consultar la publicación. Reconecta la cuenta e intenta de nuevo."
         ) from err
     except MercadoLibreRequestError as err:
         if err.status == 404:
@@ -1630,7 +1630,7 @@ async def _consultar_estado_real_y_sincronizar(db: Session, store: Store, listin
             )
             return {"estado": "desconocido", "accionesDisponibles": [], "permalink": None}
         raise HTTPException(
-            status_code=502, detail="No pudimos consultar el estado de la publicación en Mercado Libre en este momento. Intentá de nuevo más tarde.",
+            status_code=502, detail="No pudimos consultar el estado de la publicación en Mercado Libre en este momento. Intenta de nuevo más tarde.",
         ) from err
     finally:
         await adapter.aclose()
@@ -1688,7 +1688,7 @@ async def _cambiar_estado_publicacion(
             ) from err
         raise HTTPException(
             status_code=502,
-            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
+            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intenta de nuevo más tarde.",
         ) from err
 
     adapter = MercadoLibreAdapter(cfg)
@@ -1696,7 +1696,7 @@ async def _cambiar_estado_publicacion(
         respuesta = await adapter.update_item_status(access_token, listing.external_listing_id, estado_ml_nuevo)
     except MercadoLibreAuthError as err:
         raise HTTPException(
-            status_code=502, detail="Mercado Libre rechazó la autenticación al actualizar la publicación. Reconectá la cuenta e intentá de nuevo."
+            status_code=502, detail="Mercado Libre rechazó la autenticación al actualizar la publicación. Reconecta la cuenta e intenta de nuevo."
         ) from err
     except MercadoLibreRequestError as err:
         logger.error(
@@ -1707,7 +1707,7 @@ async def _cambiar_estado_publicacion(
             raise HTTPException(status_code=400, detail=mensaje_amigable_error_publicacion(err.response_body)) from err
         raise HTTPException(
             status_code=502,
-            detail="No pudimos confirmar el cambio en Mercado Libre en este momento. Verificá el estado antes de reintentar.",
+            detail="No pudimos confirmar el cambio en Mercado Libre en este momento. Verifica el estado antes de reintentar.",
         ) from err
     finally:
         await adapter.aclose()

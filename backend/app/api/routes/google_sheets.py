@@ -126,7 +126,7 @@ def _require_configured(cfg: GoogleSheetsConfig, settings: Settings) -> None:
             status_code=400,
             detail=(
                 "La conexión con Google Sheets todavía no está habilitada en Nexo. "
-                "Mientras tanto podés importar tu catálogo desde un Excel o CSV."
+                "Mientras tanto puedes importar tu catálogo desde un Excel o CSV."
             ),
         )
 
@@ -334,7 +334,7 @@ async def _access_token_o_502(db: Session, account: MarketplaceAccount, cfg: Goo
     except HTTPException as err:
         if err.status_code == 401:
             raise HTTPException(status_code=401, detail="El acceso a Google venció y no se pudo renovar. Hay que reconectar Google Sheets.") from err
-        raise HTTPException(status_code=502, detail="No pudimos validar la conexión con Google en este momento. Intentá de nuevo más tarde.") from err
+        raise HTTPException(status_code=502, detail="No pudimos validar la conexión con Google en este momento. Intenta de nuevo más tarde.") from err
 
 
 class VincularHojaBody(BaseModel):
@@ -360,13 +360,13 @@ async def vincular_hoja(body: VincularHojaBody, db: Session = Depends(get_db), s
     except GoogleAuthError as err:
         raise HTTPException(
             status_code=400,
-            detail="Google rechazó el acceso a esa hoja de cálculo. Verificá que el link sea correcto y que la cuenta de Google que conectaste tenga acceso a ella.",
+            detail="Google rechazó el acceso a esa hoja de cálculo. Verifica que el link sea correcto y que la cuenta de Google que conectaste tenga acceso a ella.",
         ) from err
     except GoogleRequestError as err:
         if err.status == 404:
-            raise HTTPException(status_code=400, detail="No encontramos esa hoja de cálculo. Revisá el link e intentá de nuevo.") from err
+            raise HTTPException(status_code=400, detail="No encontramos esa hoja de cálculo. Revisa el link e intenta de nuevo.") from err
         logger.error("Error consultando metadata de spreadsheet %s: %s", spreadsheet_id, err)
-        raise HTTPException(status_code=502, detail="No pudimos leer esa hoja de cálculo en este momento. Intentá de nuevo más tarde.") from err
+        raise HTTPException(status_code=502, detail="No pudimos leer esa hoja de cálculo en este momento. Intenta de nuevo más tarde.") from err
     finally:
         await adapter.aclose()
 
@@ -393,7 +393,7 @@ async def vincular_hoja(body: VincularHojaBody, db: Session = Depends(get_db), s
 
 def _resolver_hoja(account: MarketplaceAccount, hoja: Optional[str]) -> str:
     if not account.external_account_id:
-        raise HTTPException(status_code=400, detail="Todavía no vinculaste ninguna hoja de cálculo — usá primero POST /api/google-sheets/hoja.")
+        raise HTTPException(status_code=400, detail="Todavía no vinculaste ninguna hoja de cálculo — usa primero POST /api/google-sheets/hoja.")
     hoja_final = hoja or account.external_account_site_id
     if not hoja_final:
         raise HTTPException(status_code=400, detail="Esa hoja de cálculo tiene varias pestañas — indicá con cuál trabajar (parámetro 'hoja').")
@@ -415,13 +415,13 @@ async def _leer_filas_de_google(db: Session, store: Store, hoja: Optional[str]) 
     except GoogleAuthError as err:
         raise HTTPException(
             status_code=400,
-            detail="Google rechazó el acceso a esa hoja de cálculo. Puede que se haya revocado el permiso — reconectá Google Sheets.",
+            detail="Google rechazó el acceso a esa hoja de cálculo. Puede que se haya revocado el permiso — reconecta Google Sheets.",
         ) from err
     except GoogleRequestError as err:
         if err.status == 400:
             raise HTTPException(status_code=400, detail=f"La pestaña '{hoja_final}' no existe en esa hoja de cálculo.") from err
         logger.error("Error leyendo valores de spreadsheet %s (%s): %s", account.external_account_id, hoja_final, err)
-        raise HTTPException(status_code=502, detail="No pudimos leer los datos de Google Sheets en este momento. Intentá de nuevo más tarde.") from err
+        raise HTTPException(status_code=502, detail="No pudimos leer los datos de Google Sheets en este momento. Intenta de nuevo más tarde.") from err
     finally:
         await adapter.aclose()
 

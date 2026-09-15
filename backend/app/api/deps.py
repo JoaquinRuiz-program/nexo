@@ -32,7 +32,7 @@ SESSION_COOKIE_NAME = "nexo_session"
 # Mensaje único para "no autenticado" y "sesión inválida/vencida" — nunca
 # distinguirlos en la respuesta (no darle a un atacante pistas de si un
 # token existió alguna vez).
-_NO_AUTENTICADO = HTTPException(status_code=401, detail="Iniciá sesión para continuar.")
+_NO_AUTENTICADO = HTTPException(status_code=401, detail="Inicia sesión para continuar.")
 
 
 def set_session_cookie(response: Response, token: str, *, expires_at: datetime, settings: Settings) -> None:

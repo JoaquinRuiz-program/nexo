@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-MENSAJE_GENERICO = "Mercado Libre no pudo confirmar la publicación. Revisá los datos del producto e intentá de nuevo."
+MENSAJE_GENERICO = "Mercado Libre no pudo confirmar la publicación. Revisa los datos del producto e intenta de nuevo."
 
 
 def _codigos(response_body: Optional[dict[str, Any]], *, solo_errores: bool) -> list[str]:
@@ -71,5 +71,5 @@ def mensaje_amigable_error_publicacion(response_body: Optional[dict[str, Any]]) 
     if any("product_identifier" in c for c in codigos):
         return "El código de barras (GTIN/EAN/UPC) de este producto no es válido para Mercado Libre. Corregilo en la ficha del producto."
     if any(c.startswith("item.attribute") for c in codigos):
-        return "Faltan algunos datos obligatorios del producto. Revisá los atributos marcados."
+        return "Faltan algunos datos obligatorios del producto. Revisa los atributos marcados."
     return MENSAJE_GENERICO

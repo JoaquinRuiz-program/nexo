@@ -49,7 +49,7 @@ MAX_FILAS_PREVIA_ENCABEZADO = 25
 
 MENSAJE_ARCHIVO_GRANDE = (
     f"El archivo pesa más de {MAX_ARCHIVO_BYTES // (1024 * 1024)} MB. "
-    "Dividilo en partes más chicas o quitá columnas/hojas que no uses."
+    "Divídelo en partes más chicas o quita columnas/hojas que no uses."
 )
 MENSAJE_DEMASIADAS_FILAS = (
     f"El archivo tiene más de {MAX_FILAS:,} filas. Importalo por partes.".replace(",", ".")

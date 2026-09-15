@@ -61,7 +61,7 @@ def _validar_bytes_de_imagen(contenido: bytes) -> str:
         with Image.open(io.BytesIO(contenido)) as img2:
             formato = img2.format
     except (UnidentifiedImageError, OSError, ValueError):
-        raise ImagenInvalida("No pudimos abrir ese archivo como imagen — probá con otro.") from None
+        raise ImagenInvalida("No pudimos abrir ese archivo como imagen — prueba con otro.") from None
     if formato not in FORMATOS_PERMITIDOS:
         raise ImagenInvalida(MENSAJE_REQUISITOS)
     return formato

@@ -82,6 +82,9 @@ tres pantallas para los 4 perfiles.
 
 ## 3. Menores y textos
 
+> **Estado:** corregidos el 15 de septiembre de 2026 (ver PROGRESS.md #32). El 19 ya se había
+> corregido junto con los críticos.
+
 19. Dashboard: "0/150 publicaciones · cerca del límite". El aviso es por los productos y quedó
     pegado a la línea de publicaciones.
 20. Mi plan: en prueba gratuita dice "Próxima renovación" y muestra la fecha un día antes

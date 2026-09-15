@@ -73,7 +73,7 @@ window.LC = window.LC || {};
     // propio tipo — es una causa completamente distinta de "el servidor no
     // responde", y la pantalla de error lo dice con esas palabras en vez
     // de mandar al dueño a revisar su conexión a internet.
-    if (status === 401) return { tipo: "sesion", mensaje: detail || "Tu sesión expiró. Iniciá sesión de nuevo." };
+    if (status === 401) return { tipo: "sesion", mensaje: detail || "Tu sesión expiró. Inicia sesión de nuevo." };
     if (status === 500) return { tipo: "servidor", mensaje: detail || "Hubo un problema procesando esto. Intenta de nuevo en un momento." };
     if (status === 502) {
       const esAuth = !!detail && /autenticaci[oó]n/i.test(detail);

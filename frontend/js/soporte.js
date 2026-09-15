@@ -61,7 +61,7 @@ window.LC = window.LC || {};
             </div>
             <div>
               <label class="form-label" for="soporte-descripcion">Descripción</label>
-              <textarea id="soporte-descripcion" class="form-input" rows="4" placeholder="Contanos qué pasó, con el detalle que puedas" required></textarea>
+              <textarea id="soporte-descripcion" class="form-input" rows="4" placeholder="Cuéntanos qué pasó, con el detalle que puedas" required></textarea>
             </div>
             <div>
               <label class="form-label" for="soporte-referencia">Producto o publicación afectado (opcional)</label>
@@ -111,7 +111,7 @@ window.LC = window.LC || {};
       const description = document.getElementById("soporte-descripcion").value.trim();
       const reference = document.getElementById("soporte-referencia").value.trim() || null;
       if (!subject || !description) {
-        toast("error", "Completá el asunto y la descripción.");
+        toast("error", "Completa el asunto y la descripción.");
         return;
       }
       const res = await LC.backendApi.crearSolicitudSoporte({ category, subject, description, reference });

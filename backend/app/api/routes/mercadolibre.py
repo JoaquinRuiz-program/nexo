@@ -171,7 +171,7 @@ def _require_configured(cfg: MercadoLibreConfig, settings: Settings) -> None:
             status_code=400,
             detail=(
                 "La conexión con Mercado Libre todavía no está habilitada en Nexo. "
-                "Ya estamos al tanto — si la necesitás pronto, escribinos desde Ayuda y soporte."
+                "Ya estamos al tanto — si la necesitas pronto, escríbenos desde Ayuda y soporte."
             ),
         )
 
@@ -416,7 +416,7 @@ async def importar_ventas(db: Session = Depends(get_db), store: Store = Depends(
             ) from err
         raise HTTPException(
             status_code=502,
-            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
+            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intenta de nuevo más tarde.",
         ) from err
 
     adapter = MercadoLibreAdapter(cfg)
@@ -429,11 +429,11 @@ async def importar_ventas(db: Session = Depends(get_db), store: Store = Depends(
         # log del servidor.
         logger.error("Mercado Libre rechazó la consulta de pedidos para store_id=%s: %s", store.id, err)
         registrar_fallo(db, store.id, DIRECCION_ML_VENTAS, f"Mercado Libre rechazó la consulta de pedidos (HTTP {err.status}).")
-        raise HTTPException(status_code=502, detail="Mercado Libre rechazó la consulta de pedidos. Reconectá la cuenta e intentá de nuevo.") from err
+        raise HTTPException(status_code=502, detail="Mercado Libre rechazó la consulta de pedidos. Reconecta la cuenta e intenta de nuevo.") from err
     except MercadoLibreRequestError as err:
         logger.error("No se pudo consultar pedidos de Mercado Libre para store_id=%s: %s", store.id, err)
         registrar_fallo(db, store.id, DIRECCION_ML_VENTAS, "No se pudieron consultar los pedidos de Mercado Libre (Mercado Libre no respondió).")
-        raise HTTPException(status_code=502, detail="No pudimos consultar los pedidos de Mercado Libre en este momento. Intentá de nuevo más tarde.") from err
+        raise HTTPException(status_code=502, detail="No pudimos consultar los pedidos de Mercado Libre en este momento. Intenta de nuevo más tarde.") from err
     finally:
         await adapter.aclose()
 
@@ -585,7 +585,7 @@ async def recalcular_comisiones(db: Session = Depends(get_db), store: Store = De
             ) from err
         raise HTTPException(
             status_code=502,
-            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intentá de nuevo más tarde.",
+            detail="No pudimos validar la conexión con Mercado Libre en este momento. Intenta de nuevo más tarde.",
         ) from err
 
     adapter = MercadoLibreAdapter(cfg)
@@ -597,7 +597,7 @@ async def recalcular_comisiones(db: Session = Depends(get_db), store: Store = De
         raise HTTPException(
             status_code=502,
             detail=(
-                "Mercado Libre rechazó la consulta de comisiones — revisá que la "
+                "Mercado Libre rechazó la consulta de comisiones — revisa que la "
                 "aplicación tenga habilitado el permiso 'Publicación y sincronización' "
                 "en developers.mercadolibre.cl."
             ),

@@ -18,7 +18,7 @@ def test_error_de_precio_da_mensaje_de_precio():
 
 def test_error_de_atributo_da_mensaje_de_atributos():
     body = {"cause": [{"type": "error", "code": "item.attribute.color.missing", "message": "..."}]}
-    assert mensaje_amigable_error_publicacion(body) == "Faltan algunos datos obligatorios del producto. Revisá los atributos marcados."
+    assert mensaje_amigable_error_publicacion(body) == "Faltan algunos datos obligatorios del producto. Revisa los atributos marcados."
 
 
 def test_error_de_product_identifier_da_mensaje_especifico_de_codigo_de_barras():

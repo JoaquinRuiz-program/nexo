@@ -232,6 +232,17 @@ catálogo (52).
     - Importar sin SKU reconoce el producto por nombre (si hay uno solo) en vez de duplicarlo.
     - Sin Mercado Libre conectado se predice la categoría de ML al importar
       (`_solo_predecir_categorias`; `tests/conftest.py` evita la red en los tests).
+32. **Menores de la revisión corregidos** (15 sept 2026):
+    - Mi plan: en prueba dice "La prueba termina el" y la fecha ya no sale un día antes (fecha local).
+    - Sin textos técnicos: fuera "Base de datos", "credenciales configuradas" y "credenciales en
+      el servidor"; Configuración sin el panel de notificaciones de demostración.
+    - Todo el texto al cliente en tú (sin voseo), frontend y mensajes del backend.
+    - Importar: "Falta imagen", "Falta SKU" y "Completa el stock al revisar" ya no mandan la
+      fila a "Para revisar".
+    - Admin: KPI "Sin Mercado Libre o sin productos", motivo de atención "Llegó al límite de
+      productos de su plan", gráfico sin ventas dice "Sin movimientos en el período".
+    - Detalle de producto muestra la fecha de creación (`creadoEn`); Dashboard en celular con
+      tarjetas de a dos.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

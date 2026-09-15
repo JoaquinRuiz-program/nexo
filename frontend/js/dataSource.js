@@ -163,7 +163,7 @@ window.LC = window.LC || {};
         res.ok
           ? res.data.conectado
             ? { estado: "conectado", detalle: detalleConectado(res.data) }
-            : { estado: "no_conectado", detalle: res.data.credencialesConfiguradas ? "Credenciales configuradas — falta autorizar la cuenta" : "Pendiente de configuración" }
+            : { estado: "no_conectado", detalle: res.data.credencialesConfiguradas ? "No conectado — conéctalo en Integraciones" : "Pendiente de configuración" }
           // 6 de septiembre de 2026 (P0-1): si la consulta falla, NO se
           // afirma "no conectado" — no lo sabemos. Decirlo sería tan falso
           // como mostrar datos demo.
@@ -223,7 +223,7 @@ window.LC = window.LC || {};
       const oportunidades = await getOportunidades();
       const fila = (oportunidades.productos || []).find((p) => p.id === row.id) || null;
 
-      return { row, variantes, historial: [], creado: null, rentabilidad: fila };
+      return { row, variantes, historial: [], creado: row.creadoEn ? new Date(row.creadoEn) : null, rentabilidad: fila };
     }
 
     const numId = Number(id);
@@ -281,7 +281,7 @@ window.LC = window.LC || {};
               estado: "no_conectado",
               detalle: resMl.data.credencialesConfiguradas
                 ? "Conecta tu cuenta para comenzar."
-                : "Conecta tu cuenta para comenzar — falta configurar las credenciales en el servidor.",
+                : "Todavía no está disponible para tu cuenta. Escríbenos desde Ayuda y soporte si la necesitas.",
             };
       }
       if (resGs.ok) {
@@ -291,7 +291,7 @@ window.LC = window.LC || {};
               estado: "no_conectado",
               detalle: resGs.data.credencialesConfiguradas
                 ? "Conecta tu cuenta de Google para usar una hoja de cálculo como catálogo."
-                : "Conecta tu cuenta para comenzar — falta configurar las credenciales en el servidor.",
+                : "Todavía no está disponible para tu cuenta. Escríbenos desde Ayuda y soporte si la necesitas.",
             };
       }
     }
@@ -507,6 +507,13 @@ window.LC = window.LC || {};
   // un proveedor de pago conectado, cambiar de plan es exclusivo del
   // administrador de Nexo (ver ADMINISTRADOR.md / admin.py) — la pantalla
   // se muestra de solo lectura en modo real, con "planes: []".
+  // "2026-09-29" (fecha sin hora) como medianoche LOCAL. new Date("2026-09-29")
+  // la interpreta en UTC y en Chile mostraba el día anterior (15/09/2026).
+  function fechaLocal(iso) {
+    const [anio, mes, dia] = String(iso).slice(0, 10).split("-").map(Number);
+    return new Date(anio, mes - 1, dia);
+  }
+
   function adaptarSuscripcion(data) {
     if (!data.plan) {
       // Empresa vieja, creada antes de que existiera el sistema de planes
@@ -528,7 +535,7 @@ window.LC = window.LC || {};
       cicloFacturacion: data.cicloFacturacion,
       productosUtilizados: data.uso.productos,
       publicacionesUtilizadas: data.uso.publicaciones,
-      fechaRenovacion: data.fechaRenovacion ? new Date(data.fechaRenovacion) : null,
+      fechaRenovacion: data.fechaRenovacion ? fechaLocal(data.fechaRenovacion) : null,
       planes: [],
     };
   }

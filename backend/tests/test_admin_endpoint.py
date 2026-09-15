@@ -1009,3 +1009,12 @@ def test_motivos_de_atencion_gracia_y_pago_pendiente():
     sin_sub = motivos_de_atencion(sub_status=None, current_period_end=None, ml_status="connected",
                                   cantidad_productos=3, tickets_sin_resolver=0, hoy=hoy)
     assert [m["codigo"] for m in sin_sub] == ["sin_suscripcion"]
+
+
+def test_motivos_de_atencion_limite_del_plan():
+    hoy = date(2026, 9, 15)
+    base = dict(sub_status="active", current_period_end=hoy + timedelta(days=20), ml_status="connected", tickets_sin_resolver=0, hoy=hoy)
+    en_limite = motivos_de_atencion(cantidad_productos=1000, limite_productos=1000, **base)
+    assert en_limite == [{"codigo": "limite_plan", "severidad": "media", "texto": "Llegó al límite de productos de su plan (1000)"}]
+    assert motivos_de_atencion(cantidad_productos=999, limite_productos=1000, **base) == []
+    assert motivos_de_atencion(cantidad_productos=5000, limite_productos=None, **base) == []

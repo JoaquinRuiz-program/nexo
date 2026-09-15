@@ -352,6 +352,13 @@ class RowResult:
     duplicado: bool
 
 
+AVISO_COMPLETAR_STOCK = "Completa el stock al revisar"
+# 15 de septiembre de 2026 — revisión por perfil: un archivo completo quedaba
+# "Para revisar" en todas sus filas solo por no traer imagen o SKU. Estos avisos
+# se siguen informando, pero por sí solos no dejan la fila en revisión.
+PROBLEMAS_INFORMATIVOS = frozenset({"Falta imagen", "Falta SKU", AVISO_COMPLETAR_STOCK})
+
+
 def build_rows(raw_rows: list[dict[str, Any]], mapping: ColumnMapping) -> list[RowResult]:
     """Aplica el mapeo de columnas a cada fila cruda del archivo, valida, y
     detecta duplicados (por SKU y por nombre) dentro del propio archivo —
@@ -421,7 +428,7 @@ def build_rows(raw_rows: list[dict[str, Any]], mapping: ColumnMapping) -> list[R
         if not precio_raw:
             problemas.append("Falta precio de venta")
         if stock is None:
-            problemas.append("Completá el stock al revisar")
+            problemas.append(AVISO_COMPLETAR_STOCK)
         # 13 de septiembre de 2026 — categoría y descripción YA NO se marcan
         # como problema: Nexo las resuelve solo más adelante (la categoría la
         # predice Mercado Libre a partir del nombre, ver
@@ -460,7 +467,7 @@ def build_rows(raw_rows: list[dict[str, Any]], mapping: ColumnMapping) -> list[R
                 descripcion=descripcion,
                 imagen_url=imagen_url,
                 codigo_barras=codigo_barras,
-                estado="error" if bloqueante else ("revision" if problemas else "valido"),
+                estado="error" if bloqueante else ("revision" if any(p not in PROBLEMAS_INFORMATIVOS for p in problemas) else "valido"),
                 problemas=problemas,
                 duplicado=False,
             )

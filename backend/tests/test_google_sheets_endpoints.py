@@ -406,11 +406,12 @@ def test_analizar_hoja_detecta_columnas_y_valida_filas(client, a_store, cuenta_v
     assert body["mapeoPropuesto"]["nombre"] == "Nombre"
     assert body["mapeoPropuesto"]["precio"] == "Precio"
     assert body["resumen"]["totalFilas"] == 2
-    # LIB-001 trae TODOS los campos (incluida descripción/imagen) -> válido.
-    # LIB-002 no trae descripción ni imagen -> revisión, no bloqueante (ver
-    # app/domain/catalog_import.py, mismo criterio que un Excel/CSV).
-    assert body["resumen"]["validos"] == 1
-    assert body["resumen"]["revision"] == 1
+    # LIB-001 trae TODOS los campos -> válido. LIB-002 no trae descripción ni
+    # imagen, pero sí costo, precio y stock -> también válido: desde el
+    # 15/09/2026 la falta de imagen es un aviso informativo, no deja la fila en
+    # revisión (ver PROBLEMAS_INFORMATIVOS en app/domain/catalog_import.py).
+    assert body["resumen"]["validos"] == 2
+    assert body["resumen"]["revision"] == 0
 
 
 @respx.mock

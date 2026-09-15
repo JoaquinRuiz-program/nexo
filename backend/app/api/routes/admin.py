@@ -220,9 +220,9 @@ def overview(
     devuelve todo lo que pinta el Overview, ya filtrado por período/empresa/
     canal — para que el frontend no tenga que orquestar N llamadas."""
     if periodo not in PERIODOS:
-        raise HTTPException(status_code=400, detail=f"Período inválido. Usá uno de: {', '.join(PERIODOS)}.")
+        raise HTTPException(status_code=400, detail=f"Período inválido. Usa uno de: {', '.join(PERIODOS)}.")
     if canal not in CANALES_OVERVIEW:
-        raise HTTPException(status_code=400, detail=f"Canal inválido. Usá uno de: {', '.join(CANALES_OVERVIEW)}.")
+        raise HTTPException(status_code=400, detail=f"Canal inválido. Usa uno de: {', '.join(CANALES_OVERVIEW)}.")
 
     hoy = date.today()
     rango = rango_de_periodo(periodo, hoy)
@@ -407,6 +407,7 @@ def _clientes_que_necesitan_atencion(db: Session, empresas_scope: list[int], hoy
             tickets_sin_resolver=tickets.get(tienda.id, 0),
             hoy=hoy,
             errores_sincronizacion=errores_sync.get(tienda.id, 0),
+            limite_productos=sub.plan.product_limit if sub and sub.plan else None,
         )
         if motivos:
             severidad = min((m["severidad"] for m in motivos), key=SEVERIDAD_ORDEN.__getitem__)
@@ -591,7 +592,7 @@ def cambiar_rol_administrador(
     if usuario is None:
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
     if usuario.id == admin.id:
-        raise HTTPException(status_code=400, detail="No podés cambiar tu propio rol de administrador.")
+        raise HTTPException(status_code=400, detail="No puedes cambiar tu propio rol de administrador.")
 
     if not body.esAdmin and usuario.is_nexo_admin:
         otros_admins = (
@@ -601,7 +602,7 @@ def cambiar_rol_administrador(
             or 0
         )
         if otros_admins == 0:
-            raise HTTPException(status_code=400, detail="No podés quitar el último administrador de Nexo.")
+            raise HTTPException(status_code=400, detail="No puedes quitar el último administrador de Nexo.")
 
     usuario.is_nexo_admin = body.esAdmin
     usuario.updated_at = datetime.now()
@@ -887,7 +888,7 @@ def actualizar_suscripcion_cliente(
         if body.planCode is None:
             raise HTTPException(
                 status_code=400,
-                detail="Esta empresa todavía no tiene ninguna suscripción — elegí un plan para crearle la primera.",
+                detail="Esta empresa todavía no tiene ninguna suscripción — elige un plan para crearle la primera.",
             )
         plan_inicial = db.query(Plan).filter_by(code=body.planCode).first()
         if plan_inicial is None:

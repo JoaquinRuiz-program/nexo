@@ -39,7 +39,7 @@ from app.services.eliminar_cuenta import cancelar_cobros_recurrentes, eliminar_d
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-_EMAIL_INVALIDO = "Ingresá un email válido."
+_EMAIL_INVALIDO = "Ingresa un email válido."
 _PASSWORD_MUY_CORTA = "La contraseña tiene que tener al menos 8 caracteres."
 _CREDENCIALES_INVALIDAS = "Email o contraseña incorrectos."
 
@@ -181,7 +181,7 @@ def login(body: LoginRequest, request: Request, response: Response, db: Session 
     if esta_bloqueado(email=email, ip=ip):
         raise HTTPException(
             status_code=429,
-            detail="Demasiados intentos fallidos. Esperá unos minutos antes de volver a intentar.",
+            detail="Demasiados intentos fallidos. Espera unos minutos antes de volver a intentar.",
         )
 
     usuario = db.query(User).filter_by(email=email).first()
@@ -195,7 +195,7 @@ def login(body: LoginRequest, request: Request, response: Response, db: Session 
     # bloquea el login — es lo que le da sentido real al estado
     # "Suspendido" que puede fijar un administrador de Nexo.
     if usuario.status == "suspended":
-        raise HTTPException(status_code=403, detail="Esta cuenta está suspendida. Contactá a soporte.")
+        raise HTTPException(status_code=403, detail="Esta cuenta está suspendida. Contacta a soporte.")
 
     tienda = db.query(Store).filter_by(owner_user_id=usuario.id).order_by(Store.id).first()
     if tienda is None and not usuario.is_nexo_admin:
@@ -255,7 +255,7 @@ def cambiar_password(
     # contraseña actual a fuerza bruta para después cambiarla.
     ip = ip_del_request(request)
     if esta_bloqueado(email=usuario.email, ip=ip):
-        raise HTTPException(status_code=429, detail="Demasiados intentos fallidos. Esperá unos minutos antes de volver a intentar.")
+        raise HTTPException(status_code=429, detail="Demasiados intentos fallidos. Espera unos minutos antes de volver a intentar.")
     if not verify_password(body.password_actual, usuario.password_hash):
         registrar_fallo(email=usuario.email, ip=ip)
         raise HTTPException(status_code=400, detail="La contraseña actual no es correcta.")

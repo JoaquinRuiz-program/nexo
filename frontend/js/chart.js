@@ -153,7 +153,7 @@ window.LC = window.LC || {};
       <polygon points="${area}" fill="url(#lc-area)"/>
       <polyline points="${linea}" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
       ${dots}${labels}
-      <text x="${pad.l}" y="12" class="chart-axis-label">máx ${_escapeXml(fmt(max))}</text>
+      <text x="${pad.l}" y="12" class="chart-axis-label">${points.every((p) => p.monto === 0) ? "Sin movimientos en el período" : `máx ${_escapeXml(fmt(max))}`}</text>
       ${min < 0 ? `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" stroke="#94a3b8" stroke-dasharray="4 4" stroke-width="1"/>
       <text x="${W - pad.r}" y="12" text-anchor="end" class="chart-axis-label">mín ${_escapeXml(fmt(min))}</text>` : ""}
     </svg>`;

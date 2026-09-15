@@ -211,7 +211,7 @@ window.LC = window.LC || {};
     return `
       <div class="panel-card mb-6">
         <h3 class="panel-title mb-1">Clientes que necesitan atención</h3>
-        <p class="panel-subtitle mb-4">Plan vencido o por vencer, Mercado Libre desconectado, sin productos o soporte sin resolver. Hacé click en una empresa para ver su detalle.</p>
+        <p class="panel-subtitle mb-4">Plan vencido o por vencer, Mercado Libre desconectado, sin productos o soporte sin resolver. Haz clic en una empresa para ver su detalle.</p>
         ${cuerpo}
       </div>`;
   }
@@ -253,7 +253,7 @@ window.LC = window.LC || {};
     return `
       <div class="panel-card mb-6">
         <h3 class="panel-title mb-1">Top empresas</h3>
-        <p class="panel-subtitle mb-4">Ordená por cualquier columna. Hacé click en una empresa para ver su detalle.</p>
+        <p class="panel-subtitle mb-4">Ordena por cualquier columna. Haz clic en una empresa para ver su detalle.</p>
         <div class="table-wrap"><table class="w-full text-sm">
           <thead><tr class="text-left border-b border-slate-200 dark:border-slate-700">
             <th class="px-3 py-2 font-medium">Empresa</th>
@@ -332,7 +332,7 @@ window.LC = window.LC || {};
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           <div class="stat-card"><p class="stat-label">Total de clientes</p><p class="stat-value stat-value--sm">${clientes.length}</p></div>
           <div class="stat-card"><p class="stat-label">Activos</p><p class="stat-value stat-value--sm stat-value--success">${clientes.filter((c) => c.estado === "activo").length}</p></div>
-          <div class="stat-card"><p class="stat-label">Pendientes de configuración</p><p class="stat-value stat-value--sm stat-value--warning">${clientes.filter((c) => c.estado === "pendiente_configuracion").length}</p></div>
+          <div class="stat-card"><p class="stat-label">Sin Mercado Libre o sin productos</p><p class="stat-value stat-value--sm stat-value--warning">${clientes.filter((c) => !c.mercadoLibreConectado || !c.cantidadProductos).length}</p></div>
           <div class="stat-card"><p class="stat-label">Con Mercado Libre conectado</p><p class="stat-value stat-value--sm">${clientes.filter((c) => c.mercadoLibreConectado).length}</p></div>
         </div>
 
@@ -644,7 +644,7 @@ window.LC = window.LC || {};
             </div>
             <button id="admin-guardar-suscripcion" class="btn-secondary">${c.plan ? "Guardar" : "Asignar plan"}</button>
           </div>
-          ${c.plan ? "" : '<p class="text-xs text-slate-400 mt-3">Esta empresa todavía no tiene ninguna suscripción (dato viejo, previo al sistema de planes) — elegí un plan arriba y guardá para crearle la primera.</p>'}
+          ${c.plan ? "" : '<p class="text-xs text-slate-400 mt-3">Esta empresa todavía no tiene ninguna suscripción (dato viejo, previo al sistema de planes) — elige un plan arriba y guarda para crearle la primera.</p>'}
         </div>
 
         <div class="panel-card mb-5">
@@ -771,7 +771,6 @@ window.LC = window.LC || {};
           ${c.actividadReciente.length ? `
             <div class="space-y-1.5 text-sm">${c.actividadReciente.map((a) => `<p class="text-slate-500 dark:text-slate-400">Inicio de sesión — ${formatDate(new Date(a.fecha))}</p>`).join("")}</div>
           ` : `<p class="text-sm text-slate-500 dark:text-slate-400">Sin inicios de sesión registrados todavía.</p>`}
-          ${c.erroresRecientes === null ? `<p class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">Todavía no existe un registro de errores por cliente — se ve en los logs del servidor.</p>` : ""}
         </div>
 
         <div class="panel-card">

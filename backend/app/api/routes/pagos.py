@@ -87,7 +87,7 @@ def _require_configured(cfg: MercadoPagoConfig, settings: Settings) -> None:
             status_code=400,
             detail=(
                 "El pago en línea todavía no está habilitado en Nexo. "
-                "Escribinos desde Ayuda y soporte y coordinamos el pago con vos."
+                "Escríbenos desde Ayuda y soporte y coordinamos el pago contigo."
             ),
         )
 
@@ -155,7 +155,7 @@ async def iniciar_pago(
     if plan is None or not plan.is_active:
         raise HTTPException(status_code=404, detail="Plan no encontrado.")
     if plan.monthly_price_clp is None:
-        raise HTTPException(status_code=400, detail="Este plan todavía no tiene un precio configurado para cobro automático — escribinos desde Ayuda y soporte.")
+        raise HTTPException(status_code=400, detail="Este plan todavía no tiene un precio configurado para cobro automático — escríbenos desde Ayuda y soporte.")
     db.commit()
 
     monto_clp = plan.monthly_price_clp if body.ciclo == "mensual" else precio_anual_clp(plan.monthly_price_clp)
@@ -175,10 +175,10 @@ async def iniciar_pago(
             )
     except MercadoPagoAuthError as err:
         logger.error("Mercado Pago rechazó la autenticación al iniciar un pago para store_id=%s: %s", store.id, err)
-        raise HTTPException(status_code=502, detail="Mercado Pago rechazó la solicitud. Avisale a soporte.") from err
+        raise HTTPException(status_code=502, detail="Mercado Pago rechazó la solicitud. Avísale a soporte.") from err
     except MercadoPagoRequestError as err:
         logger.error("No se pudo iniciar el pago en Mercado Pago para store_id=%s: %s", store.id, err)
-        raise HTTPException(status_code=502, detail="No pudimos iniciar el pago con Mercado Pago en este momento. Intentá de nuevo más tarde.") from err
+        raise HTTPException(status_code=502, detail="No pudimos iniciar el pago con Mercado Pago en este momento. Intenta de nuevo más tarde.") from err
     finally:
         await adapter.aclose()
 
@@ -355,10 +355,10 @@ async def cancelar_suscripcion(db: Session = Depends(get_db), store: Store = Dep
         try:
             await adapter.cancelar_preapproval(sub.mercadopago_preapproval_id)
         except MercadoPagoAuthError as err:
-            raise HTTPException(status_code=502, detail="Mercado Pago rechazó la solicitud. Avisale a soporte.") from err
+            raise HTTPException(status_code=502, detail="Mercado Pago rechazó la solicitud. Avísale a soporte.") from err
         except MercadoPagoRequestError as err:
             logger.error("No se pudo cancelar el preapproval %s de store_id=%s: %s", sub.mercadopago_preapproval_id, store.id, err)
-            raise HTTPException(status_code=502, detail="No pudimos cancelar la suscripción en Mercado Pago en este momento. Intentá de nuevo más tarde.") from err
+            raise HTTPException(status_code=502, detail="No pudimos cancelar la suscripción en Mercado Pago en este momento. Intenta de nuevo más tarde.") from err
         finally:
             await adapter.aclose()
 

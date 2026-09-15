@@ -39,7 +39,7 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
       La pantalla de revisión de Google Sheets todavía no se recalcula al corregir columnas.
 - [x] Importantes 9–18 — corregidos 15 sept 2026 (PROGRESS.md #31). El precio recomendado
       sigue sin redondearse a un precio "de vitrina" (ej. terminado en 990): solo se explicó.
-- [ ] Menores 19–28 del mismo documento.
+- [x] Menores 19–28 del mismo documento — corregidos 15 sept 2026 (PROGRESS.md #32).
 - [ ] Cuentas de prueba `*@revision.nexo.local` en `nexo.db` de desarrollo: borrarlas cuando se
       termine de revisar (respaldo previo en el scratchpad de la sesión).
 

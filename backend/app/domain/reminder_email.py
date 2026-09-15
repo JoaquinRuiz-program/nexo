@@ -49,7 +49,7 @@ def armar_recordatorio(*, nombre_empresa: str, hito: int, nombre_plan: str) -> t
     cuerpo = (
         f"Hola, {nombre_empresa}.\n\n"
         f"{aviso}\n\n"
-        "Podés renovar desde la sección \"Mi plan\" en Nexo.\n\n"
+        "Puedes renovar desde la sección \"Mi plan\" en Nexo.\n\n"
         "Si ya pagaste, ignorá este mensaje.\n\n"
         "— El equipo de Nexo"
     )
