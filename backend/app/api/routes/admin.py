@@ -32,7 +32,7 @@ from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import exists, func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_session, require_nexo_admin
@@ -156,7 +156,12 @@ def _ids_empresas_cliente(db: Session) -> list[int]:
 
 def _filtros_orden(ids_cliente: list[int], desde: date | None, hasta: date, empresa_id: int | None, canal: str) -> list:
     hasta_dt = datetime.combine(hasta + timedelta(days=1), time.min)  # fin exclusivo (todo el día `hasta`)
-    filtros = [Order.store_id.in_(ids_cliente), Order.status.notin_(_ESTADOS_VENTA_EXCLUIDOS), Order.order_date < hasta_dt]
+    filtros = [
+        Order.store_id.in_(ids_cliente), Order.status.notin_(_ESTADOS_VENTA_EXCLUIDOS), Order.order_date < hasta_dt,
+        # 14 de septiembre de 2026 — una venta cuyo dinero Mercado Libre devolvió
+        # al comprador (devolución real con status_money "refunded") no es ingreso.
+        ~exists().where(OrderReturn.order_id == Order.id, OrderReturn.money_status == "refunded"),
+    ]
     if desde is not None:
         filtros.append(Order.order_date >= datetime.combine(desde, time.min))
     if empresa_id is not None:

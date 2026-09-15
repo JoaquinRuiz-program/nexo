@@ -856,6 +856,28 @@ def test_overview_nunca_cuenta_la_empresa_propia_del_admin(client, db_session):
     assert [e["nombre"] for e in body["topEmpresas"]] == ["Cliente real"]
 
 
+def test_overview_no_cuenta_ventas_con_devolucion_reembolsada(client, db_session):
+    from app.db.models import OrderReturn
+
+    _ua, tienda_a = _crear_empresa(db_session, email="dev@ov.cl", nombre_empresa="Con devolución")
+    va = _variante_de(db_session, tienda_a, sku="DV1", costo=1000)
+    devuelta = _venta(db_session, tienda_a, external="DV-1", total=8000, comision=0, items=[(va, 1, 8000)])
+    retenida = _venta(db_session, tienda_a, external="DV-2", total=5000, comision=0, items=[(va, 1, 5000)])
+    _venta(db_session, tienda_a, external="DV-3", total=2000, comision=0, items=[(va, 1, 2000)])
+    db_session.add_all([
+        OrderReturn(store_id=tienda_a.id, order_id=devuelta.id, external_claim_id="1", claim_type="return", money_status="refunded", fetched_at=NOW),
+        # Dinero todavía retenido por Mercado Libre: la venta sigue contando.
+        OrderReturn(store_id=tienda_a.id, order_id=retenida.id, external_claim_id="2", claim_type="return", money_status="retained", fetched_at=NOW),
+    ])
+    db_session.commit()
+    admin = _crear_admin_nexo(db_session)
+    autenticar(client, db_session, admin, None, ahora=NOW)
+
+    body = client.get("/api/admin/overview", params={"periodo": "todo"}).json()
+    assert body["kpis"]["gmv"]["valor"] == 7000.0             # 5.000 + 2.000, nunca los 8.000 reembolsados
+    assert body["kpis"]["ventas"]["valor"] == 2
+
+
 def test_overview_sin_ventas_devuelve_cero_no_inventa(client, db_session):
     _crear_empresa(db_session, email="vacia@ov.cl", nombre_empresa="Sin ventas", con_producto=True)
     admin = _crear_admin_nexo(db_session)

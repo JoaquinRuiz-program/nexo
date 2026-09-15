@@ -176,6 +176,9 @@ catálogo (52).
     neta mínima $3.000 (`umbrales_minimos` en `channel_costs.py`) si la empresa no guardó su
     configuración; migración `f6b8d0a2c4e5` completa las filas existentes vacías. Modificables
     en Configuración; un campo vaciado por el usuario no se exige.
+24. **Ventas reembolsadas fuera de las métricas** (14 sept 2026) — `_filtros_orden` (admin.py,
+    única fuente de GMV/margen/ventas del admin) excluye las órdenes con devolución
+    `money_status = "refunded"`. Retenida o liberada sigue contando.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

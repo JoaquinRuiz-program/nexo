@@ -25,7 +25,8 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
       `e5a7c9b1d3f4`), se sincronizan al importar ventas (reclamos `return` + mediaciones con
       devolución), `GET /api/mercadolibre/devoluciones`, panel en Mercado Libre y en el detalle
       admin. Sincronización real OK (HTTP 200, 0 reclamos hoy). Falta verlo con una devolución
-      real. No descuenta todavía la venta devuelta de las métricas de ingresos.
+      real. Una venta con devolución reembolsada ("refunded") ya no suma a las métricas del
+      admin (excluye la orden completa; un reembolso parcial todavía no se distingue).
 - [ ] Facturas — decisión del dueño pendiente. Nexo NO puede emitir boletas/facturas SII (hace
       falta un proveedor autorizado). Mercado Libre ofrece: (a) subir la factura PDF/XML del
       vendedor por pack (`POST /packs/{pack_id}/fiscal_documents`, máx 1 MB, no aplica a Full en
@@ -33,10 +34,10 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
       1 vez al día) para conciliar la comisión real cobrada por venta.
 
 ## Deploy (día del despliegue, ver backend/DEPLOY.md)
-- [ ] **Servicio de mail** (Resend/SendGrid) + `noreply` para los recordatorios de
-      vencimiento de suscripción (hoy van al log).
-- [ ] **Cron diario** que dispare `python -m app.services.lifecycle` (recordatorios +
-      pausa por vencimiento). Requiere `--workers 1`.
+- [ ] **Servicio de mail** — código listo (`EnviadorResend`, `RESEND_API_KEY`/`EMAIL_FROM` en
+      render.yaml). Falta del dueño: cuenta Resend, dominio verificado y la API key.
+- [ ] **Cron diario** — definido en render.yaml (`python -m app.services.lifecycle`). Se activa
+      solo al desplegar en Render.
 - [ ] Despliegue real: Render (backend) + Supabase (Postgres) + dominio. Reemplaza el
       túnel ngrok por el dominio HTTPS propio en el redirect de OAuth de ML.
 - [ ] **Términos y Condiciones + Privacidad**. Redactar con cuidado: el claim "los
