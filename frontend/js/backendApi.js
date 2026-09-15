@@ -216,6 +216,11 @@ window.LC = window.LC || {};
     return request("/api/productos/stock-mercadolibre/lote", { method: "PUT", body: { variantIds, cantidad } });
   }
 
+  // 15 de septiembre de 2026 — stock para Mercado Libre = stock de cada producto.
+  async function usarStockComoStockMlEnLote() {
+    return request("/api/productos/stock-mercadolibre/lote", { method: "PUT", body: { variantIds: null, usarStock: true } });
+  }
+
   // Unidades para Mercado Libre de UN producto. Si ya está publicado, el
   // backend también actualiza el stock de la publicación real.
   async function configurarStockMercadoLibre(id, cantidad) {
@@ -604,6 +609,7 @@ window.LC = window.LC || {};
     actualizarCostoProducto,
     actualizarStockProducto,
     reservarStockMlEnLote,
+    usarStockComoStockMlEnLote,
     configurarStockMercadoLibre,
     agregarImagenProducto,
     eliminarImagenProducto,

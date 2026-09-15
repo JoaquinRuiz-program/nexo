@@ -243,6 +243,10 @@ class MarketplaceStockLoteUpdate(BaseModel):
     # None = todos los productos de la tienda; una lista = solo esos.
     variantIds: list[int] | None = None
     cantidad: int | None = None
+    # 15 de septiembre de 2026 — revisión por perfil: usar como stock para
+    # Mercado Libre el stock que ya trae cada producto (el del Excel), en vez
+    # de una misma cantidad para todos. Los productos sin stock no se tocan.
+    usarStock: bool = False
 
 
 @router.put("/stock-mercadolibre/lote")
@@ -260,10 +264,12 @@ async def configurar_stock_mercado_libre_en_lote(
     Mismo criterio de aislamiento que el resto: solo toca variantes de ESTA
     tienda (nunca un variantId de otra empresa, aunque venga en el body).
     `variantIds=None` aplica a todos los productos de la tienda."""
-    try:
-        valor = set_manual_stock(body.cantidad)
-    except ValueError as err:
-        raise HTTPException(status_code=400, detail=str(err)) from err
+    valor = None
+    if not body.usarStock:
+        try:
+            valor = set_manual_stock(body.cantidad)
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from err
 
     q = db.query(ProductVariant).filter(ProductVariant.store_id == store.id)
     if body.variantIds is not None:
@@ -271,8 +277,13 @@ async def configurar_stock_mercado_libre_en_lote(
             return {"actualizados": 0}
         q = q.filter(ProductVariant.id.in_(body.variantIds))
     variantes = q.all()
-    for v in variantes:
-        v.marketplace_stock = valor
+    if body.usarStock:
+        variantes = [v for v in variantes if v.stock_quantity is not None]
+        for v in variantes:
+            v.marketplace_stock = set_manual_stock(max(0, v.stock_quantity))
+    else:
+        for v in variantes:
+            v.marketplace_stock = valor
     db.commit()
     # Las que ya están publicadas reciben el mismo stock en Mercado Libre.
     sincronizacion = await sincronizar_stock_ml(db, store, variantes, get_settings())

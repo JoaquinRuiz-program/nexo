@@ -55,6 +55,9 @@ tres pantallas para los 4 perfiles.
 
 ## 2. Importantes
 
+> **Estado:** corregidos el 15 de septiembre de 2026 (ver PROGRESS.md #31). En el 11 se agregó
+> el contexto del margen objetivo; el redondeo a un precio "de vitrina" quedó pendiente.
+
 9. **"Margen promedio (listos): 30 %" no es real:** es el margen objetivo. Los 6 listos de la
    pyme dejan entre 8,8 % y 20,5 %.
 10. **"Alta oportunidad — buen margen"** incluye productos que pasan solo por la ganancia neta

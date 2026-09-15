@@ -1022,7 +1022,7 @@ window.LC = window.LC || {};
                   <th class="sortable-th px-3 py-2 font-medium" data-sort="stock">Stock</th>
                   <th class="sortable-th px-3 py-2 font-medium text-right" data-sort="precio">Precio</th>
                   <th class="px-3 py-2 font-medium text-right">Costo</th>
-                  <th class="px-3 py-2 font-medium text-right" title="Precio de venta menos costo de compra (sin comisiones ni envío)">Margen</th>
+                  <th class="px-3 py-2 font-medium text-right" title="Precio de venta menos costo de compra (sin comisiones ni envío). La ganancia en Mercado Libre está en Oportunidades.">Venta − compra</th>
                   <th class="px-3 py-2 font-medium">Mercado Libre</th>
                   <th class="px-3 py-2 w-10"></th>
                 </tr>
@@ -1235,8 +1235,8 @@ window.LC = window.LC || {};
   // Oportunidades/el asistente de importación (reco-badge), para que
   // "conviene o no conviene" se vea igual en toda la aplicación.
   const EVALUACION_LABEL = {
-    rentable: "Buena oportunidad",
-    margen_bajo: "Requiere revisión",
+    rentable: "Conviene publicar",
+    margen_bajo: "Margen bajo",
     no_rentable: "No recomendable",
     sin_stock: "Sin stock reservado",
     sin_datos: "Requiere revisión",
@@ -1263,9 +1263,15 @@ window.LC = window.LC || {};
           <div><p class="stat-label">Margen (venta − compra)</p><p class="text-lg font-semibold mt-1 ${rentabilidad.margenTiendaClp != null && rentabilidad.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${rentabilidad.margenTiendaClp != null ? `${formatCLP(rentabilidad.margenTiendaClp)}${rentabilidad.margenTiendaPct != null ? ` <span class="text-sm font-normal text-slate-400">${rentabilidad.margenTiendaPct.toFixed(1)}%</span>` : ""}` : "—"}</p></div>
           <div><p class="stat-label">Ganancia neta ML</p><p class="text-lg font-semibold mt-1 ${rentabilidad.margenMercadoLibreClp != null && rentabilidad.margenMercadoLibreClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${rentabilidad.margenMercadoLibreClp != null ? formatCLP(rentabilidad.margenMercadoLibreClp) : "—"}</p></div>
           <div><p class="stat-label">Margen neto ML</p><p class="text-lg font-semibold mt-1">${rentabilidad.margenMercadoLibrePct != null ? `${rentabilidad.margenMercadoLibrePct.toFixed(1)}%` : "—"}</p></div>
-          <div><p class="stat-label">Mercado Libre</p><p class="text-lg font-semibold mt-1">${rentabilidad.mercadoLibreConfigurado ? "Configurado" : "Sin configurar"}</p></div>
+          <div><p class="stat-label">Costos de Mercado Libre</p><p class="text-lg font-semibold mt-1">${rentabilidad.mercadoLibreConfigurado ? "Configurados" : "Sin configurar"}</p></div>
         </div>
-        <p class="text-xs text-slate-400 dark:text-slate-500 mb-4">Calculado con tu costo y precio reales — sin asumir ninguna comisión que no hayas confirmado.</p>
+        <p class="text-xs text-slate-400 dark:text-slate-500 mb-4">${
+          // 15 de septiembre de 2026 — revisión por perfil: el texto decía "sin
+          // asumir ninguna comisión" aunque se usara la comisión de respaldo.
+          !rentabilidad.mercadoLibreConfigurado
+            ? "Configura los costos de Mercado Libre para ver la ganancia neta de este producto."
+            : `${rentabilidad.comisionMlFuente === "real" ? "Ganancia neta con la comisión real de Mercado Libre" : "Ganancia neta con la comisión de respaldo de Configuración (Mercado Libre todavía no informó la real)"}${rentabilidad.rentabilidadMlProvisional ? "; el envío es provisional hasta que Mercado Libre lo informe" : ""}. "Venta − compra" no descuenta comisiones ni envío.`
+        }</p>
         ${
           sinCosto
             ? `<button id="detail-agregar-costo" class="btn-primary">Agregar costo</button>`
@@ -2420,7 +2426,7 @@ window.LC = window.LC || {};
   // qué — mismas 5 clasificaciones que ya calcula el backend, solo
   // organizadas para que la atención vaya a lo que más importa primero.
   const GRUPOS_OPORTUNIDAD = [
-    { id: "rentable", clasificaciones: ["rentable"], titulo: "Alta oportunidad", desc: "Ganancia potencial y buen margen — buenos candidatos para vender más." },
+    { id: "rentable", clasificaciones: ["rentable"], titulo: "Conviene publicar", desc: "Con tu precio, la comisión y el envío de Mercado Libre, cumplen tu margen mínimo o tu ganancia neta mínima." },
     { id: "revision", clasificaciones: ["sin_datos", "sin_stock"], titulo: "Requiere revisión", desc: "Falta información para decidir — conviene completarla." },
     // margen_bajo = no alcanza el margen mínimo configurado: es exactamente lo
     // que "¿Conviene?" marca como "no conviene", así que va en este grupo.
@@ -2526,13 +2532,17 @@ window.LC = window.LC || {};
           <th class="px-3 py-2 font-medium text-right">Margen neto ML</th>
           <th class="px-3 py-2 font-medium text-right">Comisión ML real</th>
           <th class="px-3 py-2 font-medium text-right">Costo de envío</th>
-          <th class="px-3 py-2 font-medium" title="Evaluación rápida sin consultar competencia — abrí el producto para la evaluación completa.">Decisión preliminar</th>
+          <th class="px-3 py-2 font-medium" title="Misma regla que al abrir el producto: tu precio real contra tu margen mínimo y tu ganancia neta mínima.">Decisión</th>
           <th class="px-3 py-2 font-medium"></th>
         </tr>
       </thead>
       <tbody>${productos.map((p) => filaOportunidad(p, decisionMap)).join("")}</tbody>
     </table></div>`;
   }
+
+  // Buscador y filas por grupo de Oportunidades (15 de septiembre de 2026).
+  const opVista = { busqueda: "", limites: {} };
+  const OP_FILAS_POR_GRUPO = 50;
 
   async function renderOportunidades(main) {
     const [modo, data] = await Promise.all([LC.dataSource.getModo(), LC.dataSource.getOportunidades()]);
@@ -2572,11 +2582,22 @@ window.LC = window.LC || {};
       const listos = decisiones.filter((d) => d.decision === "conviene");
       const revision = decisiones.filter((d) => d.decision === "revisar");
       const omitidos = decisiones.filter((d) => d.decision === "no_conviene");
-      const margenes = listos.map((d) => d.margenEstimadoPct).filter((m) => m != null);
+      // 15 de septiembre de 2026 — margen neto REAL de cada producto listo
+      // (antes margenEstimadoPct, que es el margen objetivo del precio recomendado).
+      const productoPorId = new Map(productos.map((p) => [p.id, p]));
+      const margenes = listos.map((d) => (productoPorId.get(d.variantId) || {}).margenMercadoLibrePct).filter((m) => m != null);
       const margenPromedio = margenes.length ? margenes.reduce((a, b) => a + b, 0) / margenes.length : null;
       return { listos, revision, omitidos, margenPromedio };
     })() : null;
 
+    // 15 de septiembre de 2026 — revisión por perfil: con 1.000 productos la
+    // página dibujaba todas las filas. Ahora hay buscador y cada grupo muestra
+    // de a OP_FILAS_POR_GRUPO; redibujar no vuelve a pedir datos al backend.
+    const dibujar = () => {
+    const q = opVista.busqueda.trim().toLowerCase();
+    const coincide = (p) => !q || (p.nombre || "").toLowerCase().includes(q) || (p.sku || "").toLowerCase().includes(q);
+    const publicadosVista = publicados.filter(coincide);
+    const porPublicarVista = porPublicar.filter(coincide);
     main.innerHTML = `
       <div class="page-wrap app-fade">
         ${esReal ? "" : `<div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 mb-6 text-sm text-amber-800 dark:text-amber-200">Estás viendo datos de demostración — sube tu catálogo en "Importar catálogo" para ver tus oportunidades reales.</div>`}
@@ -2589,20 +2610,21 @@ window.LC = window.LC || {};
             <div class="stat-card"><p class="stat-label">Listos para publicar</p><p class="stat-value stat-value--sm stat-value--success">${previewMl.listos.length}</p></div>
             <div class="stat-card"><p class="stat-label">Requieren revisión</p><p class="stat-value stat-value--sm stat-value--warning">${previewMl.revision.length}</p></div>
             <div class="stat-card"><p class="stat-label">Omitidos</p><p class="stat-value stat-value--sm stat-value--danger">${previewMl.omitidos.length}</p></div>
-            <div class="stat-card"><p class="stat-label">Margen promedio (listos)</p><p class="stat-value stat-value--sm">${previewMl.margenPromedio != null ? previewMl.margenPromedio.toFixed(1) + "%" : "—"}</p></div>
+            <div class="stat-card"><p class="stat-label">Margen neto promedio (listos)</p><p class="stat-value stat-value--sm">${previewMl.margenPromedio != null ? previewMl.margenPromedio.toFixed(1) + "%" : "—"}</p></div>
           </div>
         </div>` : ""}
 
         ${esReal && productos.length ? `
         <div class="panel-card mb-6">
           <h3 class="panel-title mb-1">Reservar stock para Mercado Libre en lote</h3>
-          <p class="panel-subtitle mb-4">Sin unidades reservadas, un producto no se puede publicar. Fijá una cantidad por defecto para <strong>todos</strong> tus productos de una vez — después la ajustás por producto si hace falta.</p>
+          <p class="panel-subtitle mb-4">Sin unidades reservadas, un producto no se puede publicar. Usa el stock que cargaste en tu catálogo o fija una cantidad para <strong>todos</strong> tus productos de una vez; después la ajustas por producto si hace falta.</p>
           <div class="flex flex-wrap items-end gap-3">
+            <button id="lote-stock-usar-btn" class="btn-primary">Usar el stock de cada producto</button>
             <div>
-              <label class="form-label" for="lote-stock-input">Unidades por producto</label>
+              <label class="form-label" for="lote-stock-input">O unidades por producto</label>
               <input id="lote-stock-input" type="number" min="0" step="1" inputmode="numeric" class="form-input w-32" placeholder="Ej: 5" />
             </div>
-            <button id="lote-stock-btn" class="btn-primary">Aplicar a todos</button>
+            <button id="lote-stock-btn" class="btn-secondary">Aplicar a todos</button>
           </div>
         </div>` : ""}
 
@@ -2619,29 +2641,36 @@ window.LC = window.LC || {};
             : ""
         }
 
+        ${productos.length > 20 ? `
+        <div class="mb-4">
+          <input id="op-busqueda" type="search" class="form-input max-w-sm" placeholder="Buscar por nombre o SKU" value="${escapeHtml(opVista.busqueda)}" />
+          ${q ? `<p class="text-xs text-slate-400 mt-1">${publicadosVista.length + porPublicarVista.length} producto(s) coinciden con la búsqueda.</p>` : ""}
+        </div>` : ""}
+
         <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
           <div class="stat-card"><p class="stat-label">Total</p><p class="stat-value stat-value--sm">${r.total ?? productos.length}</p></div>
-          <div class="stat-card"><p class="stat-label">Buenas oportunidades</p><p class="stat-value stat-value--sm stat-value--success">${cuentaPorPublicar("rentable")}</p></div>
+          <div class="stat-card"><p class="stat-label">Conviene publicar</p><p class="stat-value stat-value--sm stat-value--success">${cuentaPorPublicar("rentable")}</p></div>
           <div class="stat-card"><p class="stat-label">Margen bajo</p><p class="stat-value stat-value--sm stat-value--warning">${cuentaPorPublicar("margen_bajo")}</p></div>
           <div class="stat-card"><p class="stat-label">No conviene</p><p class="stat-value stat-value--sm stat-value--danger">${cuentaPorPublicar("no_rentable")}</p></div>
           <div class="stat-card"><p class="stat-label">Ya publicados</p><p class="stat-value stat-value--sm">${publicados.length}</p></div>
         </div>
 
-        ${publicados.length ? `
+        ${publicadosVista.length ? `
         <div class="panel-card mb-5">
           <div class="flex items-center gap-2 mb-1">
             <span class="dot dot--blue"></span>
             <h3 class="panel-title">Publicados en Mercado Libre</h3>
-            <span class="text-sm text-slate-400">(${publicados.length})</span>
+            <span class="text-sm text-slate-400">(${publicadosVista.length})</span>
           </div>
           <p class="panel-subtitle mb-4">Ya están a la venta. La ganancia incluye el costo de envío real que informa Mercado Libre.</p>
-          ${tablaOportunidades(publicados, decisionPorVariante)}
+          ${tablaOportunidades(publicadosVista.slice(0, opVista.limites.publicados || OP_FILAS_POR_GRUPO), decisionPorVariante)}
+          ${botonMostrarMas("publicados", publicadosVista.length)}
         </div>` : ""}
 
         ${
           productos.length
             ? GRUPOS_OPORTUNIDAD.map((g) => {
-                const items = porPublicar.filter((p) => g.clasificaciones.includes(p.clasificacion));
+                const items = porPublicarVista.filter((p) => g.clasificaciones.includes(p.clasificacion));
                 if (!items.length) return "";
                 return `
                 <div class="panel-card mb-5">
@@ -2651,9 +2680,12 @@ window.LC = window.LC || {};
                     <span class="text-sm text-slate-400">(${items.length})</span>
                   </div>
                   <p class="panel-subtitle mb-4">${g.desc}</p>
-                  ${tablaOportunidades(items, decisionPorVariante)}
+                  ${tablaOportunidades(items.slice(0, opVista.limites[g.id] || OP_FILAS_POR_GRUPO), decisionPorVariante)}
+                  ${botonMostrarMas(g.id, items.length)}
                 </div>`;
-              }).join("")
+              }).join("") + (q && !publicadosVista.length && !porPublicarVista.length
+                ? `<div class="panel-card"><p class="text-sm text-slate-500 dark:text-slate-400">Ningún producto coincide con "${escapeHtml(opVista.busqueda.trim())}".</p></div>`
+                : "")
             : `<div class="panel-card"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("bulb")}</div><p class="empty-state-title">Todavía no hay productos para revisar</p><p class="empty-state-desc">Sube tu catálogo para que calculemos qué te conviene vender.</p></div></div>`
         }
       </div>
@@ -2671,6 +2703,51 @@ window.LC = window.LC || {};
     main.querySelectorAll("[data-ir-configuracion]").forEach((btn) => {
       btn.addEventListener("click", () => LC.router.navigate("/configuracion"));
     });
+
+    const busqueda = document.getElementById("op-busqueda");
+    if (busqueda) {
+      let temporizador = null;
+      busqueda.addEventListener("input", () => {
+        clearTimeout(temporizador);
+        temporizador = setTimeout(() => {
+          opVista.busqueda = busqueda.value;
+          opVista.limites = {};
+          dibujar();
+          const nuevo = document.getElementById("op-busqueda");
+          if (nuevo) {
+            nuevo.focus();
+            nuevo.setSelectionRange(nuevo.value.length, nuevo.value.length);
+          }
+        }, 250);
+      });
+    }
+    main.querySelectorAll("[data-mostrar-mas]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.mostrarMas;
+        opVista.limites[id] = (opVista.limites[id] || OP_FILAS_POR_GRUPO) + 100;
+        dibujar();
+      });
+    });
+
+    // 15 de septiembre de 2026 — revisión por perfil: el stock del Excel no
+    // servía para Mercado Libre y había que volver a cargarlo.
+    const loteStockUsarBtn = document.getElementById("lote-stock-usar-btn");
+    if (loteStockUsarBtn) {
+      loteStockUsarBtn.addEventListener("click", async () => {
+        loteStockUsarBtn.disabled = true;
+        const textoOrig = loteStockUsarBtn.textContent;
+        loteStockUsarBtn.textContent = "Aplicando…";
+        const res = await LC.backendApi.usarStockComoStockMlEnLote();
+        loteStockUsarBtn.disabled = false;
+        loteStockUsarBtn.textContent = textoOrig;
+        if (!res.ok) {
+          toast("error", res.error.mensaje);
+          return;
+        }
+        toast(...mensajeStockMl(`Stock para Mercado Libre tomado del catálogo en ${res.data.actualizados} producto(s).`, res.data.sincronizacionMl));
+        rerenderActual();
+      });
+    }
 
     const loteStockBtn = document.getElementById("lote-stock-btn");
     if (loteStockBtn) {
@@ -2718,6 +2795,15 @@ window.LC = window.LC || {};
         rerenderActual();
       });
     }
+    };
+    dibujar();
+  }
+
+  function botonMostrarMas(grupoId, total) {
+    const visibles = opVista.limites[grupoId] || OP_FILAS_POR_GRUPO;
+    if (total <= visibles) return "";
+    const restantes = total - visibles;
+    return `<button data-mostrar-mas="${grupoId}" class="btn-secondary !text-xs !py-1.5 mt-3">Mostrar ${Math.min(100, restantes)} más (quedan ${restantes})</button>`;
   }
 
   // ------------------------------------------------------------------

@@ -220,6 +220,18 @@ catálogo (52).
       aviso si faltan.
     - Límite del plan: `limitePlan` en la respuesta de importar, aviso en la importación
       (Excel y Google Sheets) y en "Uso del plan" del Dashboard.
+31. **Importantes de la revisión corregidos** (15 sept 2026):
+    - Oportunidades: "Margen neto promedio (listos)" con el margen real, grupo "Conviene
+      publicar" con la regla real, columna "Decisión", buscador por nombre/SKU y filas de a 50
+      por grupo con "Mostrar más" (sin volver a pedir datos).
+    - ¿Conviene?: "Precio para tu margen objetivo" con el % que busca; sin la etiqueta
+      "Decisión preliminar"; sin Mercado Libre conectado muestra "Conectar Mercado Libre" en
+      vez de "Preparar publicación" (y el error de preparar ofrece conectar).
+    - Productos: la columna es "Venta − compra"; el detalle dice con qué comisión se calculó.
+    - Stock: "Usar el stock de cada producto" (`usarStock` en `/stock-mercadolibre/lote`).
+    - Importar sin SKU reconoce el producto por nombre (si hay uno solo) en vez de duplicarlo.
+    - Sin Mercado Libre conectado se predice la categoría de ML al importar
+      (`_solo_predecir_categorias`; `tests/conftest.py` evita la red en los tests).
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.models import Product, ProductImage, ProductVariant, Store
@@ -47,6 +48,18 @@ def escribir_filas(db: Session, store: Store, rows: list[RowResult], *, fuente: 
         variante_existente = (
             db.query(ProductVariant).filter_by(store_id=store.id, variant_sku=row.sku).first() if row.sku else None
         )
+        if variante_existente is None and not row.sku and row.nombre:
+            # 15 de septiembre de 2026 — revisión por perfil: reimportar una
+            # planilla sin SKU duplicaba cada producto. Sin SKU se reconoce por
+            # nombre exacto, solo si hay UN producto sin SKU con ese nombre.
+            candidatos = (
+                db.query(ProductVariant)
+                .join(Product, ProductVariant.product_id == Product.id)
+                .filter(ProductVariant.store_id == store.id, ProductVariant.variant_sku.is_(None), func.lower(Product.name) == row.nombre.lower())
+                .all()
+            )
+            if len(candidatos) == 1:
+                variante_existente = candidatos[0]
 
         if variante_existente is not None:
             producto = variante_existente.product

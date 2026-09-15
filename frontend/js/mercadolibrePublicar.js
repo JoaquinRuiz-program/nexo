@@ -116,8 +116,15 @@ window.LC = window.LC || {};
         return;
       }
 
-      const decisionRes = await LC.backendApi.decisionMercadoLibre(miState.variantId);
+      // 15 de septiembre de 2026 — revisión por perfil: sin Mercado Libre
+      // conectado, "Preparar publicación" terminaba en un error con
+      // "Reintentar". Se consulta la conexión junto con la decisión.
+      const [decisionRes, estadoMlRes] = await Promise.all([
+        LC.backendApi.decisionMercadoLibre(miState.variantId),
+        LC.backendApi.fetchMercadoLibreEstado(),
+      ]);
       if (!esVigente(miState)) return;
+      miState.mlConectado = estadoMlRes.ok ? Boolean(estadoMlRes.data.conectado) : null;
       if (decisionRes.ok) {
         miState.decision = decisionRes.data;
       } else {
@@ -212,7 +219,7 @@ window.LC = window.LC || {};
           <div><p class="stat-label">Tu precio</p><p class="stat-value stat-value--sm mt-1">${formatCLPReal(d.precioActual)}</p></div>
           <div><p class="stat-label">Ganancia con tu precio</p><p class="stat-value stat-value--sm mt-1 ${claseGanancia}">${formatCLPReal(d.gananciaActual)}</p></div>
           <div><p class="stat-label">Margen con tu precio</p><p class="stat-value stat-value--sm mt-1">${formatPct(d.margenActualPct)}</p></div>
-          <div><p class="stat-label">Precio recomendado</p><p class="stat-value stat-value--sm mt-1">${formatCLPReal(d.precioRecomendado)}</p></div>
+          <div><p class="stat-label">Precio para tu margen objetivo</p><p class="stat-value stat-value--sm mt-1">${formatCLPReal(d.precioRecomendado)}</p>${d.precioRecomendado != null && d.margenEstimadoPct != null ? `<p class="text-xs text-slate-400 mt-0.5">Para ganar ${formatPct(d.margenEstimadoPct)}</p>` : ""}</div>
           <div><p class="stat-label">Competencia</p><p class="stat-value stat-value--sm mt-1">${d.competencia ? `${formatCLPReal(d.competencia.rangoPrecioMinimo)} – ${formatCLPReal(d.competencia.rangoPrecioMaximo)}` : "Sin datos"}</p></div>
         </div>
         ${etiquetaComisionMl(d.comisionMlFuente)}
@@ -225,9 +232,11 @@ window.LC = window.LC || {};
           </div>` : ""}
         <div class="flex flex-wrap items-center justify-between gap-3">
           <button id="ml-ver-analisis" class="btn-secondary">${state.verAnalisis ? "Ocultar análisis" : "Ver análisis"}</button>
-          <button id="ml-preparar" class="btn-primary" ${preparaDeshabilitado ? "disabled" : ""} ${preparaDeshabilitado ? 'title="No conviene publicar este producto en Mercado Libre con los datos actuales"' : ""}>
+          ${state.mlConectado === false
+            ? `<div class="flex flex-wrap items-center gap-3"><span class="text-xs text-slate-500 dark:text-slate-400">Para publicar, primero conecta tu cuenta de Mercado Libre.</span><button id="ml-conectar" class="btn-primary">Conectar Mercado Libre</button></div>`
+            : `<button id="ml-preparar" class="btn-primary" ${preparaDeshabilitado ? "disabled" : ""} ${preparaDeshabilitado ? 'title="No conviene publicar este producto en Mercado Libre con los datos actuales"' : ""}>
             ${d.decision === "revisar" ? "Preparar de todas formas" : "Preparar publicación"}
-          </button>
+          </button>`}
         </div>
       </div>
       ${state.verAnalisis ? renderAnalisisDetalle() : ""}
@@ -333,10 +342,12 @@ window.LC = window.LC || {};
   // (null cuando no hubo dato de competencia, igual que en la tabla) —
   // ningún campo nuevo del backend, ninguna consulta extra.
   function etiquetaTipoDecision(d) {
+    // 15 de septiembre de 2026 — la competencia ya no cambia la decisión (se
+    // decide con tu precio real contra tus mínimos): solo se informa si hay datos.
     if (d.competencia) {
-      return `<p class="text-xs text-emerald-600 dark:text-emerald-400 mb-3 flex items-center gap-1">${icon("checkCircle")} Evaluación con competencia</p>`;
+      return `<p class="text-xs text-slate-400 dark:text-slate-500 mb-3">Incluye el rango de precios de la competencia, solo como referencia.</p>`;
     }
-    return `<p class="text-xs text-slate-400 dark:text-slate-500 mb-3">Decisión preliminar — sin datos de competencia</p>`;
+    return "";
   }
 
   function textoPosicion(pos) {
@@ -569,7 +580,13 @@ window.LC = window.LC || {};
   }
 
   function errorBox(mensaje, retryId) {
-    return `<div class="panel-card"><p class="text-sm text-red-600 dark:text-red-400 mb-3">${escapeHtml(mensaje)}</p><button id="${retryId}" class="btn-secondary">Reintentar</button></div>`;
+    // Sin cuenta de Mercado Libre conectada "Reintentar" no arregla nada: se
+    // ofrece conectarla (15 de septiembre de 2026).
+    const faltaConexion = /conect/i.test(mensaje || "") && /mercado libre/i.test(mensaje || "");
+    const boton = faltaConexion
+      ? `<button id="ml-conectar" class="btn-primary">Conectar Mercado Libre</button>`
+      : `<button id="${retryId}" class="btn-secondary">Reintentar</button>`;
+    return `<div class="panel-card"><p class="text-sm text-red-600 dark:text-red-400 mb-3">${escapeHtml(mensaje)}</p>${boton}</div>`;
   }
 
   // ------------------------------------------------------------------
@@ -577,6 +594,8 @@ window.LC = window.LC || {};
   // ------------------------------------------------------------------
 
   function wireFase(main) {
+    const conectar = document.getElementById("ml-conectar");
+    if (conectar) conectar.addEventListener("click", () => LC.router.navigate("/integraciones"));
     if (state.fase === "decision") wireDecision(main);
     else if (state.fase === "preparar") wirePreparar(main);
     else if (state.fase === "revisar") wireRevisar(main);

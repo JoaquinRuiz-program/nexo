@@ -106,6 +106,43 @@ async def actualizar_comisiones_reales(
     }
 
 
+SITIO_POR_DEFECTO = "MLC"  # Nexo opera en Mercado Libre Chile
+
+
+async def _solo_predecir_categorias(db: Session, store_id: int, settings) -> dict | None:
+    """Predice la categoría de Mercado Libre de los productos que todavía no
+    la tienen, sin cuenta conectada (GET /domain_discovery es público). No
+    consulta comisiones: eso necesita el token de la cuenta. Best effort."""
+    from app.api.routes.mercadolibre import _build_ml_config
+
+    productos = db.query(Product).filter(Product.store_id == store_id, Product.ml_category_id.is_(None)).all()
+    if not productos:
+        return {"productosConCategoriaNueva": 0, "productosSinCategoriaDetectada": []}
+    adapter = MercadoLibreAdapter(_build_ml_config(settings))
+    try:
+        predichas = 0
+        sin_categoria: list[str] = []
+        for producto in productos:
+            try:
+                prediccion = await adapter.predict_category(producto.name, SITIO_POR_DEFECTO)
+            except (MercadoLibreAuthError, MercadoLibreRequestError):
+                prediccion = None
+            if prediccion is None:
+                sin_categoria.append(producto.name)
+                continue
+            producto.ml_category_id = prediccion["categoryId"]
+            producto.ml_category_name = prediccion["categoryName"]
+            predichas += 1
+        db.commit()
+        return {"productosConCategoriaNueva": predichas, "productosSinCategoriaDetectada": sin_categoria}
+    except Exception as err:  # noqa: BLE001 — best effort a propósito
+        db.rollback()
+        logger.error("No se pudieron predecir categorías de Mercado Libre (store_id=%s): %s", store_id, err)
+        return None
+    finally:
+        await adapter.aclose()
+
+
 async def actualizar_comisiones_reales_de_la_tienda(db: Session, store_id: int, settings) -> dict | None:
     """Versión "best effort" (nunca levanta). None si no se pudo correr: sin
     Mercado Libre conectado, sin credenciales o por un error que queda en el log."""
@@ -114,7 +151,10 @@ async def actualizar_comisiones_reales_de_la_tienda(db: Session, store_id: int, 
 
     account = db.query(MarketplaceAccount).filter_by(store_id=store_id, marketplace="mercadolibre").first()
     if account is None or account.status != "connected":
-        return None
+        # 15 de septiembre de 2026 — revisión por perfil: sin cuenta conectada
+        # igual se predice la categoría (endpoint público), así al conectar
+        # Mercado Libre la comisión real queda lista enseguida.
+        return await _solo_predecir_categorias(db, store_id, settings)
     cfg = _build_ml_config(settings)
     if not cfg.is_configured() or not settings.token_encryption_key:
         return None
