@@ -415,6 +415,22 @@ def test_analizar_hoja_detecta_columnas_y_valida_filas(client, a_store, cuenta_v
 
 
 @respx.mock
+def test_analizar_hoja_con_mapeo_corregido_revalida_las_filas(client, a_store, cuenta_vinculada, monkeypatch):
+    """Corregir una columna en la revisión vuelve a validar con ESE mapeo."""
+    monkeypatch.setattr("app.api.routes.google_sheets.get_settings", lambda: CONFIGURED_SETTINGS)
+    _mock_values(SPREADSHEET_ID, "Hoja1", FILAS_LIBRERIA)
+    mapeo = {"sku": "SKU", "nombre": "Nombre", "marca": "Marca", "categoria": "Categoría", "precio": "Precio", "costo": None, "stock": "Stock", "descripcion": "Descripción", "imagen_url": "Imagen", "codigo_barras": None}
+
+    res = client.post("/api/google-sheets/importar/analizar", json={"mapeo": mapeo})
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["mapeoPropuesto"]["costo"] is None
+    assert body["resumen"]["validos"] == 0
+    assert body["resumen"]["revision"] == 2
+
+
+@respx.mock
 def test_analizar_hoja_con_filas_invalidas_las_marca_sin_bloquear_las_demas(client, a_store, cuenta_vinculada, monkeypatch):
     monkeypatch.setattr("app.api.routes.google_sheets.get_settings", lambda: CONFIGURED_SETTINGS)
     _mock_values(SPREADSHEET_ID, "Hoja1", FILAS_CON_ERRORES)

@@ -6,7 +6,7 @@ el resultado se verifica con la fórmula real, nunca "a ojo"."""
 from __future__ import annotations
 
 from app.domain.competencia import AnalisisCompetencia
-from app.domain.pricing import ESTADO_DATOS_INSUFICIENTES, ESTADO_RECOMENDACION, recomendar_precio
+from app.domain.pricing import ESTADO_DATOS_INSUFICIENTES, ESTADO_RECOMENDACION, precio_vitrina, recomendar_precio
 from app.domain.profitability import ChannelCosts
 
 
@@ -16,12 +16,20 @@ def test_precio_recomendado_es_deterministico_y_alcanza_el_margen_objetivo():
     resultado = recomendar_precio(costo=8000.0, channel_costs=channel_costs, margen_objetivo_pct=25.0)
 
     assert resultado.estado == ESTADO_RECOMENDACION
-    # costos_fijos = 8000+500 = 8500; precio = 8500 / (1 - 0.25 - 0.15) = 8500/0.6
-    assert resultado.precio_recomendado == round(8500 / 0.6, 2)
+    # costos_fijos = 8000+500 = 8500; precio exacto = 8500 / (1 - 0.25 - 0.15) = 14.166,67
+    # -> redondeado hacia arriba al precio terminado en 990: 14.990.
+    assert resultado.precio_recomendado == 14990.0
     assert resultado.alcanza_margen_objetivo is True
-    # El margen neto real, calculado con ESE precio, tiene que dar 25% (redondeo aparte).
-    assert abs(resultado.margen_estimado_pct - 25.0) < 0.1
+    # El margen neto real se calcula con el precio redondeado: nunca bajo el 25%.
+    assert resultado.margen_estimado_pct >= 25.0
     assert resultado.ganancia_estimada == resultado.margen_estimado_clp
+
+
+def test_precio_vitrina_redondea_hacia_arriba_al_990():
+    assert precio_vitrina(84133.93) == 84990.0
+    assert precio_vitrina(84990.0) == 84990.0
+    assert precio_vitrina(85000.0) == 85990.0
+    assert precio_vitrina(500.0) == 990.0
 
 
 def test_precio_minimo_rentable_es_el_punto_de_equilibrio():

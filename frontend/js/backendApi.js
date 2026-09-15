@@ -325,8 +325,11 @@ window.LC = window.LC || {};
     return request("/api/google-sheets/hoja", { method: "POST", body: { url } });
   }
 
-  async function analizarHojaGoogleSheets(hoja) {
-    return request("/api/google-sheets/importar/analizar", { method: "POST", body: hoja ? { hoja } : {}, timeoutMs: UPLOAD_TIMEOUT_MS });
+  async function analizarHojaGoogleSheets(hoja, mapeo) {
+    const body = {};
+    if (hoja) body.hoja = hoja;
+    if (mapeo) body.mapeo = mapeo;
+    return request("/api/google-sheets/importar/analizar", { method: "POST", body, timeoutMs: UPLOAD_TIMEOUT_MS });
   }
 
   async function confirmarHojaGoogleSheets(hoja, mapeo, omitirErrores) {

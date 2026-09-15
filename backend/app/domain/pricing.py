@@ -15,6 +15,7 @@ Nexo v1 no ejecuta (ver PUBLICACION_MERCADOLIBRE.md)."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -63,6 +64,13 @@ class RecomendacionPrecio:
     # y son dos responsabilidades distintas). Siempre None — usar
     # domain/decision.py::evaluar_decision en su lugar.
     clasificacion: Optional[str] = None
+
+
+def precio_vitrina(precio: float) -> float:
+    """Redondea HACIA ARRIBA al precio terminado en 990 (15 de septiembre de
+    2026, pedido del dueño): $84.134 -> $84.990. Hacia arriba para no quedar
+    nunca bajo el margen objetivo."""
+    return float(max(math.ceil((precio - 990) / 1000), 0) * 1000 + 990)
 
 
 def recomendar_precio(
@@ -124,7 +132,8 @@ def recomendar_precio(
         precio_recomendado = precio_minimo_rentable
         alcanza_margen_objetivo = False
     else:
-        precio_recomendado = round(costos_fijos / denominador_objetivo, 2)
+        # El margen estimado se calcula abajo sobre este precio ya redondeado.
+        precio_recomendado = precio_vitrina(costos_fijos / denominador_objetivo)
         alcanza_margen_objetivo = True
 
     margen_clp = net_margin(precio_recomendado, costo, channel_costs)

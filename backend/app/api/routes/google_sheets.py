@@ -444,6 +444,9 @@ async def _leer_filas_de_google(db: Session, store: Store, hoja: Optional[str]) 
 
 class AnalizarHojaBody(BaseModel):
     hoja: Optional[str] = None
+    # Opcional (15 sept 2026): mapeo corregido por el usuario en la revisión,
+    # para que contadores y avisos por fila reflejen el cambio.
+    mapeo: Optional[dict[str, Optional[str]]] = None
 
 
 @router.post("/importar/analizar")
@@ -458,7 +461,7 @@ async def analizar_hoja(
     "volver a sincronizar" sin repetir nada)."""
     hoja_usada, headers, raw_rows = await _leer_filas_de_google(db, store, body.hoja)
 
-    mapping = detect_columns(headers, raw_rows)
+    mapping = ColumnMapping(mapping=body.mapeo) if body.mapeo else detect_columns(headers, raw_rows)
     rows = build_rows(raw_rows, mapping)
 
     account = _get_account(db, store)

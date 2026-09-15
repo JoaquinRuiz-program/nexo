@@ -40,7 +40,7 @@ Producto → Costo → Comisión ML → Competencia → Precio recomendado → R
 | Campo | Qué es |
 |---|---|
 | `precioMinimoRentable` | Precio de equilibrio (margen neto = 0%) — dato factual, no una sugerencia. |
-| `precioRecomendado` | Precio tal que el margen neto real alcance el `target_margin_pct` configurado. |
+| `precioRecomendado` | Precio tal que el margen neto real alcance el `target_margin_pct` configurado, redondeado **hacia arriba** a un precio de vitrina terminado en 990 (`precio_vitrina`: $84.134 → $84.990; desde el 15 sept 2026). El margen estimado se calcula con ese precio redondeado. |
 | `margenEstimadoClp` / `margenEstimadoPct` | El margen neto REAL a ese precio (mismo cálculo que Rentabilidad). |
 | `gananciaEstimada` | Alias de `margenEstimadoClp` — lo que pidió el dueño explícitamente. |
 | `precioMercadoGanador`, `posicionFrenteACompetencia` | De `domain/competencia.py` — `null` si no hay competencia disponible. |

@@ -1625,8 +1625,8 @@ def test_precio_recomendado_usa_comision_real_en_vez_de_manual(client, db_sessio
     body = res.json()
     assert body["estado"] == "recomendacion"
     assert body["comisionMlFuente"] == "real"
-    # costos_fijos=8000; precio = 8000 / (1 - 0.25 - 0.10) = 8000/0.65 (comisión REAL 10%, nunca la manual 50%)
-    assert body["precioRecomendado"] == round(8000 / 0.65, 2)
+    # costos_fijos=8000; precio = 8000 / (1 - 0.25 - 0.10) = 12.307,69 -> 12.990 (comisión REAL 10%, nunca la manual 50%)
+    assert body["precioRecomendado"] == 12990.0
 
 
 def test_precio_recomendado_sin_comision_real_cae_al_fallback_manual(client, db_session, a_store):
@@ -1638,7 +1638,7 @@ def test_precio_recomendado_sin_comision_real_cae_al_fallback_manual(client, db_
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["comisionMlFuente"] == "manual"
-    assert body["precioRecomendado"] == round(8000 / (1 - 0.25 - 0.15), 2)
+    assert body["precioRecomendado"] == 13990.0  # 8000 / (1 - 0.25 - 0.15) = 13.333,33 -> 13.990
 
 
 def test_precio_recomendado_y_decision_usan_exactamente_la_misma_comision(client, db_session, a_store):
@@ -1712,12 +1712,12 @@ def test_precio_recomendado_de_comision_real_nunca_usa_la_de_otra_empresa(client
 
     body_a = client.get(f"/api/publicaciones/{variant_id}/mercadolibre/precio-recomendado").json()
     assert body_a["comisionMlFuente"] == "real"
-    assert body_a["precioRecomendado"] == round(8000 / (1 - 0.25 - 0.10), 2)  # 10% de A, nunca el 40% de B
+    assert body_a["precioRecomendado"] == 12990.0  # 8000/(1-0.25-0.10) redondeado; 10% de A, nunca el 40% de B
 
     autenticar(client, db_session, otro_usuario, tienda_b, ahora=NOW)
     body_b = client.get(f"/api/publicaciones/{variant_id_b}/mercadolibre/precio-recomendado").json()
     assert body_b["comisionMlFuente"] == "real"
-    assert body_b["precioRecomendado"] == round(8000 / (1 - 0.25 - 0.40), 2)  # 40% de B, nunca el 10% de A
+    assert body_b["precioRecomendado"] == 22990.0  # 8000/(1-0.25-0.40) redondeado; 40% de B, nunca el 10% de A
 
 
 def _quitar_comision_manual(db_session, tienda):

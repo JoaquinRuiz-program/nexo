@@ -362,10 +362,25 @@ window.LC = window.LC || {};
     `;
   }
 
+  // Corregir una columna vuelve a leer y validar la hoja con ese mapeo (mismo
+  // criterio que js/importFlow.js): los contadores y avisos reflejan el cambio.
+  async function reanalizarConMapeo(main) {
+    main.querySelectorAll(".mapeo-select").forEach((s) => { s.disabled = true; });
+    const res = await LC.backendApi.analizarHojaGoogleSheets(state.analisis.hojaUsada, state.mapeo);
+    if (!res.ok) {
+      toast("error", `No pudimos revisar la hoja con esas columnas: ${res.error.mensaje}`);
+      main.querySelectorAll(".mapeo-select").forEach((s) => { s.disabled = false; });
+      return;
+    }
+    state.analisis = res.data;
+    renderFase(main);
+  }
+
   function wirePasoRevision(main) {
     main.querySelectorAll(".mapeo-select").forEach((sel) => {
-      sel.addEventListener("change", () => {
+      sel.addEventListener("change", async () => {
         state.mapeo[sel.dataset.campo] = sel.value || null;
+        await reanalizarConMapeo(main);
       });
     });
     document.getElementById("btn-cancelar-revision-gs").addEventListener("click", () => {

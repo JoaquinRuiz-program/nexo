@@ -243,6 +243,13 @@ catálogo (52).
       productos de su plan", gráfico sin ventas dice "Sin movimientos en el período".
     - Detalle de producto muestra la fecha de creación (`creadoEn`); Dashboard en celular con
       tarjetas de a dos.
+33. **Google Sheets: la revisión se recalcula al corregir columnas** (15 sept 2026) —
+    `POST /api/google-sheets/importar/analizar` acepta `mapeo` opcional (igual que el importador
+    de Excel/CSV); cambiar un selector vuelve a leer la hoja y actualiza contadores y avisos.
+34. **Precio recomendado de vitrina** (15 sept 2026) — `precio_vitrina` en `domain/pricing.py`
+    redondea hacia arriba al precio terminado en 990 ($84.134 → $84.990); el margen estimado
+    se calcula con ese precio, así nunca queda bajo el objetivo. El caso imposible (sin
+    margen objetivo alcanzable) sigue devolviendo el mínimo rentable exacto.
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas

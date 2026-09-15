@@ -36,12 +36,11 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
 
 ## Revisión de experiencia (15 sept 2026) — decidir qué corregir
 - [x] Críticos 1–8 de `REVISION_EXPERIENCIA.md` — corregidos 15 sept 2026 (PROGRESS.md #30).
-      La pantalla de revisión de Google Sheets todavía no se recalcula al corregir columnas.
-- [x] Importantes 9–18 — corregidos 15 sept 2026 (PROGRESS.md #31). El precio recomendado
-      sigue sin redondearse a un precio "de vitrina" (ej. terminado en 990): solo se explicó.
+      La revisión de Google Sheets ya se recalcula al corregir columnas (PROGRESS.md #33).
+- [x] Importantes 9–18 — corregidos 15 sept 2026 (PROGRESS.md #31). El precio recomendado ya
+      se redondea hacia arriba a un precio "de vitrina" terminado en 990 (PROGRESS.md #34).
 - [x] Menores 19–28 del mismo documento — corregidos 15 sept 2026 (PROGRESS.md #32).
-- [ ] Cuentas de prueba `*@revision.nexo.local` en `nexo.db` de desarrollo: borrarlas cuando se
-      termine de revisar (respaldo previo en el scratchpad de la sesión).
+- [x] Cuentas de prueba `*@revision.nexo.local` borradas de `nexo.db` de desarrollo (15 sept 2026).
 
 ## Deploy (día del despliegue, ver backend/DEPLOY.md)
 - [ ] **Servicio de mail** — código listo (`EnviadorResend`, `RESEND_API_KEY`/`EMAIL_FROM` en
