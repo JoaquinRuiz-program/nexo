@@ -108,10 +108,10 @@ secretos. `Secure` está apagado en desarrollo; en producción `SESSION_COOKIE_S
 
 | Sev. | Hallazgo | Por qué no se corrigió |
 |---|---|---|
-| **P1** | **Ventas en modo real**: los paneles "Ventas Mercado Libre" (ventas del mes, pedidos, productos vendidos), el gráfico, "Productos más vendidos" y el listado de pedidos muestran $0/vacío fijo (`dataSource.js`, `RESUMEN_ML_VACIO`), aunque haya ventas importadas: el mismo Dashboard dice "Pedidos importados: 1" al lado de "Pedidos: 0". | Requiere endpoints de métricas de ventas (función nueva). Decisión del dueño antes de conectar un cliente con ventas. |
+| ~~P1~~ | ~~**Ventas en modo real**: los paneles de ventas mostraban $0/vacío fijo aunque hubiera ventas importadas.~~ | **Resuelto** el 15 sept 2026 (PROGRESS.md #36): leen las ventas reales importadas. Falta verlo con ventas reales de Mercado Libre. |
 | P3 | SKU repetido en el archivo: se descartan **ambas** filas, también la original. | Conservador y avisado en la revisión; aclarar el texto si molesta. |
 | P3 | Stock con texto ("diez") queda vacío con el aviso "Completa el stock al revisar", sin decir que el valor era inválido. | Informativo, no bloquea (decisión previa: el stock nunca bloquea). |
-| P3 | Costo $0 → precio recomendado $990 (matemáticamente correcto, llamativo). | Comportamiento esperado. |
+| ~~P3~~ | ~~Costo $0 → precio recomendado $990.~~ | **Resuelto** (PROGRESS.md #37): sin costo o con costo $0 no se calcula precio para el margen objetivo; se usa el precio de venta. |
 | — | Sin probar: OAuth real de Mercado Libre, publicar de verdad, ventas reales, pagos. | Requieren credenciales/OAuth reales. |
 
 ## 9. Veredicto del auditor
@@ -119,6 +119,5 @@ secretos. `Secure` está apagado en desarrollo; en producción `SESSION_COOKIE_S
 **Núcleo listo**: rentabilidad, "¿Conviene?", aislamiento multiempresa, autenticación y panel
 admin se comportan correctamente con 4 perfiles distintos, después de corregir los 6 bugs.
 **No listo para lanzamiento abierto** todavía: falta el deploy real (HTTPS, dominio, cookie
-`Secure`), la revisión legal, y resolver el P1 de ventas antes de que un cliente con ventas
-reales vea $0. Recomendación: piloto controlado con 1–3 clientes una vez hecho el deploy y
-decidido el P1 de ventas.
+`Secure`) y la revisión legal. El P1 de ventas quedó resuelto (PROGRESS.md #36).
+Recomendación: piloto controlado con 1–3 clientes una vez hecho el deploy.
