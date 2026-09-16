@@ -47,6 +47,19 @@ nexo/
 No documentado (caché/generado): `__pycache__/`, `.venv/`, `node_modules`
 (no existe, no hay build step en frontend).
 
+**Ojo con la raíz**: además de lo de arriba, la raíz también tiene
+`package.json`, `vite.config.ts`, `tsconfig*.json`, `index.html`, `src/`,
+`public/` — **eso NO es Nexo**: es el prototipo React/Vite con el que
+arrancó el proyecto (guarda todo en `localStorage`, no habla con el
+backend). Queda a propósito, con un `npm run build` que falla adrede,
+para que ningún proveedor de hosting lo autodetecte y publique en vez del
+frontend real (ver el campo `"comentario"` de `package.json`). También en
+la raíz: `legal/` (borradores de Términos/Privacidad, pendientes de
+abogado), `scripts/` (generación de datos de prueba + auditoría
+WooCommerce), `test-data/` (Excels de ejemplo para probar el importador),
+`woocommerce-test-env/` (entorno de prueba de la integración WooCommerce,
+hoy sin router activo).
+
 ## 2. Entrypoints
 
 - **Backend**: `uvicorn app.main:app` (dev: `--reload --port 8000`; prod:
