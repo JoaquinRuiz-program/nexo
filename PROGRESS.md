@@ -391,6 +391,12 @@ catálogo (52).
     detectable por Mercado Libre, no existe ningún endpoint que dé un costo de envío sin
     dimensiones — ese caso queda en "Faltan datos", nunca inventado.
 
+46. **Mapa de arquitectura** (16 sept 2026, el dueño deja Nexo en pausa) — `docs/ARCHITECTURE.md`
+    nuevo: qué hace cada carpeta, dónde vive cada funcionalidad (rentabilidad, comisiones,
+    envío, publicaciones, OAuth ML, multiempresa, pagos), flujo Excel → publicación → venta,
+    reglas de negocio vigentes, tablas críticas, estado real de deploy/tests y "si quieres
+    cambiar X, mira primero Y". Ningún cambio de código ni de comportamiento.
+
 ## En progreso
 - Nada a medias. El Admin BI cubre lo pedido (secciones 1–8); ver `TODO.md` para las
   extensiones opcionales que quedaron fuera de alcance a propósito.
