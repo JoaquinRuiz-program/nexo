@@ -285,6 +285,9 @@ cd backend
 
 ## 11. Otros docs (más profundos que este mapa)
 
+- **`docs/LOCAL_DEVELOPMENT.md` — cómo levantar Nexo en local desde cero**
+  (instalar, `.env`, base de datos, correr backend + frontend, puertos,
+  verificar, tests). Empezar por ahí para retomar el proyecto.
 - `backend/DATABASE.md` — modelos y relaciones, campo por campo.
 - `backend/DEPLOY.md` — guía paso a paso de despliegue.
 - `backend/DECISION_NEGOCIO.md` — motor "¿Conviene?" en detalle.
