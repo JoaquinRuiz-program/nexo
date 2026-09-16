@@ -23,6 +23,7 @@ una tabla con márgenes inventados.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, selectinload
@@ -33,11 +34,22 @@ from app.db.models import (
     MarketplaceAccount,
     MarketplaceListing,
     MercadoLibreCategoryFee,
+    MercadoLibreShippingEstimate,
     Product,
     ProductVariant,
     Store,
 )
-from app.domain.ml_shipping import MOTIVO_NO_CONSULTADO, MOTIVO_NO_PUBLICADO, MOTIVO_PUBLICACION_CERRADA
+from app.domain.ml_shipping import (
+    DIAS_VIGENCIA_ESTIMACION_ENVIO,
+    MOTIVO_BAJO_EL_MINIMO_DEL_DUENO,
+    MOTIVO_ESTIMACION_NO_CONSULTADA,
+    MOTIVO_CATEGORIA_SIN_MERCADO_ENVIOS,
+    MOTIVO_ENVIO_NO_OBLIGATORIO,
+    MOTIVO_ESTIMACION_VENCIDA,
+    MOTIVO_NO_CONSULTADO,
+    MOTIVO_NO_PUBLICADO,
+    MOTIVO_PUBLICACION_CERRADA,
+)
 from app.db.session import get_db
 from app.domain.ml_fees import (
     LISTING_TYPE_IDS,
@@ -108,6 +120,41 @@ def publicaciones_ml_por_producto(
     return {p.product_id: p for p in consulta.all()}
 
 
+def estimacion_envio_vigente(estimacion: MercadoLibreShippingEstimate | None) -> bool:
+    """16 de septiembre de 2026 — una estimación de envío más vieja que
+    DIAS_VIGENCIA_ESTIMACION_ENVIO no se usa para calcular rentabilidad: si la
+    actualización todavía no pudo correr (Mercado Libre caído, cuenta
+    desconectada), el envío vuelve a ser dato faltante — nunca se muestra una
+    tarifa vencida como si fuera la de hoy."""
+    if estimacion is None or estimacion.fetched_at is None:
+        return False
+    return estimacion.fetched_at >= datetime.now() - timedelta(days=DIAS_VIGENCIA_ESTIMACION_ENVIO)
+
+
+def estimaciones_envio_cacheadas(db: Session, store_id: int) -> dict[tuple[str, float], MercadoLibreShippingEstimate]:
+    """Estimaciones de envío ya consultadas (categoría + precio exacto), ver
+    services/ml_comisiones.py. Un solo lookup para toda la lista de productos.
+    Si una quedó vencida, la descarta aplicar_envio_real_ml (único lugar que
+    resuelve el envío), no esta consulta."""
+    return {
+        (e.category_id, float(e.price)): e
+        for e in db.query(MercadoLibreShippingEstimate).filter_by(store_id=store_id).all()
+    }
+
+
+def estimacion_envio_cacheada(
+    db: Session, store_id: int, category_id: str | None, precio: float | None
+) -> MercadoLibreShippingEstimate | None:
+    """La estimación de UN producto (misma caché que estimaciones_envio_cacheadas)."""
+    if not category_id or precio is None:
+        return None
+    return (
+        db.query(MercadoLibreShippingEstimate)
+        .filter_by(store_id=store_id, category_id=category_id, price=precio)
+        .first()
+    )
+
+
 def aplicar_envio_real_ml(
     costos: ChannelCosts,
     publicacion: MarketplaceListing | None,
@@ -115,12 +162,33 @@ def aplicar_envio_real_ml(
     *,
     precio: float | None = None,
     envio_desde_clp: float | None = None,
+    estimacion: MercadoLibreShippingEstimate | None = None,
 ) -> tuple[ChannelCosts, dict]:
     """14 de septiembre de 2026 — costo de envío del cálculo de rentabilidad
-    de Mercado Libre: el REAL que informó Mercado Libre para la publicación
-    (ver services/ml_shipping_sync.py). Sin ese dato no se estima nada: queda
-    el envío manual de Configuración si el dueño lo cargó (o $0), el origen
-    es "no_disponible" y quien muestra el margen lo marca como provisional.
+    de Mercado Libre. Orden de prioridad:
+
+    1. El costo REAL que informó Mercado Libre para la publicación existente
+       (services/ml_shipping_sync.py).
+    2. 16 de septiembre de 2026 (pedido del dueño: "que al analizar el margen
+       también analice el envío"): la ESTIMACIÓN de Mercado Libre para la
+       categoría y el precio del producto, consultada antes de publicar (ver
+       services/ml_comisiones.py). Solo se descuenta si a ese precio el envío
+       gratis es obligatorio — si no, lo paga el comprador y el costo es $0.
+    3. El envío manual de Configuración YA NO completa el cálculo: es un
+       promedio del dueño, no el envío de esta publicación, así que deja de
+       decidir "conviene / no conviene" (antes el margen salía marcado solo
+       como "provisional", con veredicto igual).
+
+    Nunca inventa un valor. `envioMlResuelto` dice si el envío del cálculo ya
+    está resuelto: real, estimado, o confirmado que no corre por cuenta del
+    vendedor (un $0 de verdad). Con False el envío es DATO FALTANTE y la
+    rentabilidad de Mercado Libre no se puede determinar — los costos vuelven
+    con shipping_unknown=True, así net_margin devuelve None en vez de calcular
+    con un envío $0 supuesto, y classify_product responde "Faltan datos" en
+    lugar de "Conviene" o "No conviene" (16 de septiembre de 2026, regla
+    estricta del dueño: "no puedes ver el envío antes de decir si es
+    conveniente o no").
+
     Devuelve los costos a usar + los campos de envío para la respuesta."""
     if publicacion is not None and publicacion.shipping_cost is not None:
         real = float(publicacion.shipping_cost)
@@ -128,7 +196,7 @@ def aplicar_envio_real_ml(
             "costoEnvioMl": real,
             "envioMlFuente": "mercadolibre",
             "envioMlMotivo": None,
-            "envioMlManualAplicado": None,
+            "envioMlResuelto": True,
             "envioMlActualizadoEn": publicacion.shipping_synced_at.isoformat() if publicacion.shipping_synced_at else None,
         }
     if publicacion is None:
@@ -137,17 +205,56 @@ def aplicar_envio_real_ml(
         motivo = MOTIVO_PUBLICACION_CERRADA if publicacion_cerrada else MOTIVO_NO_PUBLICADO
     else:
         motivo = publicacion.shipping_cost_unavailable_reason or MOTIVO_NO_CONSULTADO
-    if envio_desde_clp is not None and precio is not None and precio < envio_desde_clp and costos.shipping_cost:
-        # 15 de septiembre de 2026 — revisión por perfil: un envío manual fijo
-        # dejaba con pérdida todo producto barato. El dueño indica desde qué
-        # precio de venta paga él el envío; bajo ese precio no se descuenta.
-        costos = replace(costos, shipping_cost=0.0)
-    return costos, {
+
+    actualizado_en = publicacion.shipping_synced_at.isoformat() if publicacion is not None and publicacion.shipping_synced_at else None
+    if estimacion is not None and not estimacion_envio_vigente(estimacion):
+        # Vencida y todavía sin poder actualizarse: no se usa una tarifa vieja
+        # como si fuera la de hoy — vuelve a ser dato faltante.
+        estimacion, motivo = None, MOTIVO_ESTIMACION_VENCIDA
+    if estimacion is not None:
+        # El dueño puede decir desde qué precio paga él el envío: bajo ese
+        # precio no se descuenta, aunque Mercado Libre estime un costo.
+        bajo_el_minimo_del_dueno = envio_desde_clp is not None and precio is not None and precio < envio_desde_clp
+        if estimacion.shipping_cost is not None and estimacion.mandatory and not bajo_el_minimo_del_dueno:
+            estimado = float(estimacion.shipping_cost)
+            return replace(costos, shipping_cost=estimado), {
+                "costoEnvioMl": estimado,
+                "envioMlFuente": "estimado_ml",
+                "envioMlMotivo": None,
+                    "envioMlResuelto": True,
+                "envioMlActualizadoEn": estimacion.fetched_at.isoformat() if estimacion.fetched_at else None,
+            }
+        if estimacion.shipping_cost is not None or estimacion.unavailable_reason == MOTIVO_CATEGORIA_SIN_MERCADO_ENVIOS:
+            # Envío que NO corre por cuenta del vendedor a este precio: el
+            # margen ya está completo, no es provisional.
+            return replace(costos, shipping_cost=0.0), {
+                "costoEnvioMl": None,
+                "envioMlFuente": "no_disponible",
+                "envioMlMotivo": MOTIVO_CATEGORIA_SIN_MERCADO_ENVIOS
+                if estimacion.shipping_cost is None
+                else (MOTIVO_BAJO_EL_MINIMO_DEL_DUENO if bajo_el_minimo_del_dueno else MOTIVO_ENVIO_NO_OBLIGATORIO),
+                "envioMlResuelto": True,
+                "envioMlActualizadoEn": estimacion.fetched_at.isoformat() if estimacion.fetched_at else None,
+            }
+        motivo = estimacion.unavailable_reason or motivo
+
+    if estimacion is None and motivo == MOTIVO_NO_PUBLICADO:
+        # "Todavía no está publicado" explica por qué no hay costo REAL, pero
+        # como razón para el dueño confunde (parecería que hay que publicar a
+        # ciegas para saber si conviene): lo que falta es la consulta del
+        # envío estimado — eso es lo que se le dice, y para eso está el botón
+        # "Actualizar envíos".
+        motivo = MOTIVO_ESTIMACION_NO_CONSULTADA
+    # Dato faltante: ni el envío real de la publicación, ni una estimación
+    # vigente de Mercado Libre. El envío manual de Configuración no ocupa este
+    # lugar (ver docstring), y el $0 tampoco: shipping_unknown corta el cálculo
+    # del margen neto río abajo en vez de descontar cero.
+    return replace(costos, shipping_cost=None, shipping_unknown=True), {
         "costoEnvioMl": None,
         "envioMlFuente": "no_disponible",
         "envioMlMotivo": motivo,
-        "envioMlManualAplicado": costos.shipping_cost or None,
-        "envioMlActualizadoEn": publicacion.shipping_synced_at.isoformat() if publicacion is not None and publicacion.shipping_synced_at else None,
+        "envioMlResuelto": False,
+        "envioMlActualizadoEn": actualizado_en,
     }
 
 
@@ -178,6 +285,10 @@ def _comision_ml_real(comisiones: dict[str, ListingFee], costo: float | None, pr
             commission_pct=fee.percentage_fee,
             shipping_cost=costos_manual.shipping_cost,
             other_fixed_cost=(costos_manual.other_fixed_cost or 0.0) + fee.fixed_fee,
+            # Si el envío quedó como desconocido, sigue desconocido acá: este
+            # detalle (Clásica/Premium) no puede dar un margen que el resto de
+            # la aplicación no puede dar.
+            shipping_unknown=costos_manual.shipping_unknown,
         )
         resultado[clave] = {
             "nombre": fee.listing_type_name,
@@ -247,6 +358,8 @@ def resolver_costos_ml(
                 commission_pct=principal.percentage_fee,
                 shipping_cost=costos_manual.shipping_cost,
                 other_fixed_cost=(costos_manual.other_fixed_cost or 0.0) + principal.fixed_fee,
+                # La comisión real no vuelve conocido un envío que no lo es.
+                shipping_unknown=costos_manual.shipping_unknown,
             ),
             "real",
         )
@@ -264,6 +377,7 @@ def _fila(
     publicacion_ml: MarketplaceListing | None = None,
     publicacion_ml_cerrada: bool = False,
     envio_desde_clp: float | None = None,
+    estimacion_envio: MercadoLibreShippingEstimate | None = None,
 ) -> dict:
     precio = float(variante.price) if variante.price is not None else None
     costo = float(variante.cost_price) if variante.cost_price is not None else None
@@ -275,7 +389,8 @@ def _fila(
 
     comisiones = comisiones_ml_cacheadas(db, store_id, producto, precio)
     costos_ml_manual, envio_ml = aplicar_envio_real_ml(
-        costos_ml_manual, publicacion_ml, publicacion_ml_cerrada, precio=precio, envio_desde_clp=envio_desde_clp
+        costos_ml_manual, publicacion_ml, publicacion_ml_cerrada, precio=precio, envio_desde_clp=envio_desde_clp,
+        estimacion=estimacion_envio,
     )
 
     # Elección AUTOMÁTICA del tipo de publicación (14 de septiembre de 2026),
@@ -286,7 +401,12 @@ def _fila(
     )
 
     costos_ml_efectivos, fuente_comision_ml = resolver_costos_ml(comisiones, costos_ml_manual, pref_efectiva)
-    ml_configurado = costos_ml_efectivos.is_configured()
+    # 16 de septiembre de 2026 — el canal está en condiciones de dar un margen
+    # cuando se conoce su COMISIÓN (real o manual). Antes bastaba con que
+    # hubiera cualquier costo cargado, así que un envío resuelto en $0 alcanzaba
+    # para mostrar un margen calculado con una comisión de 0 % que nadie
+    # configuró (ver domain/profitability.py::net_margin).
+    ml_configurado = costos_ml_efectivos.commission_pct is not None
 
     return {
         "id": variante.id,
@@ -304,17 +424,17 @@ def _fila(
         "mercadoLibreConfigurado": ml_configurado,
         "margenMercadoLibreClp": net_margin(precio, costo_calculo, costos_ml_efectivos),
         "margenMercadoLibrePct": net_margin_pct(precio, costo_calculo, costos_ml_efectivos),
-        # Costo de envío real de Mercado Libre y su origen ("mercadolibre" |
-        # "no_disponible"), ver aplicar_envio_real_ml. Sin envío real, el
-        # margen de Mercado Libre de arriba es PROVISIONAL.
+        # Costo de envío de Mercado Libre y su origen ("mercadolibre" =
+        # el real de la publicación | "estimado_ml" = estimado para la
+        # categoría y el precio | "no_disponible"), ver aplicar_envio_real_ml.
+        # Sin envío resuelto (envioMlResuelto False) el margen de arriba es
+        # None y la clasificación es "Faltan datos" — nunca un veredicto
+        # calculado con un envío supuesto de $0.
         **envio_ml,
         # Estado de la publicación de Mercado Libre de este producto
         # ("active" | "paused" | "closed" | None = nunca publicado): Oportunidades
         # muestra los ya publicados en su propia sección, no como oportunidad.
         "publicacionMlEstado": publicacion_ml.status if publicacion_ml is not None else ("closed" if publicacion_ml_cerrada else None),
-        "rentabilidadMlProvisional": (
-            net_margin(precio, costo_calculo, costos_ml_efectivos) is not None and envio_ml["envioMlFuente"] != "mercadolibre"
-        ),
         # 31 de agosto de 2026 — de qué fuente sale la comisión usada en
         # margenMercadoLibreClp/Pct de ARRIBA ("real"|"manual"), None si no
         # hay ninguna. Nunca confundir con comisionMlReal de abajo, que es
@@ -367,10 +487,12 @@ def build_profitability_rows(db: Session, store: Store) -> tuple[list[dict], boo
     productos = db.query(Product).options(selectinload(Product.variants)).filter_by(store_id=store.id).order_by(Product.name).all()
     publicaciones_ml = publicaciones_ml_por_producto(db, store.id)
     publicaciones_ml_cerradas = publicaciones_ml_por_producto(db, store.id, estados=("closed",))
+    estimaciones_envio = estimaciones_envio_cacheadas(db, store.id)
     filas = [
         _fila(
             db, store.id, producto, variante, costos_ml, listing_type_pref, target_margin_pct,
             publicaciones_ml.get(producto.id), producto.id in publicaciones_ml_cerradas, envio_desde,
+            estimaciones_envio.get((producto.ml_category_id, float(variante.price))) if producto.ml_category_id and variante.price is not None else None,
         )
         for producto in productos
         for variante in producto.variants

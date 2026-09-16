@@ -281,10 +281,7 @@ window.LC = window.LC || {};
     const sync = ml.ultimaSincronizacion ? formatDate(new Date(ml.ultimaSincronizacion)) : "Nunca";
     return `
       <div class="panel-card mb-6">
-        <div class="flex items-center gap-2 mb-4">
-          <span class="reco-badge reco-rentable">Mercado Libre</span>
-          <h3 class="panel-title">Analytics del canal</h3>
-        </div>
+        <h3 class="panel-title mb-3">Mercado Libre</h3>
         <div class="kpi-grid">
           ${_kpiCard("Ventas ML (GMV)", _fmtCompacto(ml.gmv), {})}
           ${_kpiCard("Unidades", String(ml.unidades), {})}
@@ -530,9 +527,10 @@ window.LC = window.LC || {};
     }
     const s = res.data;
     main.innerHTML = `
-      <div class="page-wrap app-fade max-w-2xl">
+      <div class="page-wrap app-fade">
         <button id="soporte-volver" class="text-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 mb-4 inline-flex items-center gap-1">← Volver a Soporte</button>
-        <div class="panel-card mb-5">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        <div class="panel-card">
           <div class="flex flex-wrap items-start justify-between gap-4 mb-3">
             <div>
               <h2 class="text-lg font-semibold">${escapeHtml(s.asunto)}</h2>
@@ -554,6 +552,7 @@ window.LC = window.LC || {};
             </select>
             <button id="soporte-guardar" class="btn-primary">Guardar</button>
           </div>
+        </div>
         </div>
       </div>
     `;
@@ -588,13 +587,13 @@ window.LC = window.LC || {};
     const planesDisponibles = resPlanes.ok ? resPlanes.data : [];
 
     main.innerHTML = `
-      <div class="page-wrap app-fade max-w-4xl">
+      <div class="page-wrap app-fade">
         <button id="admin-back" class="text-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 mb-4 inline-flex items-center gap-1">← Volver a Clientes</button>
 
         <div class="panel-card mb-5">
           <div class="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 class="text-xl font-semibold">${escapeHtml(c.nombre)}</h2>
+              <h2 class="text-lg font-semibold">${escapeHtml(c.nombre)}</h2>
               <p class="text-sm text-slate-500 dark:text-slate-400">Cliente desde ${formatDate(new Date(c.fechaRegistro))}</p>
             </div>
             <span class="reco-badge reco-${c.estado}">${escapeHtml(ESTADO_LABEL[c.estado] || c.estado)}</span>
@@ -604,15 +603,16 @@ window.LC = window.LC || {};
             <p class="text-xs text-slate-400 mt-1.5">Vas a ver Nexo exactamente como lo ve este cliente, sin cerrar tu sesión de administrador — queda registrado en el historial de acciones administrativas.</p>
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mt-6">
-            <div><p class="stat-label">Productos</p><p class="text-lg font-semibold mt-1">${c.productos.cantidad}</p></div>
-            <div><p class="stat-label">Publicaciones</p><p class="text-lg font-semibold mt-1">${c.publicaciones.total}</p></div>
-            <div><p class="stat-label">Mercado Libre</p><p class="text-lg font-semibold mt-1">${c.mercadoLibre && c.mercadoLibre.estado === "connected" ? "Conectado" : "No conectado"}</p></div>
-            <div><p class="stat-label">Plan</p><p class="text-lg font-semibold mt-1">${c.plan ? escapeHtml(c.plan.nombre) : "Sin asignar"}</p></div>
-            <div><p class="stat-label">Usuarios</p><p class="text-lg font-semibold mt-1">${c.cantidadUsuarios}</p></div>
-            <div><p class="stat-label">Tickets abiertos</p><p class="text-lg font-semibold mt-1 ${c.soporte.ticketsAbiertos > 0 ? "text-amber-600 dark:text-amber-400" : ""}">${c.soporte.ticketsAbiertos}</p></div>
+            <div><p class="stat-label">Productos</p><p class="text-base font-medium mt-0.5">${c.productos.cantidad}</p></div>
+            <div><p class="stat-label">Publicaciones</p><p class="text-base font-medium mt-0.5">${c.publicaciones.total}</p></div>
+            <div><p class="stat-label">Mercado Libre</p><p class="text-base font-medium mt-0.5">${c.mercadoLibre && c.mercadoLibre.estado === "connected" ? "Conectado" : "No conectado"}</p></div>
+            <div><p class="stat-label">Plan</p><p class="text-base font-medium mt-0.5">${c.plan ? escapeHtml(c.plan.nombre) : "Sin asignar"}</p></div>
+            <div><p class="stat-label">Usuarios</p><p class="text-base font-medium mt-0.5">${c.cantidadUsuarios}</p></div>
+            <div><p class="stat-label">Tickets abiertos</p><p class="text-base font-medium mt-0.5 ${c.soporte.ticketsAbiertos > 0 ? "text-amber-600 dark:text-amber-400" : ""}">${c.soporte.ticketsAbiertos}</p></div>
           </div>
         </div>
 
+        <div class="xl:columns-2 gap-5 cols-panels">
         <div class="panel-card mb-5">
           <h3 class="panel-title mb-3">Usuario principal</h3>
           <div class="text-sm space-y-1.5">
@@ -778,6 +778,7 @@ window.LC = window.LC || {};
           ${c.accionesAdministrativas.length ? `
             <div class="space-y-1.5 text-sm">${c.accionesAdministrativas.map((a) => `<p class="text-slate-500 dark:text-slate-400">${escapeHtml(a.admin)} — ${escapeHtml(a.accion)}${a.detalle ? ` (${escapeHtml(a.detalle)})` : ""} — ${formatDate(new Date(a.fecha))}</p>`).join("")}</div>
           ` : `<p class="text-sm text-slate-500 dark:text-slate-400">Sin acciones administrativas registradas todavía.</p>`}
+        </div>
         </div>
       </div>
     `;

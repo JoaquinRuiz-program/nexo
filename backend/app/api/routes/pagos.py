@@ -209,6 +209,21 @@ async def callback(request: Request) -> RedirectResponse:
     return _frontend_redirect(settings, pago="procesando")
 
 
+def _ya_aplicado(sub: Subscription, *, mercadopago_id: str, es_pago_unico: bool) -> bool:
+    """¿Este mismo aviso de pago ya se aplicó a esta suscripción? (16 de
+    septiembre de 2026, revisión del sistema).
+
+    - Pago único (ciclo anual): el `id` es el del pago, único e irrepetible —
+      alcanza con comparar el último pago aplicado.
+    - Suscripción mensual: el `id` es el del preapproval, que NO cambia. Se
+      considera repetido si ya está guardado y la suscripción está activa; el
+      cobro del mes siguiente llega como `subscription_authorized_payment`,
+      un aviso distinto que hoy no se procesa (ver el webhook)."""
+    if es_pago_unico:
+        return sub.mercadopago_last_payment_id == mercadopago_id
+    return sub.mercadopago_preapproval_id == mercadopago_id and sub.status == "active"
+
+
 async def _aplicar_pago_confirmado(db: Session, *, store_id: int, plan_code: str, ciclo: str, mercadopago_id: str, es_pago_unico: bool) -> None:
     store = db.get(Store, store_id)
     if store is None:
@@ -224,13 +239,23 @@ async def _aplicar_pago_confirmado(db: Session, *, store_id: int, plan_code: str
     if sub is None:
         sub = Subscription(store=store, plan=plan, status="active", started_at=datetime.now(), current_period_end=datetime.now().date())
         db.add(sub)
+    elif _ya_aplicado(sub, mercadopago_id=mercadopago_id, es_pago_unico=es_pago_unico):
+        # 16 de septiembre de 2026 (revisión del sistema) — Mercado Pago
+        # reintenta el mismo webhook hasta recibir un 200, y puede mandar el
+        # mismo aviso más de una vez. Sin esto, cada reintento sumaba otro mes
+        # (o año) de plan gratis: el mismo pago se aplicaba varias veces.
+        logger.info("Webhook de Mercado Pago repetido (%s) para store_id=%s: ya estaba aplicado", mercadopago_id, store_id)
+        return
 
     ahora = datetime.now()
     dias_periodo = 365 if ciclo == "anual" else 30
     sub.plan = plan
     sub.billing_cycle = ciclo
     sub.status = "active"
-    sub.current_period_end = (ahora + timedelta(days=dias_periodo)).date()
+    # 16 de septiembre de 2026 — el período nuevo se suma a lo que quedaba: quien
+    # paga antes de que venza su plan no pierde los días que ya tenía pagados.
+    desde = max(ahora.date(), sub.current_period_end) if sub.current_period_end else ahora.date()
+    sub.current_period_end = desde + timedelta(days=dias_periodo)
     sub.last_payment_at = ahora
     sub.canceled_at = None
     if es_pago_unico:

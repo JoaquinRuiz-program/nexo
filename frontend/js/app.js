@@ -222,10 +222,7 @@ window.LC = window.LC || {};
           <div class="empty-state-icon">${icon("alert")}</div>
           <p class="empty-state-title">${escapeHtml(causa.titulo)}</p>
           <p class="empty-state-desc mx-auto">${escapeHtml(causa.desc)}</p>
-          <p class="text-xs text-slate-400 dark:text-slate-500 mt-4 max-w-md mx-auto">
-            No te mostramos datos de ejemplo en lugar de los tuyos: preferimos decirte que algo falló antes que enseñarte información que no es real.
-          </p>
-          <div class="flex items-center justify-center gap-3 mt-6">
+          <div class="flex items-center justify-center gap-2 mt-5">
             <button id="btn-reintentar-datos" class="btn-primary">Reintentar</button>
             <button data-nav="/soporte" class="btn-secondary">Ayuda y soporte</button>
           </div>
@@ -330,6 +327,29 @@ window.LC = window.LC || {};
     document.getElementById("sidebar-overlay").classList.add("hidden");
   }
 
+  // 15 de septiembre de 2026 — en escritorio la barra lateral se achica a
+  // solo íconos con el mismo botón del encabezado; se recuerda por navegador.
+  const SIDEBAR_COLAPSADA_KEY = "nexo_sidebar_colapsada";
+
+  function aplicarSidebarEscritorio(colapsada) {
+    document.getElementById("app-shell").classList.toggle("sidebar-collapsed", colapsada);
+    document.querySelectorAll("#sidebar .nav-link").forEach((a) => {
+      a.title = colapsada ? a.textContent.trim() : "";
+    });
+  }
+
+  function alternarSidebar() {
+    if (!window.matchMedia("(min-width: 768px)").matches) {
+      openMobileSidebar();
+      return;
+    }
+    const colapsada = !document.getElementById("app-shell").classList.contains("sidebar-collapsed");
+    try {
+      localStorage.setItem(SIDEBAR_COLAPSADA_KEY, colapsada ? "1" : "0");
+    } catch (_e) {}
+    aplicarSidebarEscritorio(colapsada);
+  }
+
   function wireShell() {
     if (shellWired) {
       updateUserHeader();
@@ -337,7 +357,12 @@ window.LC = window.LC || {};
     }
     shellWired = true;
 
-    document.getElementById("hamburger-btn").addEventListener("click", openMobileSidebar);
+    document.getElementById("hamburger-btn").addEventListener("click", alternarSidebar);
+    let sidebarColapsada = false;
+    try {
+      sidebarColapsada = localStorage.getItem(SIDEBAR_COLAPSADA_KEY) === "1";
+    } catch (_e) {}
+    aplicarSidebarEscritorio(sidebarColapsada);
     document.getElementById("sidebar-close-btn").addEventListener("click", closeMobileSidebar);
 
     document.getElementById("soporte-banner-salir").addEventListener("click", async () => {
@@ -499,7 +524,7 @@ window.LC = window.LC || {};
         errorEl.classList.remove("hidden");
         return;
       }
-      toast("success", "Cuenta creada. ¡Bienvenido a Nexo!");
+      toast("success", "Cuenta creada.");
       LC.router.navigate("/dashboard");
     });
   }
@@ -528,116 +553,92 @@ window.LC = window.LC || {};
     }
 
     const alertas = [...resumen.alertasSinStock, ...resumen.alertasStockBajo].slice(0, 5);
+    // 15 de septiembre de 2026 — pasada visual: una franja de métricas en vez
+    // de ocho tarjetas sueltas; después qué hacer, y ventas/rentabilidad/stock
+    // en dos columnas. Se quitó "Accesos rápidos" (repetía la barra lateral).
+    const onboarding = esReal ? renderOnboarding(resumen, canalMl) : "";
+    const linkClase = "text-sm text-indigo-600 dark:text-indigo-400 hover:underline shrink-0";
 
     main.innerHTML = `
       <div class="page-wrap app-fade">
         ${esReal ? "" : `
-        <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200 px-4 py-3 mb-6 text-sm flex items-center gap-2">
-          <span>Estás viendo datos de demostración (catálogo y ventas de Mercado Libre). Importa tu catálogo real (Excel, CSV o Google Sheets) y conecta tu cuenta de Mercado Libre para ver tu negocio real.</span>
+        <div class="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200 px-3 py-2 mb-4 text-sm">
+          Estás viendo datos de demostración (catálogo y ventas de Mercado Libre). Importa tu catálogo real (Excel, CSV o Google Sheets) y conecta tu cuenta de Mercado Libre para ver tu negocio real.
         </div>`}
 
-        <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <div class="flex items-baseline justify-between gap-3 flex-wrap mb-2">
+          <h2 class="panel-title">Resumen</h2>
+          <p class="text-xs text-slate-500 dark:text-slate-400">${esReal ? "Catálogo actualizado:" : "Datos de demostración ·"} ${formatDate(resumen.ultimaActualizacion)}</p>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-3 ${esReal ? "xl:grid-cols-6" : "xl:grid-cols-4"} mb-5">
           <div class="stat-card">
-            <p class="stat-label">Productos totales</p>
+            <p class="stat-label">Productos</p>
             <p class="stat-value">${resumen.total}</p>
             <p class="stat-hint">Una fila por color en productos con variantes</p>
           </div>
           <div class="stat-card">
             <p class="stat-label">Con stock</p>
-            <p class="stat-value stat-value--success">${resumen.conStock}</p>
+            <p class="stat-value">${resumen.conStock}</p>
             <p class="stat-hint">Disponibles para vender</p>
           </div>
           <div class="stat-card">
             <p class="stat-label">Sin stock</p>
-            <p class="stat-value stat-value--danger">${resumen.sinStock}</p>
+            <p class="stat-value ${resumen.sinStock > 0 ? "stat-value--danger" : ""}">${resumen.sinStock}</p>
             <p class="stat-hint">Agotados</p>
           </div>
           <div class="stat-card">
             <p class="stat-label">Stock bajo</p>
-            <p class="stat-value stat-value--warning">${resumen.stockBajo}</p>
-            <p class="stat-hint">Umbral configurable en Configuración</p>
+            <p class="stat-value ${resumen.stockBajo > 0 ? "stat-value--warning" : ""}">${resumen.stockBajo}</p>
+            <p class="stat-hint">Umbral en Configuración</p>
           </div>
-          <div class="stat-card">
-            <p class="stat-label">Última actualización</p>
-            <p class="stat-value stat-value--sm">${formatDate(resumen.ultimaActualizacion)}</p>
-            <p class="stat-hint">${esReal ? "Tu catálogo" : "Datos de demostración"}</p>
-          </div>
+          ${esReal ? renderPublicacionesYPlan(resumen) : ""}
         </div>
 
-        ${esReal ? renderPublicacionesYPlan(resumen) : ""}
-        ${esReal ? renderOnboarding(resumen, canalMl) : ""}
-        ${esReal ? renderQueHacerAhora(resumen) : ""}
-        ${esReal ? renderRentabilidadVentasPanel(resumen) : ""}
+        ${esReal ? `
+        <div class="grid grid-cols-1 ${onboarding ? "lg:grid-cols-2" : ""} gap-5 mb-5 items-start">
+          ${renderQueHacerAhora(resumen)}
+          ${onboarding}
+        </div>` : ""}
 
-        <div class="panel-card mb-6">
-          <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
-            <div class="flex items-center gap-2">
-              <h3 class="panel-title">Ventas Mercado Libre</h3>
-              ${esReal ? `<span class="text-xs text-slate-400">Ventas importadas de Mercado Libre</span>` : `<span class="demo-pill">Datos de demostración</span>`}
-            </div>
-            <button data-nav="/mercadolibre" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Ver Mercado Libre →</button>
-          </div>
-          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-            <div>
-              <p class="stat-label">Ventas del mes</p>
-              <p class="stat-value stat-value--sm">${formatCLP(resumenML.ventasMes)}</p>
-            </div>
-            <div>
-              <p class="stat-label">Pedidos</p>
-              <p class="stat-value stat-value--sm">${resumenML.pedidosMes}</p>
-            </div>
-            <div>
-              <p class="stat-label">Productos vendidos</p>
-              <p class="stat-value stat-value--sm">${resumenML.productosVendidosMes}</p>
-            </div>
-            <div>
-              <p class="stat-label">Ventas de hoy</p>
-              <p class="stat-value stat-value--sm">${formatCLP(resumenML.ventasHoy)}</p>
-            </div>
-            <div>
-              <p class="stat-label">Pedidos pendientes</p>
-              <p class="stat-value stat-value--sm ${resumenML.pedidosPendientes > 0 ? "stat-value--warning" : ""}">${resumenML.pedidosPendientes ?? "—"}</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
           <div class="panel-card">
-            <h3 class="panel-title">Estado del sistema</h3>
-            <p class="panel-subtitle mb-2">${esReal ? "Así están hoy tus conexiones." : "Ninguna de estas conexiones está activa todavía."}</p>
-            <div>
+            <div class="flex items-center justify-between gap-3 mb-3">
+              <div class="flex items-center gap-2 min-w-0">
+                <h3 class="panel-title">Ventas en Mercado Libre</h3>
+                ${esReal ? "" : `<span class="demo-pill">Datos de demostración</span>`}
+              </div>
+              <button data-nav="/mercadolibre" class="${linkClase}">Ver ventas</button>
+            </div>
+            <dl class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3">
+              ${metricaDashboard("Ventas del mes", formatCLP(resumenML.ventasMes))}
+              ${metricaDashboard("Pedidos del mes", resumenML.pedidosMes)}
+              ${metricaDashboard("Productos vendidos", resumenML.productosVendidosMes)}
+              ${metricaDashboard("Ventas de hoy", formatCLP(resumenML.ventasHoy))}
+              ${resumenML.pedidosPendientes != null ? metricaDashboard("Pedidos pendientes", resumenML.pedidosPendientes) : ""}
+            </dl>
+            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-5 mb-1">Más vendidos · últimos 30 días${esReal ? "" : " (demo)"}</p>
+            ${masVendidos.length ? masVendidos.map((p, i) => rankRow(i + 1, p)).join("") : `<p class="text-sm text-slate-500 dark:text-slate-400 py-1">${esReal ? "Todavía no hay ventas registradas." : "Todavía no hay ventas de ejemplo."}</p>`}
+            ${esReal ? `<p class="text-xs text-slate-500 dark:text-slate-400 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">${textoVentasImportadas(resumen.ventas)}</p>` : ""}
+          </div>
+
+          <div class="space-y-5">
+            ${esReal ? renderRentabilidadPanel(resumen) : ""}
+            <div class="panel-card">
+              <div class="flex items-center justify-between gap-3 mb-1">
+                <h3 class="panel-title">Alertas de stock</h3>
+                ${alertas.length ? `<button data-nav="/productos" class="${linkClase}">Ver productos</button>` : ""}
+              </div>
+              ${
+                alertas.length
+                  ? alertas.map((r) => stockAlertRow(r)).join("")
+                  : `<p class="text-sm text-slate-500 dark:text-slate-400 py-1">No hay productos sin stock ni con stock bajo.</p>`
+              }
+            </div>
+            <div class="panel-card">
+              <h3 class="panel-title">Conexiones</h3>
+              ${esReal ? "" : `<p class="panel-subtitle">Ninguna de estas conexiones está activa todavía.</p>`}
               ${statusRow("Mercado Libre", estado.mercadoLibre)}
               ${statusRow("Google Sheets", estado.googleSheets)}
-            </div>
-          </div>
-          <div class="panel-card">
-            <div class="flex items-center justify-between gap-3 mb-1">
-              <h3 class="panel-title">Productos más vendidos</h3>
-              <span class="text-xs text-slate-400">Últimos 30 días${esReal ? "" : " (demo)"}</span>
-            </div>
-            ${masVendidos.length ? masVendidos.map((p, i) => rankRow(i + 1, p, masVendidos[0].cantidad)).join("") : `<p class="text-sm text-slate-400 mt-3">${esReal ? "Todavía no hay ventas registradas." : "Todavía no hay ventas de ejemplo."}</p>`}
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div class="panel-card">
-            <h3 class="panel-title mb-1">Alertas de stock</h3>
-            <p class="panel-subtitle mb-2">Productos sin stock o por debajo del umbral configurado.</p>
-            ${
-              alertas.length
-                ? alertas.map((r) => stockAlertRow(r)).join("")
-                : `<p class="text-sm text-emerald-600 dark:text-emerald-400 mt-3">Todo tu stock está en buen estado.</p>`
-            }
-            ${alertas.length ? `<button data-nav="/productos" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline mt-3">Ver todos los productos →</button>` : ""}
-          </div>
-          <div class="panel-card">
-            <h3 class="panel-title">Accesos rápidos</h3>
-            <p class="panel-subtitle mb-3">${esReal ? "Atajos a lo que más vas a usar." : "Todo lo de acá usa datos de ejemplo por ahora."}</p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              ${quickLink("box", "Ver productos", "/productos")}
-              ${quickLink("bulb", "Oportunidades", "/oportunidades")}
-              ${quickLink("upload", "Importar catálogo", "/importar")}
-              ${quickLink("link", "Integraciones", "/integraciones")}
             </div>
           </div>
         </div>
@@ -674,28 +675,31 @@ window.LC = window.LC || {};
     const pctProductos = plan && plan.limiteProductos ? Math.round((sus.uso.productos / plan.limiteProductos) * 100) : null;
     const pctPublicaciones = plan && plan.limitePublicaciones ? Math.round((sus.uso.publicaciones / plan.limitePublicaciones) * 100) : null;
     const cercaDelLimite = (pctProductos !== null && pctProductos >= 80) || (pctPublicaciones !== null && pctPublicaciones >= 80);
+    // Dos celdas más de la franja de métricas del Dashboard.
     return `
-      <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
         <div class="stat-card">
-          <p class="stat-label">Publicaciones en Mercado Libre</p>
+          <p class="stat-label truncate">Publicaciones en ML</p>
           <p class="stat-value">${pub ? pub.total : "—"}</p>
           <p class="stat-hint">${pub ? `${pub.activas} activas · ${pub.pausadas} pausadas` : "Sin datos todavía"}</p>
         </div>
         <div class="stat-card">
-          <p class="stat-label">Plan actual</p>
-          <p class="stat-value stat-value--sm">${plan ? escapeHtml(plan.nombre) : "Sin asignar"}</p>
-          <p class="stat-hint"><a href="#/suscripcion" class="hover:underline">Ver Mi plan →</a></p>
-        </div>
-        <div class="stat-card">
-          <p class="stat-label">Uso del plan</p>
+          <p class="stat-label truncate">${plan ? `Plan ${escapeHtml(plan.nombre)}` : "Plan"}</p>
           ${plan ? `
-            <p class="stat-value stat-value--sm ${cercaDelLimite ? "stat-value--warning" : ""}">${sus.uso.productos}${plan.limiteProductos ? `/${plan.limiteProductos}` : ""} productos</p>
-            <p class="stat-hint">${sus.uso.publicaciones}${plan.limitePublicaciones ? `/${plan.limitePublicaciones}` : ""} publicaciones</p>
-            ${cercaDelLimite ? `<p class="stat-hint text-amber-600 dark:text-amber-400">${plan.limiteProductos && sus.uso.productos >= plan.limiteProductos ? "Llegaste al límite de tu plan" : "Cerca del límite de tu plan"} · <a href="#/suscripcion" class="underline">Ver planes</a></p>` : ""}
-          ` : `<p class="stat-value stat-value--sm">—</p><p class="stat-hint">Sin plan asignado</p>`}
+            <p class="stat-value ${cercaDelLimite ? "stat-value--warning" : ""}">${sus.uso.productos}${plan.limiteProductos ? `<span class="text-sm font-normal text-slate-400"> / ${plan.limiteProductos}</span>` : ""}</p>
+            <p class="stat-hint">productos · ${sus.uso.publicaciones}${plan.limitePublicaciones ? `/${plan.limitePublicaciones}` : ""} publicaciones</p>
+            ${cercaDelLimite ? `<p class="stat-hint text-amber-700 dark:text-amber-400">${plan.limiteProductos && sus.uso.productos >= plan.limiteProductos ? "Llegaste al límite de tu plan" : "Cerca del límite de tu plan"} · <a href="#/suscripcion" class="underline">Ver planes</a></p>` : ""}
+          ` : `<p class="stat-value">—</p><p class="stat-hint">Sin plan asignado · <a href="#/suscripcion" class="underline">Mi plan</a></p>`}
         </div>
-      </div>
     `;
+  }
+
+  function metricaDashboard(label, valor) {
+    return `<div class="min-w-0"><dt class="stat-label">${escapeHtml(label)}</dt><dd class="text-base font-semibold tabular-nums mt-0.5 truncate">${valor}</dd></div>`;
+  }
+
+  function textoVentasImportadas(ventas) {
+    if (!ventas || ventas.pedidosImportados === 0) return "Todavía no se importó ninguna venta de Mercado Libre.";
+    return `${ventas.pedidosImportados} pedidos importados · ${ventas.pedidosUltimos30Dias} en los últimos 30 días${ventas.ultimaVentaImportada ? ` · Última venta importada: ${formatDate(new Date(ventas.ultimaVentaImportada))}` : ""}`;
   }
 
   function buildPasosOnboarding(resumen, canalMl) {
@@ -714,13 +718,13 @@ window.LC = window.LC || {};
     const completados = pasos.filter((p) => p.hecho).length;
     if (completados === pasos.length) return "";
     return `
-      <div class="panel-card mb-6">
+      <div class="panel-card">
         <div class="flex items-center justify-between gap-3 mb-1 flex-wrap">
           <h3 class="panel-title">Primeros pasos en Nexo</h3>
-          <span class="text-sm text-slate-400">${completados} de ${pasos.length} pasos completados</span>
+          <span class="text-xs text-slate-500 dark:text-slate-400">${completados} de ${pasos.length} completados</span>
         </div>
-        <div class="progress-track my-3"><div class="progress-fill" style="width:${Math.round((completados / pasos.length) * 100)}%"></div></div>
-        <div class="space-y-2 mt-3">
+        <div class="progress-track my-2"><div class="progress-fill" style="width:${Math.round((completados / pasos.length) * 100)}%"></div></div>
+        <div class="space-y-1.5 mt-3">
           ${pasos
             .map(
               (p) => `
@@ -804,70 +808,56 @@ window.LC = window.LC || {};
     const acciones = buildAccionesRecomendadas(resumen);
     const dotClass = { success: "dot--green", warning: "dot--amber", neutral: "dot--gray" };
     return `
-      <div class="panel-card mb-6">
-        <h3 class="panel-title mb-1">Qué hacer ahora</h3>
-        <p class="panel-subtitle mb-4">Lo más importante para revisar hoy en tu empresa.</p>
+      <div class="panel-card">
+        <h3 class="panel-title">Qué hacer ahora</h3>
+        <p class="panel-subtitle mb-2">Lo más importante para revisar hoy en tu empresa.</p>
         ${
           acciones.length
             ? acciones
                 .map(
                   (a) => `
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
-            <div class="flex items-start gap-3 min-w-0">
-              <span class="dot ${dotClass[a.tono]} mt-2"></span>
+          <div class="flex items-center justify-between gap-4 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
+            <div class="flex items-start gap-2.5 min-w-0">
+              <span class="dot ${dotClass[a.tono]} mt-1.5"></span>
               <div class="min-w-0">
                 <p class="text-sm font-medium">${escapeHtml(a.texto)}</p>
-                ${a.detalle ? `<p class="text-xs text-slate-400 mt-0.5">${escapeHtml(a.detalle)}</p>` : ""}
+                ${a.detalle ? `<p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${escapeHtml(a.detalle)}</p>` : ""}
               </div>
             </div>
-            <button data-nav="${a.ruta}" class="btn-secondary !py-1.5 !text-xs shrink-0">${escapeHtml(a.cta)}</button>
+            <button data-nav="${a.ruta}" class="btn-secondary btn-sm shrink-0">${escapeHtml(a.cta)}</button>
           </div>`
                 )
                 .join("")
-            : `<p class="text-sm text-emerald-600 dark:text-emerald-400">Todo está en orden — no hay nada urgente que revisar.</p>`
+            : `<p class="text-sm text-slate-500 dark:text-slate-400">No hay nada pendiente por revisar.</p>`
         }
       </div>
     `;
   }
 
-  function renderRentabilidadVentasPanel(resumen) {
+  function renderRentabilidadPanel(resumen) {
     const rent = resumen.rentabilidad;
-    const ventas = resumen.ventas;
     return `
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
-        <div class="panel-card">
-          <h3 class="panel-title mb-1">Rentabilidad</h3>
-          <p class="panel-subtitle mb-3">Con la comisión y el envío de Mercado Libre y tus mínimos de margen y ganancia. Sin costo de compra se calcula con costo $0.</p>
-          <div class="grid grid-cols-3 gap-3">
-            <div><p class="stat-label">Con costo cargado</p><p class="stat-value stat-value--sm mt-1">${rent.productosConCosto} / ${rent.totalProductos}</p></div>
-            <div><p class="stat-label">Convienen en Mercado Libre</p><p class="stat-value stat-value--sm stat-value--success mt-1">${rent.productosRentables ?? "—"}</p></div>
-            <div><p class="stat-label">Mercado Libre configurado</p><p class="stat-value stat-value--sm mt-1">${rent.canalesConfigurados.includes("mercadolibre") ? "Sí" : "No"}</p></div>
-          </div>
-          <button data-nav="/importar" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline mt-3">Importar catálogo con costos →</button>
+      <div class="panel-card">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="panel-title">Rentabilidad</h3>
+          <button data-nav="/importar" class="text-sm text-indigo-600 dark:text-indigo-400 hover:underline shrink-0">Importar catálogo con costos</button>
         </div>
-        <div class="panel-card">
-          <h3 class="panel-title mb-1">Ventas importadas</h3>
-          <p class="panel-subtitle mb-3">${ventas.pedidosImportados === 0 ? "Todavía no se importó ninguna venta de Mercado Libre." : "Pedidos reales importados desde Mercado Libre."}</p>
-          <div class="grid grid-cols-2 gap-3">
-            <div><p class="stat-label">Pedidos importados</p><p class="stat-value stat-value--sm mt-1">${ventas.pedidosImportados}</p></div>
-            <div><p class="stat-label">Últimos 30 días</p><p class="stat-value stat-value--sm mt-1">${ventas.pedidosUltimos30Dias}</p></div>
-          </div>
-          <p class="text-xs text-slate-400 dark:text-slate-500 mt-3">${ventas.ultimaVentaImportada ? `Última venta importada: ${formatDate(new Date(ventas.ultimaVentaImportada))}` : "Ninguna venta importada todavía."}</p>
-        </div>
+        <p class="panel-subtitle mb-3">Con la comisión y el envío de Mercado Libre y tus mínimos de margen y ganancia. Sin costo de compra se calcula con costo $0.</p>
+        <dl class="grid grid-cols-3 gap-4">
+          ${metricaDashboard("Convienen en Mercado Libre", rent.productosRentables ?? "—")}
+          ${metricaDashboard("Con costo cargado", `${rent.productosConCosto} / ${rent.totalProductos}`)}
+          ${metricaDashboard("Mercado Libre configurado", rent.canalesConfigurados.includes("mercadolibre") ? "Sí" : "No")}
+        </dl>
       </div>
     `;
   }
 
-  function rankRow(posicion, item, maxCantidad) {
-    const pct = maxCantidad > 0 ? Math.max(4, Math.round((item.cantidad / maxCantidad) * 100)) : 0;
+  function rankRow(posicion, item) {
     return `
       <div class="rank-row">
         <span class="rank-number">${posicion}</span>
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium truncate">${escapeHtml(item.nombre)}</p>
-          <div class="rank-bar-track mt-1"><div class="rank-bar-fill" style="width:${pct}%"></div></div>
-        </div>
-        <span class="text-sm font-semibold text-slate-600 dark:text-slate-300 shrink-0">${item.cantidad} vendidos</span>
+        <p class="flex-1 min-w-0 text-sm truncate">${escapeHtml(item.nombre)}</p>
+        <span class="text-sm text-slate-600 dark:text-slate-300 tabular-nums shrink-0">${item.cantidad} vendidos</span>
       </div>
     `;
   }
@@ -875,7 +865,7 @@ window.LC = window.LC || {};
   function stockAlertRow(row) {
     const ind = stockIndicator(row);
     return `
-      <div class="flex items-center justify-between gap-3 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
+      <div class="flex items-center justify-between gap-3 py-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
         <div class="min-w-0">
           <p class="text-sm font-medium truncate">${escapeHtml(row.nombre)}</p>
           <p class="text-xs text-slate-400 font-mono">${escapeHtml(row.sku) || "—"}</p>
@@ -899,14 +889,6 @@ window.LC = window.LC || {};
           <p class="status-row-detail">${escapeHtml(info.detalle)}</p>
         </div>
       </div>
-    `;
-  }
-
-  function quickLink(iconName, label, path) {
-    return `
-      <button data-nav="${path}" class="flex items-center gap-2.5 px-3.5 py-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/40 transition text-left text-sm font-medium">
-        <span class="text-lg">${icon(iconName)}</span> ${escapeHtml(label)}
-      </button>
     `;
   }
 
@@ -1107,8 +1089,8 @@ window.LC = window.LC || {};
       const catalogoRealmenteVacio = rows.length === 0;
       emptyEl.innerHTML = catalogoRealmenteVacio ? `
         <div class="empty-state-icon">${icon("box")}</div>
-        <p class="empty-state-title">No tienes productos todavía</p>
-        <p class="empty-state-desc">Importa tu catálogo para comenzar.</p>
+        <p class="empty-state-title">No hay productos todavía.</p>
+        <p class="empty-state-desc">Importa un Excel o CSV, o conecta Google Sheets para comenzar.</p>
         <button data-ir-importar class="btn-primary mt-4">Importar catálogo</button>
       ` : `
         <div class="empty-state-icon">${icon("search")}</div>
@@ -1122,10 +1104,11 @@ window.LC = window.LC || {};
       tbody.innerHTML = pageRows
         .map((r) => {
           const ind = stockIndicator(r);
+          // Texto plano, no un badge: se repite en cada fila.
           const tipoBadge =
             r.tipo === "variable"
-              ? `<span class="badge badge-variable">Variable${r.colorVariante ? " · " + escapeHtml(r.colorVariante) : ""}</span>`
-              : `<span class="badge badge-simple">Simple</span>`;
+              ? `<span class="text-slate-600 dark:text-slate-300 whitespace-nowrap">Variable${r.colorVariante ? " · " + escapeHtml(r.colorVariante) : ""}</span>`
+              : `<span class="text-slate-500 dark:text-slate-400">Simple</span>`;
           return `
             <tr data-row-id="${r.id}">
               <td class="font-mono text-xs text-slate-500 dark:text-slate-400 cursor-pointer" data-open="${r.id}">${escapeHtml(r.sku) || "—"}</td>
@@ -1135,7 +1118,7 @@ window.LC = window.LC || {};
               <td class="text-right font-medium">${formatCLP(r.precio)}</td>
               <td class="text-right text-slate-500 dark:text-slate-400">${r.costo != null ? formatCLP(r.costo) : "—"}</td>
               <td class="text-right whitespace-nowrap">${r.margenClp != null
-                ? `<span class="font-medium ${r.margenClp < 0 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}">${formatCLP(r.margenClp)}</span>${r.margenPct != null ? `<span class="text-xs text-slate-400 ml-1">${r.margenPct.toFixed(1)}%</span>` : ""}`
+                ? `<span class="${r.margenClp < 0 ? "text-red-600 dark:text-red-400" : "text-slate-700 dark:text-slate-200"}">${formatCLP(r.margenClp)}</span>${r.margenPct != null ? `<span class="text-xs text-slate-400 ml-1">${r.margenPct.toFixed(1)}%</span>` : ""}`
                 : `<span class="text-xs text-slate-400" title="Falta el costo de compra">—</span>`}</td>
               <td>${celdaEstadoPublicacion(r.estadoPublicacionMercadoLibre)}</td>
               <td class="relative">
@@ -1238,7 +1221,7 @@ window.LC = window.LC || {};
     margen_bajo: "Margen bajo",
     no_rentable: "No recomendable",
     sin_stock: "Sin stock reservado",
-    sin_datos: "Requiere revisión",
+    sin_datos: "Faltan datos",
   };
 
   function renderRentabilidadDetalle(row, rentabilidad) {
@@ -1258,18 +1241,24 @@ window.LC = window.LC || {};
           <span class="reco-badge reco-${rentabilidad.clasificacion}">${EVALUACION_LABEL[rentabilidad.clasificacion] || rentabilidad.clasificacion}</span>
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-          <div><p class="stat-label">Costo de compra</p><p class="text-lg font-semibold mt-1">${rentabilidad.costo != null ? formatCLP(rentabilidad.costo) : "Sin registrar"}</p></div>
-          <div><p class="stat-label">Margen (venta − compra)</p><p class="text-lg font-semibold mt-1 ${rentabilidad.margenTiendaClp != null && rentabilidad.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${rentabilidad.margenTiendaClp != null ? `${formatCLP(rentabilidad.margenTiendaClp)}${rentabilidad.margenTiendaPct != null ? ` <span class="text-sm font-normal text-slate-400">${rentabilidad.margenTiendaPct.toFixed(1)}%</span>` : ""}` : "—"}</p></div>
-          <div><p class="stat-label">Ganancia neta ML</p><p class="text-lg font-semibold mt-1 ${rentabilidad.margenMercadoLibreClp != null && rentabilidad.margenMercadoLibreClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${rentabilidad.margenMercadoLibreClp != null ? formatCLP(rentabilidad.margenMercadoLibreClp) : "—"}</p></div>
-          <div><p class="stat-label">Margen neto ML</p><p class="text-lg font-semibold mt-1">${rentabilidad.margenMercadoLibrePct != null ? `${rentabilidad.margenMercadoLibrePct.toFixed(1)}%` : "—"}</p></div>
-          <div><p class="stat-label">Costos de Mercado Libre</p><p class="text-lg font-semibold mt-1">${rentabilidad.mercadoLibreConfigurado ? "Configurados" : "Sin configurar"}</p></div>
+          <div><p class="stat-label">Costo de compra</p><p class="text-base font-medium mt-0.5">${rentabilidad.costo != null ? formatCLP(rentabilidad.costo) : "Sin registrar"}</p></div>
+          <div><p class="stat-label">Margen (venta − compra)</p><p class="text-base font-medium mt-0.5 ${rentabilidad.margenTiendaClp != null && rentabilidad.margenTiendaClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${rentabilidad.margenTiendaClp != null ? `${formatCLP(rentabilidad.margenTiendaClp)}${rentabilidad.margenTiendaPct != null ? ` <span class="text-sm font-normal text-slate-400">${rentabilidad.margenTiendaPct.toFixed(1)}%</span>` : ""}` : "—"}</p></div>
+          <div><p class="stat-label">Ganancia neta ML</p><p class="text-base font-medium mt-0.5 ${rentabilidad.margenMercadoLibreClp != null && rentabilidad.margenMercadoLibreClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${rentabilidad.margenMercadoLibreClp != null ? formatCLP(rentabilidad.margenMercadoLibreClp) : "—"}</p></div>
+          <div><p class="stat-label">Margen neto ML</p><p class="text-base font-medium mt-0.5">${rentabilidad.margenMercadoLibrePct != null ? `${rentabilidad.margenMercadoLibrePct.toFixed(1)}%` : "—"}</p></div>
+          <div><p class="stat-label">Costos de Mercado Libre</p><p class="text-base font-medium mt-0.5">${rentabilidad.mercadoLibreConfigurado ? "Configurados" : "Sin configurar"}</p></div>
         </div>
         <p class="text-xs text-slate-400 dark:text-slate-500 mb-4">${
           // 15 de septiembre de 2026 — revisión por perfil: el texto decía "sin
           // asumir ninguna comisión" aunque se usara la comisión de respaldo.
           !rentabilidad.mercadoLibreConfigurado
             ? "Configura los costos de Mercado Libre para ver la ganancia neta de este producto."
-            : `${rentabilidad.comisionMlFuente === "real" ? "Ganancia neta con la comisión real de Mercado Libre" : "Ganancia neta con la comisión de respaldo de Configuración (Mercado Libre todavía no informó la real)"}${rentabilidad.rentabilidadMlProvisional ? "; el envío es provisional hasta que Mercado Libre lo informe" : ""}. "Venta − compra" no descuenta comisiones ni envío.`
+            : `${rentabilidad.comisionMlFuente === "real" ? "Ganancia neta con la comisión real de Mercado Libre" : "Ganancia neta con la comisión de respaldo de Configuración (Mercado Libre todavía no informó la real)"}${
+                rentabilidad.envioMlFuente === "estimado_ml"
+                  ? "; el envío es el que estima Mercado Libre para esta categoría y este precio"
+                  : rentabilidad.envioMlResuelto === false
+                    ? "; falta el costo de envío de Mercado Libre, así que todavía no se puede decir si conviene"
+                    : ""
+              }. "Venta − compra" no descuenta comisiones ni envío.`
         }</p>
         ${
           sinCosto
@@ -1294,7 +1283,7 @@ window.LC = window.LC || {};
     const root = document.getElementById("modal-root");
     root.innerHTML = `
       <div class="modal-overlay fixed inset-0 bg-slate-900/50 dark:bg-slate-950/70 flex items-center justify-center z-[60] p-4">
-        <div class="modal-card bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <div class="modal-card bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-w-md w-full p-6">
           <h3 class="text-lg font-semibold mb-2">Eliminar cuenta</h3>
           <p class="text-sm text-slate-600 dark:text-slate-300 mb-2">Se borran para siempre tu empresa, catálogo, imágenes, configuración, ventas importadas, facturas adjuntas en Nexo y todo el historial. Si tienes un plan mensual, se cancela el cobro en Mercado Pago.</p>
           <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Tus publicaciones en Mercado Libre no se cierran: siguen en tu cuenta de Mercado Libre.</p>
@@ -1349,7 +1338,7 @@ window.LC = window.LC || {};
     const root = document.getElementById("modal-root");
     root.innerHTML = `
       <div class="modal-overlay fixed inset-0 bg-slate-900/50 dark:bg-slate-950/70 flex items-center justify-center z-[60] p-4">
-        <div class="modal-card bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-sm w-full p-6">
+        <div class="modal-card bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-w-sm w-full p-6">
           <h3 class="text-lg font-semibold mb-1">Cambiar contraseña</h3>
           <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Si tienes la sesión abierta en otro dispositivo, se va a cerrar.</p>
           <label class="form-label" for="pwd-actual">Contraseña actual</label>
@@ -1427,7 +1416,7 @@ window.LC = window.LC || {};
     const root = document.getElementById("modal-root");
     root.innerHTML = `
       <div class="modal-overlay fixed inset-0 bg-slate-900/50 dark:bg-slate-950/70 flex items-center justify-center z-[60] p-4">
-        <div class="modal-card bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-sm w-full p-6">
+        <div class="modal-card bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-w-sm w-full p-6">
           <h3 class="text-lg font-semibold mb-1">${producto.mercadoLibre ? "Unidades para Mercado Libre" : producto.stock == null ? "Agregar stock" : "Editar stock"}</h3>
           <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">${escapeHtml(producto.nombre)}</p>
           <label class="form-label" for="stock-input">Unidades disponibles</label>
@@ -1490,7 +1479,7 @@ window.LC = window.LC || {};
     const root = document.getElementById("modal-root");
     root.innerHTML = `
       <div class="modal-overlay fixed inset-0 bg-slate-900/50 dark:bg-slate-950/70 flex items-center justify-center z-[60] p-4">
-        <div class="modal-card bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-sm w-full p-6">
+        <div class="modal-card bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-w-sm w-full p-6">
           <h3 class="text-lg font-semibold mb-1">Agregar costo</h3>
           <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">${escapeHtml(producto.nombre)}</p>
           <label class="form-label" for="costo-input">Precio de compra</label>
@@ -1718,14 +1707,17 @@ window.LC = window.LC || {};
     const ind = stockIndicator(row);
 
     main.innerHTML = `
-      <div class="page-wrap app-fade max-w-4xl">
+      <div class="page-wrap app-fade">
         <button id="back-to-list" class="text-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 mb-4 inline-flex items-center gap-1">← Volver a Productos</button>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-x-5 items-start">
+        <div>
 
         <div class="panel-card mb-5">
           <div class="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div class="flex items-center gap-2 mb-1">
-                <h2 class="text-xl font-semibold">${escapeHtml(row.nombre)}</h2>
+                <h2 class="text-lg font-semibold">${escapeHtml(row.nombre)}</h2>
                 ${row.tipo === "variable" ? '<span class="badge badge-variable">Variable</span>' : '<span class="badge badge-simple">Simple</span>'}
               </div>
               <p class="text-sm text-slate-500 dark:text-slate-400 font-mono">${escapeHtml(row.sku) || "Sin SKU"}</p>
@@ -1734,25 +1726,23 @@ window.LC = window.LC || {};
           </div>
 
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
-            <div><p class="stat-label">Precio</p><p class="text-lg font-semibold mt-1">${formatCLP(row.precio)}</p></div>
+            <div><p class="stat-label">Precio</p><p class="text-base font-medium mt-0.5">${formatCLP(row.precio)}</p></div>
             <div>
               <p class="stat-label">Stock</p>
-              <p class="text-lg font-semibold mt-1">${row.stockQuantity ?? "Sin registrar"}</p>
+              <p class="text-base font-medium mt-0.5">${row.stockQuantity ?? "Sin registrar"}</p>
               <button id="detail-editar-stock" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline mt-0.5">${row.stockQuantity == null ? "Agregar stock" : "Editar"}</button>
             </div>
             <div>
               <p class="stat-label">Unidades para Mercado Libre</p>
-              <p class="text-lg font-semibold mt-1">${row.marketplaceStock ?? "Sin definir"}</p>
+              <p class="text-base font-medium mt-0.5">${row.marketplaceStock ?? "Sin definir"}</p>
               <button id="detail-editar-stock-ml" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline mt-0.5">${row.marketplaceStock == null ? "Definir" : "Editar"}</button>
             </div>
-            <div><p class="stat-label">Categoría</p><p class="text-lg font-semibold mt-1">${escapeHtml(row.categoria || "—")}</p></div>
-            <div><p class="stat-label">Creado</p><p class="text-lg font-semibold mt-1">${formatDate(creado)}</p></div>
+            <div><p class="stat-label">Categoría</p><p class="text-base font-medium mt-0.5">${escapeHtml(row.categoria || "—")}</p></div>
+            <div><p class="stat-label">Creado</p><p class="text-base font-medium mt-0.5">${formatDate(creado)}</p></div>
           </div>
         </div>
 
         ${renderRentabilidadDetalle(row, rentabilidad)}
-
-        ${renderImagenesDetalle(row)}
 
         ${variantes && variantes.length ? `
         <div class="panel-card mb-5">
@@ -1766,6 +1756,10 @@ window.LC = window.LC || {};
           <h3 class="panel-title mb-2">Mercado Libre</h3>
           <div id="ml-mini-decision"><p class="text-sm text-slate-400">Consultando…</p></div>
         </div>
+
+        </div>
+        <div>
+        ${renderImagenesDetalle(row)}
 
         <div id="detail-historial" class="panel-card">
           <h3 class="panel-title mb-3">Historial</h3>
@@ -1781,6 +1775,8 @@ window.LC = window.LC || {};
               .join("")}
           </div>
           <p class="text-xs text-slate-400 dark:text-slate-500 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">${historial.length ? "Historial de ejemplo — se reemplazará por el historial real del producto." : "Todavía no hay historial de cambios registrado para este producto."}</p>
+        </div>
+        </div>
         </div>
       </div>
     `;
@@ -1941,23 +1937,21 @@ window.LC = window.LC || {};
       <div class="page-wrap app-fade">
         ${renderConexionMercadoLibre(ml)}
 
-        <div class="panel-card mb-6">
-          <div class="flex items-center gap-2">
-            ${esReal
-              ? `<p class="text-sm text-slate-500 dark:text-slate-400">Ventas reales importadas de Mercado Libre. No suman los pedidos cancelados ni los que tuvieron devolución de dinero. Mercado Libre no informa acá si el pedido fue enviado o entregado.</p>`
-              : `<span class="demo-pill">Datos de demostración</span><p class="text-sm text-slate-500 dark:text-slate-400">Ventas, pedidos e ingresos de acá abajo son de ejemplo, para poder evaluar la interfaz.</p>`}
-          </div>
-        </div>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-3 flex flex-wrap items-center gap-2">
+          ${esReal
+            ? "Ventas reales importadas de Mercado Libre. No suman los pedidos cancelados ni los que tuvieron devolución de dinero. Mercado Libre no informa acá si el pedido fue enviado o entregado."
+            : `<span class="demo-pill">Datos de demostración</span> Ventas, pedidos e ingresos de acá abajo son de ejemplo, para poder evaluar la interfaz.`}
+        </p>
 
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-${esReal ? "5" : "4"} mb-6">
           <div class="stat-card"><p class="stat-label">Ventas del mes</p><p class="stat-value stat-value--sm">${formatCLP(resumen.ventasMes)}</p></div>
           <div class="stat-card"><p class="stat-label">Pedidos del mes</p><p class="stat-value stat-value--sm">${resumen.pedidosMes}</p></div>
           <div class="stat-card"><p class="stat-label">Productos vendidos</p><p class="stat-value stat-value--sm">${resumen.productosVendidosMes}</p></div>
           <div class="stat-card"><p class="stat-label">Ticket promedio</p><p class="stat-value stat-value--sm">${formatCLP(resumen.ticketPromedioMes)}</p></div>
-          <div class="stat-card"><p class="stat-label">Pedidos pendientes</p><p class="stat-value stat-value--sm stat-value--warning">${resumen.pedidosPendientes ?? "—"}</p></div>
-          <div class="stat-card"><p class="stat-label">Pedidos enviados</p><p class="stat-value stat-value--sm">${resumen.pedidosEnviados ?? "—"}</p></div>
-          <div class="stat-card"><p class="stat-label">Pedidos entregados</p><p class="stat-value stat-value--sm stat-value--success">${resumen.pedidosEntregados ?? "—"}</p></div>
-          <div class="stat-card"><p class="stat-label">Pedidos cancelados</p><p class="stat-value stat-value--sm stat-value--danger">${resumen.pedidosCancelados}</p></div>
+          ${resumen.pedidosPendientes != null ? `<div class="stat-card"><p class="stat-label">Pedidos pendientes</p><p class="stat-value stat-value--sm ${resumen.pedidosPendientes > 0 ? "stat-value--warning" : ""}">${resumen.pedidosPendientes}</p></div>` : ""}
+          ${resumen.pedidosEnviados != null ? `<div class="stat-card"><p class="stat-label">Pedidos enviados</p><p class="stat-value stat-value--sm">${resumen.pedidosEnviados}</p></div>` : ""}
+          ${resumen.pedidosEntregados != null ? `<div class="stat-card"><p class="stat-label">Pedidos entregados</p><p class="stat-value stat-value--sm">${resumen.pedidosEntregados}</p></div>` : ""}
+          <div class="stat-card"><p class="stat-label">Pedidos cancelados</p><p class="stat-value stat-value--sm ${resumen.pedidosCancelados > 0 ? "stat-value--danger" : ""}">${resumen.pedidosCancelados}</p></div>
         </div>
 
         <div class="panel-card chart-card mb-6">
@@ -2184,7 +2178,7 @@ window.LC = window.LC || {};
       return;
     }
     const maxCantidad = top[0].cantidad;
-    slot.innerHTML = top.map((p, i) => rankRow(i + 1, p, maxCantidad)).join("");
+    slot.innerHTML = top.map((p, i) => rankRow(i + 1, p)).join("");
   }
 
   // Devoluciones reales de Mercado Libre (14 de septiembre de 2026) — se
@@ -2296,11 +2290,11 @@ window.LC = window.LC || {};
               ? `<span class="inline-flex items-center gap-1.5"><span class="dot dot--green"></span>${escapeHtml(v.factura.archivos.join(", "))}</span>`
               : `<span class="inline-flex items-center gap-1.5"><span class="dot dot--gray"></span>Sin factura</span>`;
             const accion = v.factura
-              ? `<button class="btn-secondary !py-1.5 !text-xs" data-quitar-factura="${id}">Quitar</button>`
+              ? `<button class="btn-secondary btn-sm" data-quitar-factura="${id}">Quitar</button>`
               : `<div class="flex flex-wrap items-center gap-2">
                   <label class="text-xs">PDF <input type="file" accept="application/pdf,.pdf" data-factura-pdf="${id}" class="text-xs" /></label>
                   <label class="text-xs">XML (opcional) <input type="file" accept=".xml,application/xml,text/xml" data-factura-xml="${id}" class="text-xs" /></label>
-                  <button class="btn-secondary !py-1.5 !text-xs" data-subir-factura="${id}">Subir factura</button>
+                  <button class="btn-secondary btn-sm" data-subir-factura="${id}">Subir factura</button>
                 </div>`;
             return `
               <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0 align-top">
@@ -2372,8 +2366,8 @@ window.LC = window.LC || {};
       emptyEl.innerHTML = sinFiltros
         ? `
         <div class="empty-state-icon">${icon("box")}</div>
-        <p class="empty-state-title">Todavía no hay pedidos registrados</p>
-        <p class="empty-state-desc">Van a aparecer acá cuando Nexo sincronice ventas reales de Mercado Libre.</p>
+        <p class="empty-state-title">No hay pedidos todavía.</p>
+        <p class="empty-state-desc">Aparecen acá al importar las ventas de Mercado Libre.</p>
       `
         : `
         <div class="empty-state-icon">${icon("search")}</div>
@@ -2419,7 +2413,7 @@ window.LC = window.LC || {};
     margen_bajo: "Margen bajo",
     no_rentable: "No conviene todavía",
     sin_stock: "Sin stock reservado",
-    sin_datos: "Falta información",
+    sin_datos: "Faltan datos",
     no_seleccionado: "Fuera del límite",
   };
 
@@ -2452,7 +2446,15 @@ window.LC = window.LC || {};
     if (p.envioMlFuente === "mercadolibre") {
       return `<td class="px-3 py-2.5 text-right text-xs">
         <span class="inline-flex items-center gap-1.5 font-medium"><span class="dot dot--green"></span>${formatCLP(p.costoEnvioMl)}</span>
-        <p class="text-slate-400 mt-0.5">Obtenido de Mercado Libre</p>
+        <p class="text-slate-400 mt-0.5">De tu publicación</p>
+      </td>`;
+    }
+    // 16 de septiembre de 2026 — estimado por Mercado Libre para la categoría
+    // y el precio (medidas típicas de la categoría), antes de publicar.
+    if (p.envioMlFuente === "estimado_ml") {
+      return `<td class="px-3 py-2.5 text-right text-xs" title="Estimado con las medidas típicas de la categoría en Mercado Libre. Al publicar se reemplaza por el costo real de tu publicación.">
+        <span class="inline-flex items-center gap-1.5 font-medium"><span class="dot dot--blue"></span>${formatCLP(p.costoEnvioMl)}</span>
+        <p class="text-slate-400 mt-0.5">Estimado</p>
       </td>`;
     }
     return `<td class="px-3 py-2.5 text-right text-xs" title="${escapeHtml(p.envioMlMotivo || "")}">
@@ -2478,7 +2480,7 @@ window.LC = window.LC || {};
     const visual = d.decision === "revisar" && d.faltantes && d.faltantes.length ? "datos_insuficientes" : d.decision;
     return `<td class="px-3 py-2.5">
       <span class="reco-badge reco-${visual} !text-xs !py-1">${DECISION_COLUMNA_LABEL[visual] || visual}</span>
-      ${d.decision !== "conviene" && d.razon ? `<p class="text-xs text-slate-400 mt-1 max-w-[220px]">${escapeHtml(d.razon)}</p>` : ""}
+      ${d.decision !== "conviene" && d.razon && p.clasificacion !== "sin_datos" ? `<p class="text-xs text-slate-400 mt-1 max-w-[220px]">${escapeHtml(d.razon)}</p>` : ""}
     </td>`;
   }
 
@@ -2490,30 +2492,45 @@ window.LC = window.LC || {};
   // la acción correcta.
   function accionSinDatos(p) {
     const razon = p.razon || "";
+    // 16 de septiembre de 2026 — sin el costo de envío de Mercado Libre no se
+    // decide nada (ver domain/catalog_selection.py): la acción es actualizar
+    // comisiones y envíos, no configurar el canal a mano.
+    if (/costo de envío/i.test(razon)) {
+      return `<button data-actualizar-envios class="btn-secondary btn-sm">Actualizar envíos</button>`;
+    }
     if (/mercado libre/i.test(razon)) {
-      return `<button data-ir-configuracion class="btn-secondary !py-1.5 !text-xs">Configurar Mercado Libre</button>`;
+      return `<button data-ir-configuracion class="btn-secondary btn-sm">Configurar Mercado Libre</button>`;
     }
     if (/costo de compra/i.test(razon)) {
-      return `<button data-agregar-costo="${p.id}" class="btn-secondary !py-1.5 !text-xs">Agregar costo</button>`;
+      return `<button data-agregar-costo="${p.id}" class="btn-secondary btn-sm">Agregar costo</button>`;
     }
     // Falta precio de venta u otra causa sin acción directa desde acá —
     // se manda al detalle del producto en vez de un botón que no resuelve
     // nada.
-    return `<button data-open="${p.id}" class="btn-secondary !py-1.5 !text-xs">Ver producto</button>`;
+    return `<button data-open="${p.id}" class="btn-secondary btn-sm">Ver producto</button>`;
+  }
+
+  // En la tabla la razón va cortada a su primera frase (la completa queda en
+  // el tooltip): con nueve columnas, el texto entero hacía filas de 200px de
+  // alto — 16 de septiembre de 2026, con la regla estricta del envío casi
+  // todas las filas de un catálogo recién importado traen razón.
+  function razonCorta(razon) {
+    const fin = (razon || "").indexOf(". ");
+    return fin > 0 ? razon.slice(0, fin + 1) : razon || "";
   }
 
   function filaOportunidad(p, decisionMap) {
-    const accion = p.clasificacion === "sin_datos" ? accionSinDatos(p) : `<button data-open="${p.id}" class="btn-secondary !py-1.5 !text-xs">Ver producto</button>`;
+    const accion = p.clasificacion === "sin_datos" ? accionSinDatos(p) : `<button data-open="${p.id}" class="btn-secondary btn-sm">Ver producto</button>`;
     return `
       <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0">
-        <td class="px-3 py-2.5">
+        <td class="px-3 py-2.5 min-w-[200px]">
           <p class="font-medium text-slate-800 dark:text-slate-100">${escapeHtml(p.nombre)}</p>
           <p class="text-xs text-slate-400 font-mono">${escapeHtml(p.sku || "—")}</p>
-          ${p.clasificacion === "sin_datos" && p.razon ? `<p class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">${escapeHtml(p.razon)}</p>` : ""}
+          ${p.clasificacion === "sin_datos" && p.razon ? `<p class="text-xs text-amber-600 dark:text-amber-400 mt-0.5" title="${escapeHtml(p.razon)}">${escapeHtml(razonCorta(p.razon))}</p>` : ""}
         </td>
         <td class="px-3 py-2.5 text-right">${p.precio != null ? formatCLP(p.precio) : "—"}</td>
         <td class="px-3 py-2.5 text-right">${p.costo != null ? formatCLP(p.costo) : "—"}</td>
-        <td class="px-3 py-2.5 text-right font-medium ${p.margenMercadoLibreClp != null && p.margenMercadoLibreClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${p.margenMercadoLibreClp != null ? formatCLP(p.margenMercadoLibreClp) : "—"}${p.rentabilidadMlProvisional ? `<p class="text-xs font-normal text-slate-400">Provisional</p>` : ""}${p.margenTiendaClp != null ? `<p class="text-xs font-normal text-slate-500 dark:text-slate-400 whitespace-nowrap">Venta − compra: ${formatCLP(p.margenTiendaClp)}${p.margenTiendaPct != null ? ` (${p.margenTiendaPct.toFixed(1)}%)` : ""}</p>` : ""}</td>
+        <td class="px-3 py-2.5 text-right font-medium ${p.margenMercadoLibreClp != null && p.margenMercadoLibreClp < 0 ? "text-red-600 dark:text-red-400" : ""}">${p.margenMercadoLibreClp != null ? formatCLP(p.margenMercadoLibreClp) : "—"}${p.envioMlResuelto === false ? `<p class="text-xs font-normal text-slate-400">Falta el envío</p>` : ""}${p.margenTiendaClp != null ? `<p class="text-xs font-normal text-slate-500 dark:text-slate-400 whitespace-nowrap">Venta − compra: ${formatCLP(p.margenTiendaClp)}${p.margenTiendaPct != null ? ` (${p.margenTiendaPct.toFixed(1)}%)` : ""}</p>` : ""}</td>
         <td class="px-3 py-2.5 text-right">${p.margenMercadoLibrePct != null ? `${p.margenMercadoLibrePct.toFixed(1)}%` : "—"}</td>
         <td class="px-3 py-2.5 text-right text-xs text-slate-500 dark:text-slate-400">${escapeHtml(comisionMlTexto(p.comisionMlReal))}</td>
         ${celdaEnvioMl(p)}
@@ -2601,7 +2618,7 @@ window.LC = window.LC || {};
     const porPublicarVista = porPublicar.filter(coincide);
     main.innerHTML = `
       <div class="page-wrap app-fade">
-        ${esReal ? "" : `<div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 mb-6 text-sm text-amber-800 dark:text-amber-200">Estás viendo datos de demostración — sube tu catálogo en "Importar catálogo" para ver tus oportunidades reales.</div>`}
+        ${esReal ? "" : `<div class="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-3 py-2 mb-4 text-sm text-amber-800 dark:text-amber-200">Estás viendo datos de demostración — sube tu catálogo en "Importar catálogo" para ver tus oportunidades reales.</div>`}
 
         ${previewMl ? `
         <div class="panel-card mb-6">
@@ -2632,10 +2649,10 @@ window.LC = window.LC || {};
         ${
           esReal
             ? `<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-                <p class="text-sm text-slate-500 dark:text-slate-400 max-w-xl">La comisión real de Mercado Libre (según la categoría y el precio de cada producto) se consulta sola al importar el catálogo y al conectar Mercado Libre. Si recién agregaste productos, puedes forzarla ahora.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 max-w-xl">La comisión real y el costo de envío de Mercado Libre (según la categoría y el precio de cada producto) se consultan solos al importar el catálogo y al conectar Mercado Libre. Si recién agregaste productos, puedes forzarlo ahora.</p>
                 ${
                   mlConectado
-                    ? `<button id="recalcular-comisiones-btn" class="btn-secondary shrink-0">Actualizar comisiones reales de Mercado Libre</button>`
+                    ? `<button id="recalcular-comisiones-btn" class="btn-secondary shrink-0">Actualizar comisiones y envíos de Mercado Libre</button>`
                     : `<span class="text-xs text-slate-400 shrink-0">Conecta Mercado Libre en Integraciones para ver la comisión real.</span>`
                 }
               </div>`
@@ -2687,7 +2704,7 @@ window.LC = window.LC || {};
               }).join("") + (q && !publicadosVista.length && !porPublicarVista.length
                 ? `<div class="panel-card"><p class="text-sm text-slate-500 dark:text-slate-400">Ningún producto coincide con "${escapeHtml(opVista.busqueda.trim())}".</p></div>`
                 : "")
-            : `<div class="panel-card"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("bulb")}</div><p class="empty-state-title">Todavía no hay productos para revisar</p><p class="empty-state-desc">Sube tu catálogo para que calculemos qué te conviene vender.</p></div></div>`
+            : `<div class="panel-card"><div class="empty-state flex flex-col items-center text-center"><div class="empty-state-icon">${icon("bulb")}</div><p class="empty-state-title">No hay productos para analizar.</p><p class="empty-state-desc">Importa tu catálogo para ver qué conviene publicar en Mercado Libre.</p></div></div>`
         }
       </div>
     `;
@@ -2703,6 +2720,16 @@ window.LC = window.LC || {};
     });
     main.querySelectorAll("[data-ir-configuracion]").forEach((btn) => {
       btn.addEventListener("click", () => LC.router.navigate("/configuracion"));
+    });
+    // Falta el costo de envío: la misma acción que el botón de arriba (una
+    // sola consulta a Mercado Libre trae comisiones y envíos), sin duplicar
+    // la lógica — si Mercado Libre no está conectado, ese botón no existe.
+    main.querySelectorAll("[data-actualizar-envios]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const principal = document.getElementById("recalcular-comisiones-btn");
+        if (principal) principal.click();
+        else toast("info", "Conecta Mercado Libre en Integraciones para consultar el costo de envío.");
+      });
     });
 
     const busqueda = document.getElementById("op-busqueda");
@@ -2779,19 +2806,19 @@ window.LC = window.LC || {};
     if (recalcularBtn) {
       recalcularBtn.addEventListener("click", async () => {
         recalcularBtn.disabled = true;
-        recalcularBtn.textContent = "Consultando comisiones reales…";
+        recalcularBtn.textContent = "Consultando comisiones y envíos…";
         const res = await LC.backendApi.recalcularComisionesMercadoLibre();
         if (!res.ok) {
           toast("error", res.error.mensaje);
           recalcularBtn.disabled = false;
-          recalcularBtn.textContent = "Actualizar comisiones reales de Mercado Libre";
+          recalcularBtn.textContent = "Actualizar comisiones y envíos de Mercado Libre";
           return;
         }
         const { combinacionesComisionActualizadas, productosSinCategoriaDetectada } = res.data;
         if (productosSinCategoriaDetectada.length) {
           toast("info", `Comisiones actualizadas. ${productosSinCategoriaDetectada.length} producto(s) sin categoría detectada por Mercado Libre — revisa su nombre.`);
         } else {
-          toast("success", combinacionesComisionActualizadas > 0 ? "Comisiones reales actualizadas." : "Las comisiones ya estaban actualizadas.");
+          toast("success", combinacionesComisionActualizadas > 0 ? "Comisiones y envíos actualizados." : "Las comisiones y los envíos ya estaban actualizados.");
         }
         rerenderActual();
       });
@@ -2804,7 +2831,7 @@ window.LC = window.LC || {};
     const visibles = opVista.limites[grupoId] || OP_FILAS_POR_GRUPO;
     if (total <= visibles) return "";
     const restantes = total - visibles;
-    return `<button data-mostrar-mas="${grupoId}" class="btn-secondary !text-xs !py-1.5 mt-3">Mostrar ${Math.min(100, restantes)} más (quedan ${restantes})</button>`;
+    return `<button data-mostrar-mas="${grupoId}" class="btn-secondary btn-sm mt-3">Mostrar ${Math.min(100, restantes)} más (quedan ${restantes})</button>`;
   }
 
   // ------------------------------------------------------------------
@@ -2861,16 +2888,18 @@ window.LC = window.LC || {};
 
   async function renderAutomatizaciones(main) {
     main.innerHTML = `
-      <div class="page-wrap app-fade max-w-3xl">
-        <div class="panel-card text-center py-12 mb-5">
-          <div class="empty-state-icon">${icon("sync")}</div>
-          <p class="empty-state-title">Todavía no tienes automatizaciones activas</p>
-          <p class="empty-state-desc mx-auto">Cuando actives una, vas a poder ver acá su estado, cuándo corrió por última vez y cuándo vuelve a correr.</p>
-        </div>
+      <div class="page-wrap app-fade">
         <div class="panel-card">
-          <h3 class="panel-title mb-3">Lo que vas a poder automatizar</h3>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            ${TIPOS_AUTOMATIZACION.map((t) => `<div class="flex items-center gap-2.5 text-sm text-slate-600 dark:text-slate-300"><span class="dot dot--gray"></span>${escapeHtml(t)}</div>`).join("")}
+          <div class="empty-state flex flex-col items-center text-center">
+            <div class="empty-state-icon">${icon("sync")}</div>
+            <p class="empty-state-title">No hay automatizaciones activas</p>
+            <p class="empty-state-desc">Cuando actives una, acá vas a ver su estado, cuándo corrió por última vez y cuándo vuelve a correr.</p>
+          </div>
+          <div class="border-t border-slate-100 dark:border-slate-800 pt-4">
+            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Automatizaciones previstas</p>
+            <ul class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-slate-600 dark:text-slate-300">
+              ${TIPOS_AUTOMATIZACION.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}
+            </ul>
           </div>
         </div>
       </div>
@@ -2906,16 +2935,16 @@ window.LC = window.LC || {};
           </div>
           <p class="text-xs text-slate-400 mt-0.5">${p.limiteProductos ? `Hasta ${p.limiteProductos.toLocaleString("es-CL")} productos` : "Sin límite fijo"}</p>
         </div>
-        <p class="text-2xl font-bold">${sinPrecio ? "Precio a coordinar" : formatCLP(precio)}${sinPrecio ? "" : `<span class="text-sm font-normal text-slate-400"> / ${ciclo === "mensual" ? "mes" : "año"}</span>`}</p>
-        ${ciclo === "anual" && !sinPrecio ? `<p class="text-xs text-emerald-600 dark:text-emerald-400">${p.descuentoAnualPct}% de descuento pagando el año</p>` : ""}
-        <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-1.5 flex-1">
-          ${p.features.map((f) => `<li class="flex items-start gap-1.5"><span class="text-emerald-500">✓</span>${escapeHtml(f)}</li>`).join("")}
+        <p class="text-xl font-semibold tabular-nums">${sinPrecio ? "Precio a coordinar" : formatCLP(precio)}${sinPrecio ? "" : `<span class="text-sm font-normal text-slate-400"> / ${ciclo === "mensual" ? "mes" : "año"}</span>`}</p>
+        ${ciclo === "anual" && !sinPrecio ? `<p class="text-xs text-slate-500 dark:text-slate-400">${p.descuentoAnualPct}% de descuento pagando el año</p>` : ""}
+        <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-1 flex-1">
+          ${p.features.map((f) => `<li class="flex items-start gap-1.5"><span class="text-slate-400">✓</span>${escapeHtml(f)}</li>`).join("")}
         </ul>
         ${esActual
           ? '<span class="btn-disabled justify-center">Plan actual</span>'
           : sinPrecio
             ? '<span class="btn-disabled justify-center">Escríbenos para cotizar</span>'
-            : `<button data-plan="${escapeHtml(p.codigo)}" data-ciclo="${ciclo}" class="btn-primary justify-center pagar-plan-btn">Elegir y pagar</button>`}
+            : `<button data-plan="${escapeHtml(p.codigo)}" data-ciclo="${ciclo}" class="btn-secondary self-start pagar-plan-btn">Elegir y pagar</button>`}
       </div>
     `;
   }
@@ -2948,7 +2977,7 @@ window.LC = window.LC || {};
           <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
             <div>
               <p class="stat-label">Plan actual</p>
-              <p class="text-2xl font-bold mt-1">${escapeHtml(sus.plan.nombre)}</p>
+              <p class="text-xl font-semibold mt-0.5">${escapeHtml(sus.plan.nombre)}</p>
               <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 ${escapeHtml(sus.plan.precio)}${sus.real ? "" : " / mes"}
                 ${sus.real && sus.estado ? ` · ${escapeHtml(ESTADO_SUSCRIPCION_LABEL[sus.estado] || sus.estado)}` : ""}
@@ -2984,8 +3013,8 @@ window.LC = window.LC || {};
             <h3 class="panel-title">Cambiar de plan</h3>
             ${planesPago && planesPago.length ? `
             <div class="chart-tabs" id="ciclo-facturacion-tabs">
-              <button data-ciclo="mensual" class="chart-tab ${cicloElegido === "mensual" ? "is-active" : ""}">Mensual</button>
-              <button data-ciclo="anual" class="chart-tab ${cicloElegido === "anual" ? "is-active" : ""}">Anual (${planesPago[0] ? planesPago[0].descuentoAnualPct : 15}% off)</button>
+              <button data-ciclo="mensual" class="chart-tab ${cicloElegido === "mensual" ? "chart-tab-active" : ""}">Mensual</button>
+              <button data-ciclo="anual" class="chart-tab ${cicloElegido === "anual" ? "chart-tab-active" : ""}">Anual (${planesPago[0] ? planesPago[0].descuentoAnualPct : 15}% off)</button>
             </div>` : ""}
           </div>
           <p class="panel-subtitle mb-4">El pago se hace en el checkout real de Mercado Pago — Nexo nunca ve el número de tu tarjeta.</p>
@@ -3010,10 +3039,10 @@ window.LC = window.LC || {};
                   </div>
                   <p class="text-xs text-slate-400 mt-0.5">${p.limite ? `Hasta ${p.limite.toLocaleString("es-CL")} productos` : "Sin límite fijo"}</p>
                 </div>
-                <p class="text-2xl font-bold">${escapeHtml(p.precio)}<span class="text-sm font-normal text-slate-400"> ${p.id === "enterprise" ? "" : "/ mes"}</span></p>
+                <p class="text-xl font-semibold">${escapeHtml(p.precio)}<span class="text-sm font-normal text-slate-400"> ${p.id === "enterprise" ? "" : "/ mes"}</span></p>
                 <p class="text-xs text-slate-400">${p.id === "enterprise" ? "Precio a coordinar" : "Aún no definido"}</p>
-                <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-1.5 flex-1">
-                  ${p.features.map((f) => `<li class="flex items-start gap-1.5"><span class="text-emerald-500">✓</span>${escapeHtml(f)}</li>`).join("")}
+                <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-1 flex-1">
+                  ${p.features.map((f) => `<li class="flex items-start gap-1.5"><span class="text-slate-400">✓</span>${escapeHtml(f)}</li>`).join("")}
                 </ul>
                 ${isCurrent ? '<span class="btn-disabled justify-center">Plan actual</span>' : `<button data-plan="${p.id}" class="btn-primary justify-center choose-plan-btn">Elegir plan</button>`}
               </div>
@@ -3132,7 +3161,7 @@ window.LC = window.LC || {};
     }
 
     main.innerHTML = `
-      <div class="page-wrap app-fade max-w-3xl space-y-5">
+      <div class="page-wrap app-fade xl:columns-2 gap-5 cols-panels">
 
         <div class="panel-card">
           <h3 class="panel-title mb-1">General</h3>

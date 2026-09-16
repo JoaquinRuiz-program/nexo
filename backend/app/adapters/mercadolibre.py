@@ -190,11 +190,17 @@ class MercadoLibreAdapter:
         offset: int = 0,
         limit: int = 50,
         order_date_from: Optional[str] = None,
+        sort: Optional[str] = None,
     ) -> dict[str, Any]:
         """GET /orders/search — pedidos reales del vendedor, paginado.
         `order_date_from` (ISO 8601) permite pedir solo pedidos nuevos desde
-        la última importación en vez de traer todo el historial cada vez."""
+        la última importación en vez de traer todo el historial cada vez.
+        `sort` ("date_desc" = los más nuevos primero) lo usa la importación
+        para que, con un historial largo, cada corrida traiga siempre lo
+        último — verificado en vivo contra MLC el 16 de septiembre de 2026."""
         params: dict[str, Any] = {"seller": seller_id, "offset": offset, "limit": limit}
+        if sort:
+            params["sort"] = sort
         if order_date_from:
             params["order.date_created.from"] = order_date_from
         query = urlencode(params)
@@ -370,6 +376,39 @@ class MercadoLibreAdapter:
         de 2026, doc oficial "Management of shipping fees"). Con `item_id` no
         hacen falta dimensiones. La interpretación vive en domain/ml_shipping.py."""
         query = urlencode({"item_id": item_id, "verbose": "true"})
+        return await self._get_with_retry(f"/users/{user_id}/shipping_options/free?{query}", access_token)
+
+    async def get_category_shipping_preferences(self, access_token: str, category_id: str) -> dict[str, Any]:
+        """GET /categories/{id}/shipping_preferences — medidas por defecto de
+        la categoría (`dimensions`: height/width/length en cm y weight en g) y
+        los modos de envío habilitados (`logistics`). Verificado en vivo contra
+        MLC el 16 de septiembre de 2026. Sirve para estimar el envío de un
+        producto que TODAVÍA no está publicado, sin pedirle al dueño que cargue
+        peso ni medidas."""
+        return await self._get_with_retry(f"/categories/{category_id}/shipping_preferences", access_token)
+
+    async def get_free_shipping_cost(
+        self, access_token: str, user_id: str, *, dimensions: str, item_price: float, listing_type_id: str = "gold_special"
+    ) -> dict[str, Any]:
+        """GET /users/{user_id}/shipping_options/free?dimensions=... — mismo
+        endpoint que get_seller_shipping_cost, pero con medidas + precio en vez
+        de un item_id, para estimar ANTES de publicar (verificado en vivo el 16
+        de septiembre de 2026 contra una cuenta MLC).
+
+        `dimensions` = "alto x ancho x largo,peso" (cm y gramos, ej.
+        "5x15x15,300"). Mandar también listing_type_id/mode/condition/
+        logistic_type es lo que hace que Mercado Libre aplique el descuento
+        real del vendedor: sin esos parámetros devuelve el costo de lista sin
+        descuento (comprobado: $6.100 vs. $3.050 en la misma consulta)."""
+        query = urlencode({
+            "dimensions": dimensions,
+            "item_price": item_price,
+            "listing_type_id": listing_type_id,
+            "mode": "me2",
+            "condition": "new",
+            "logistic_type": "drop_off",
+            "verbose": "true",
+        })
         return await self._get_with_retry(f"/users/{user_id}/shipping_options/free?{query}", access_token)
 
     async def update_item_available_quantity(self, access_token: str, item_id: str, cantidad: int) -> dict[str, Any]:

@@ -39,6 +39,8 @@ from app.api.routes.rentabilidad import (
     aplicar_envio_real_ml,
     build_profitability_rows,
     comisiones_ml_cacheadas,
+    estimacion_envio_cacheada,
+    estimaciones_envio_cacheadas,
     publicaciones_ml_por_producto,
     resolver_costos_ml,
 )
@@ -593,7 +595,9 @@ def _recomendar_con_envio_del_precio_recomendado(
     el actual. Antes un producto a $19.980 (sin envío) recomendaba $22.990
     "para ganar 30 %" sin descontar el envío que sí aplica a ese precio (el
     margen real quedaba en 14 %). Con envío real de Mercado Libre no cambia."""
-    if envio_ml["envioMlFuente"] == "mercadolibre" or envio_desde is None or not envio_manual:
+    # Con envío real o estimado de Mercado Libre ya está aplicado el que
+    # corresponde: la regla del envío manual "desde $X" no vuelve a intervenir.
+    if envio_ml["envioMlFuente"] in ("mercadolibre", "estimado_ml") or envio_desde is None or not envio_manual:
         return recomendar_precio(channel_costs=channel_costs, **kwargs)
     sin_envio = recomendar_precio(channel_costs=replace(channel_costs, shipping_cost=0.0), **kwargs)
     if sin_envio.estado == ESTADO_RECOMENDACION and sin_envio.precio_recomendado < envio_desde:
@@ -634,6 +638,7 @@ async def _resolver_recomendacion_precio(
     channel_costs_manual, _envio_ml = aplicar_envio_real_ml(
         channel_costs_manual, publicaciones_ml_por_producto(db, store.id, [producto.id]).get(producto.id),
         precio=precio_actual, envio_desde_clp=envio_desde,
+        estimacion=estimacion_envio_cacheada(db, store.id, producto.ml_category_id, precio_actual),
     )
     margen_objetivo_pct = float(config_canal.target_margin_pct) if config_canal and config_canal.target_margin_pct is not None else None
     # Misma elección automática de Clásica/Premium que Rentabilidad: sin
@@ -800,6 +805,7 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
     # contradecir el margen de la misma fila.
     variantes = db.query(ProductVariant).options(selectinload(ProductVariant.product)).filter_by(store_id=store.id).all()
     publicaciones_ml = publicaciones_ml_por_producto(db, store.id)
+    estimaciones_envio = estimaciones_envio_cacheadas(db, store.id)
     # Mismo gate de margen mínimo que /decision (paso "¿Conviene?"): sin esto
     # la columna "Decisión preliminar" podía decir "Conviene" en una fila que
     # Oportunidades y "¿Conviene?" marcan como que no conviene.
@@ -811,7 +817,8 @@ def decision_lote_mercadolibre(db: Session = Depends(get_db), store: Store = Dep
         precio_actual = float(variante.price) if variante.price is not None else None
         comisiones = comisiones_ml_cacheadas(db, store.id, variante.product, precio_actual)
         costos_con_envio, _envio_ml = aplicar_envio_real_ml(
-            channel_costs_manual, publicaciones_ml.get(variante.product_id), precio=precio_actual, envio_desde_clp=envio_desde
+            channel_costs_manual, publicaciones_ml.get(variante.product_id), precio=precio_actual, envio_desde_clp=envio_desde,
+            estimacion=estimaciones_envio.get((variante.product.ml_category_id, precio_actual)) if variante.product.ml_category_id and precio_actual is not None else None,
         )
         costo_actual = float(variante.cost_price) if variante.cost_price is not None else None
         pref_efectiva, _tipo = preferencia_efectiva(listing_type_pref, precio_actual, costo_actual, comisiones, costos_con_envio, margen_objetivo_pct)

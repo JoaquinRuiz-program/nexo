@@ -324,6 +324,53 @@ window.LC = window.LC || {};
     return request("/api/mercadolibre/comisiones/recalcular", { method: "POST", timeoutMs: UPLOAD_TIMEOUT_MS });
   }
 
+  // Análisis de rentabilidad EN VIVO (16 de septiembre de 2026) — mismo
+  // trabajo que recalcularComisionesMercadoLibre de arriba (comisión real +
+  // envío estimado/real de Mercado Libre), pero reportando avance producto a
+  // producto en vez de esperar todo el catálogo antes de responder. NDJSON
+  // (una línea = un evento), no encaja en `request()` (que espera un único
+  // JSON) — por eso un fetch propio. `onEvento(evento)` se llama por cada
+  // línea ya parseada, en orden; nunca se buffera todo antes de mostrar algo.
+  async function analizarRentabilidadStream(onEvento) {
+    const controller = new AbortController();
+    let res;
+    try {
+      res = await fetch(`${API_BASE_URL}/api/mercadolibre/analisis-rentabilidad/stream`, {
+        method: "POST", credentials: "include", signal: controller.signal,
+      });
+    } catch (_e) {
+      throw new Error("No pudimos conectar con el servidor para analizar la rentabilidad.");
+    }
+    if (!res.ok || !res.body) {
+      throw new Error(`El servidor respondió ${res.status} al analizar la rentabilidad.`);
+    }
+    const lector = res.body.getReader();
+    const decodificador = new TextDecoder();
+    let restante = "";
+    for (;;) {
+      const { value, done } = await lector.read();
+      if (done) break;
+      restante += decodificador.decode(value, { stream: true });
+      const lineas = restante.split("\n");
+      restante = lineas.pop(); // último trozo, puede estar incompleto
+      for (const linea of lineas) {
+        if (!linea.trim()) continue;
+        try {
+          onEvento(JSON.parse(linea));
+        } catch (_e) {
+          // Una línea corrupta no debe tirar abajo el resto del análisis.
+        }
+      }
+    }
+    if (restante.trim()) {
+      try {
+        onEvento(JSON.parse(restante));
+      } catch (_e) {
+        // idem — se ignora la última línea si quedó incompleta/corrupta.
+      }
+    }
+  }
+
   // Google Sheets como fuente de catálogo (5 de septiembre de 2026) — mismo
   // patrón que Mercado Libre arriba: /conectar devuelve una URL real a la
   // que hay que navegar de página completa, nunca un fetch.
@@ -650,6 +697,7 @@ window.LC = window.LC || {};
     subirFacturaMercadoLibre,
     quitarFacturaMercadoLibre,
     recalcularComisionesMercadoLibre,
+    analizarRentabilidadStream,
     fetchGoogleSheetsEstado,
     conectarGoogleSheets,
     desconectarGoogleSheets,

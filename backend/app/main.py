@@ -22,7 +22,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import DataError
+from sqlalchemy.exc import DataError, IntegrityError
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import (
@@ -159,6 +159,15 @@ async def valor_fuera_de_rango(request: Request, exc: Exception) -> JSONResponse
     # 15 de septiembre de 2026 (QA fase 2): un ID o un número gigante (ej.
     # /api/productos/9223372036854775808) llegaba a la base y respondía 500.
     return JSONResponse(status_code=400, content={"detail": "Algún valor está fuera del rango permitido."})
+
+
+@app.exception_handler(IntegrityError)
+async def choque_de_datos_simultaneos(request: Request, exc: IntegrityError) -> JSONResponse:  # noqa: ARG001
+    # 15 de septiembre de 2026 — dos operaciones realmente simultáneas (p. ej. dos
+    # importaciones del mismo archivo en Postgres) chocan con una restricción
+    # única de la base: nunca se duplica el dato, y la segunda recibe esto en vez
+    # de un 500. Una ruta que maneja su propio IntegrityError no llega acá.
+    return JSONResponse(status_code=409, content={"detail": "Otra operación modificó estos datos al mismo tiempo. Intenta de nuevo."})
 
 
 app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")

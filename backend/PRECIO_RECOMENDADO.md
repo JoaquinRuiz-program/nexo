@@ -40,7 +40,7 @@ Producto → Costo → Comisión ML → Competencia → Precio recomendado → R
 | Campo | Qué es |
 |---|---|
 | `precioMinimoRentable` | Precio de equilibrio (margen neto = 0%) — dato factual, no una sugerencia. |
-| `precioRecomendado` | Precio tal que el margen neto real alcance el `target_margin_pct` configurado, redondeado **hacia arriba** a un precio de vitrina terminado en 990 (`precio_vitrina`: $84.134 → $84.990; desde el 15 sept 2026). El margen estimado se calcula con ese precio redondeado. Con "envío desde $X" (envío manual), si se descuenta el envío se decide con el precio **recomendado**, no con el actual (QA integral, 15 sept 2026). |
+| `precioRecomendado` | Precio tal que el margen neto real alcance el `target_margin_pct` configurado, redondeado **hacia arriba** a un precio de vitrina terminado en 990 (`precio_vitrina`: $84.134 → $84.990; desde el 15 sept 2026). El margen estimado se calcula con ese precio redondeado. Con "envío desde $X", si se descuenta el envío se decide con el precio **recomendado**, no con el actual (QA integral, 15 sept 2026). Sin costo de envío de Mercado Libre no hay precio recomendado: `faltantes` trae "costo de envío de Mercado Libre" (16 sept 2026). |
 | `margenEstimadoClp` / `margenEstimadoPct` | El margen neto REAL a ese precio (mismo cálculo que Rentabilidad). |
 | `gananciaEstimada` | Alias de `margenEstimadoClp` — lo que pidió el dueño explícitamente. |
 | `precioMercadoGanador`, `posicionFrenteACompetencia` | De `domain/competencia.py` — `null` si no hay competencia disponible. |

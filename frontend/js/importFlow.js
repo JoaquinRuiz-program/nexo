@@ -33,11 +33,11 @@ window.LC = window.LC || {};
   const CAMPOS_CLAVE = ["nombre", "precio"];
 
   const PASOS = [
-    { fase: "subir", titulo: "Sube tu catálogo" },
-    { fase: "revision", titulo: "Analizamos tus productos" },
-    { fase: "oportunidades", titulo: "Oportunidades que encontramos" },
-    { fase: "publicaciones", titulo: "Revisa tus publicaciones" },
-    { fase: "listo", titulo: "Listas para publicar" },
+    { fase: "subir", titulo: "Archivo" },
+    { fase: "revision", titulo: "Columnas" },
+    { fase: "oportunidades", titulo: "Oportunidades" },
+    { fase: "publicaciones", titulo: "Borradores" },
+    { fase: "listo", titulo: "Listo" },
   ];
 
   function estadoInicial() {
@@ -108,7 +108,7 @@ window.LC = window.LC || {};
     }[state.fase];
 
     main.innerHTML = `
-      <div class="page-wrap app-fade max-w-5xl">
+      <div class="page-wrap app-fade">
         ${sourcePill()}
         ${stepper()}
         <div class="mt-6">${contenido()}</div>
@@ -152,15 +152,14 @@ window.LC = window.LC || {};
   function renderPasoSubir() {
     return `
       <div class="panel-card">
-        <h2 class="panel-title mb-1">Sube tu catálogo</h2>
-        <p class="panel-subtitle mb-5">Aceptamos Excel (.xlsx) o CSV. No importa cómo se llamen tus columnas — las reconocemos automáticamente.</p>
+        <h2 class="panel-title">Sube tu catálogo</h2>
+        <p class="panel-subtitle mb-4">Excel (.xlsx) o CSV. Las columnas se detectan automáticamente y puedes corregirlas en el paso siguiente.</p>
         <div id="dropzone" class="dropzone">
           <input type="file" id="file-input" accept=".xlsx,.xlsm,.csv" class="hidden" />
-          <div class="text-4xl mb-3">${icon("document")}</div>
-          <p class="font-medium text-slate-700 dark:text-slate-200">Arrastra tu archivo aquí, o haz clic para elegirlo</p>
-          <p class="text-sm text-slate-400 mt-1">.xlsx o .csv</p>
+          <div class="text-xl text-slate-400 mb-2 flex justify-center">${icon("upload")}</div>
+          <p class="text-sm font-medium text-slate-700 dark:text-slate-200">Arrastra el archivo aquí o haz clic para elegirlo</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">.xlsx o .csv</p>
         </div>
-        <p class="text-xs text-slate-400 dark:text-slate-500 mt-4">No necesitas modificar tu Excel para que funcione — nosotros nos encargamos de entender su estructura.</p>
       </div>
     `;
   }
@@ -219,10 +218,9 @@ window.LC = window.LC || {};
 
   function renderPasoAnalizando() {
     return `
-      <div class="panel-card text-center py-16">
-        <div class="text-4xl mb-4 animate-pulse">${icon("search")}</div>
-        <p class="font-medium text-slate-700 dark:text-slate-200">Analizando tus productos…</p>
-        <p class="text-sm text-slate-400 mt-1">Detectando columnas y revisando cada fila.</p>
+      <div class="panel-card text-center py-12">
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-200">Analizando el archivo…</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Detectando columnas y revisando cada fila.</p>
       </div>
     `;
   }
@@ -238,7 +236,7 @@ window.LC = window.LC || {};
 
     return `
       <div class="panel-card mb-5">
-        <h2 class="panel-title mb-1">Así entendimos tu archivo</h2>
+        <h2 class="panel-title">Columnas del archivo</h2>
         <p class="panel-subtitle mb-5">${escapeHtml(state.analisis.fileName || (state.file && state.file.name) || "")} — revisa que las columnas estén bien asignadas. Si algo no coincide, puedes corregirlo.</p>
 
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -365,23 +363,124 @@ window.LC = window.LC || {};
   async function cargarOportunidades(main) {
     state.fase = "analizando";
     renderFase(main);
-    document.querySelector(".page-wrap").innerHTML = `<div class="panel-card text-center py-16"><div class="text-4xl mb-4">${icon("dashboard")}</div><p class="font-medium">Calculando rentabilidad…</p></div>`;
 
     if (state.modoBackend === "demo") {
+      document.querySelector(".page-wrap").innerHTML = `<div class="panel-card text-center py-12"><p class="text-sm font-medium">Calculando rentabilidad…</p></div>`;
       state.seleccion = LC.demoImportResult.seleccion;
-    } else {
-      const resultado = await LC.backendApi.obtenerSeleccion(state.seleccionCriterios);
-      if (!resultado.ok) {
-        toast("error", `No pudimos calcular la rentabilidad: ${resultado.error.mensaje}`);
-        state.fase = "revision";
-        renderFase(main);
-        return;
-      }
-      state.seleccion = resultado.data;
+      state.seleccionadosIds = new Set();
+      state.fase = "oportunidades";
+      renderFase(main);
+      return;
     }
+
+    // 16 de septiembre de 2026 (pedido del dueño) — al importar, Nexo
+    // intenta solo obtener el costo de envío real de Mercado Libre de CADA
+    // producto antes de decidir si conviene (nunca le pide peso ni medidas
+    // al dueño). Esto puede tardar con un catálogo grande, así que se ve el
+    // avance producto a producto en vez de una espera muda.
+    document.querySelector(".page-wrap").innerHTML = htmlAnalisisEnVivo();
+    pintarAnalisisEnVivo({ fase: "consultando", hecho: 0 });
+    try {
+      await LC.backendApi.analizarRentabilidadStream((evento) => {
+        if (evento.tipo === "error") {
+          toast("error", evento.mensaje);
+        } else if (evento.tipo === "aviso") {
+          toast("warning", evento.mensaje);
+        } else if (evento.tipo === "consultando_ml") {
+          pintarAnalisisEnVivo({ fase: "consultando", hecho: evento.hecho });
+        } else if (evento.tipo === "producto") {
+          pintarAnalisisEnVivo({ fase: "producto", ...evento });
+        } else if (evento.tipo === "resumen") {
+          pintarAnalisisEnVivo({ fase: "resumen", ...evento });
+        }
+      });
+    } catch (err) {
+      toast("error", err.message || "No pudimos analizar la rentabilidad con Mercado Libre.");
+    }
+
+    const resultado = await LC.backendApi.obtenerSeleccion(state.seleccionCriterios);
+    if (!resultado.ok) {
+      toast("error", `No pudimos calcular la rentabilidad: ${resultado.error.mensaje}`);
+      state.fase = "revision";
+      renderFase(main);
+      return;
+    }
+    state.seleccion = resultado.data;
     state.seleccionadosIds = new Set();
     state.fase = "oportunidades";
     renderFase(main);
+  }
+
+  // ------------------------------------------------------------------
+  // Pantalla "Analizando productos…" (16 de septiembre de 2026) — progreso
+  // EN VIVO del análisis de rentabilidad (comisión real + envío real/
+  // estimado de Mercado Libre por producto). Actualiza nodos puntuales por
+  // id en vez de volver a pintar todo el panel en cada evento — con
+  // cientos de productos llegan muchos eventos seguidos.
+  // ------------------------------------------------------------------
+
+  function htmlAnalisisEnVivo() {
+    return `
+      <div class="panel-card text-center py-10">
+        <p id="analisis-titulo" class="text-sm font-medium text-slate-700 dark:text-slate-200">Consultando Mercado Libre…</p>
+        <p id="analisis-subtitulo" class="text-xs text-slate-500 dark:text-slate-400 mt-1">Comisión real y costo de envío de cada producto — sin pedirte peso ni medidas.</p>
+        <div id="analisis-barra-wrap" class="max-w-sm mx-auto mt-5 hidden">
+          <div class="progress-track"><div id="analisis-barra" class="progress-fill" style="width:0%"></div></div>
+          <p id="analisis-contador" class="text-xs text-slate-400 mt-2"></p>
+        </div>
+        <div id="analisis-detalle" class="mt-5 text-left max-w-xs mx-auto"></div>
+      </div>
+    `;
+  }
+
+  function marcaAnalisis(ok, etiqueta) {
+    return `<p class="flex items-center gap-2 text-xs ${ok ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}">
+      ${ok ? icon("checkCircle") : `<span class="dot dot--gray"></span>`} ${escapeHtml(etiqueta)}
+    </p>`;
+  }
+
+  function pintarAnalisisEnVivo(datos) {
+    const titulo = document.getElementById("analisis-titulo");
+    const subtitulo = document.getElementById("analisis-subtitulo");
+    const barraWrap = document.getElementById("analisis-barra-wrap");
+    const barra = document.getElementById("analisis-barra");
+    const contador = document.getElementById("analisis-contador");
+    const detalle = document.getElementById("analisis-detalle");
+    if (!titulo || !detalle) return; // la pantalla ya cambió
+
+    if (datos.fase === "consultando") {
+      titulo.textContent = "Consultando Mercado Libre…";
+      detalle.innerHTML = datos.hecho > 0 ? `<p class="text-xs text-slate-400 text-center">${datos.hecho} consulta${datos.hecho === 1 ? "" : "s"} completada${datos.hecho === 1 ? "" : "s"}</p>` : "";
+      return;
+    }
+
+    if (datos.fase === "producto") {
+      titulo.textContent = "Analizando productos…";
+      subtitulo.textContent = "Rentabilidad con el costo de envío real de Mercado Libre, producto a producto.";
+      barraWrap.classList.remove("hidden");
+      barra.style.width = `${Math.round((datos.indice / datos.total) * 100)}%`;
+      contador.textContent = `${datos.indice} / ${datos.total}`;
+      detalle.innerHTML = `
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate mb-2">${escapeHtml(datos.nombre)}</p>
+        ${marcaAnalisis(datos.comisionObtenida, "Comisión obtenida")}
+        ${marcaAnalisis(datos.envioObtenido, "Costo de envío obtenido")}
+        ${marcaAnalisis(true, "Rentabilidad calculada")}
+      `;
+      return;
+    }
+
+    if (datos.fase === "resumen") {
+      titulo.textContent = `${datos.total} producto${datos.total === 1 ? "" : "s"} analizado${datos.total === 1 ? "" : "s"}`;
+      subtitulo.textContent = "Con el costo de envío real de Mercado Libre ya incluido.";
+      barraWrap.classList.add("hidden");
+      detalle.innerHTML = `
+        <div class="grid grid-cols-3 gap-3 text-center">
+          <div><p class="text-lg font-semibold text-emerald-600 dark:text-emerald-400">${datos.conviene}</p><p class="text-xs text-slate-500 dark:text-slate-400">Conviene</p></div>
+          <div><p class="text-lg font-semibold text-red-600 dark:text-red-400">${datos.noConviene}</p><p class="text-xs text-slate-500 dark:text-slate-400">No conviene</p></div>
+          <div><p class="text-lg font-semibold text-slate-500 dark:text-slate-400">${datos.faltanDatos}</p><p class="text-xs text-slate-500 dark:text-slate-400">Faltan datos</p></div>
+        </div>
+      `;
+    }
   }
 
   const RECO_LABEL = {
@@ -434,8 +533,8 @@ window.LC = window.LC || {};
     return `
       ${avisoLimitePlan(state.confirmarResultado)}
       <div class="panel-card mb-5">
-        <h2 class="panel-title mb-1">Estas son las oportunidades que encontramos</h2>
-        <p class="panel-subtitle mb-5">Margen NETO de Mercado Libre — ya descontada la comisión real de cada producto. El sistema recomienda solo Clásica o Premium según el margen. El costo de envío solo se descuenta cuando Mercado Libre lo informa para una publicación real; mientras tanto el margen es provisional.</p>
+        <h2 class="panel-title">Oportunidades del catálogo importado</h2>
+        <p class="panel-subtitle mb-5">Margen NETO de Mercado Libre — ya descontada la comisión real y el costo de envío de cada producto (real de tu publicación, o estimado por Mercado Libre para su categoría y precio si todavía no está publicado). El sistema recomienda solo Clásica o Premium según el margen. Sin ese costo de envío, el producto queda en "Sin datos suficientes" — nunca se calcula con un envío de $0 supuesto.</p>
         <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div class="stat-card"><p class="stat-label">Total</p><p class="stat-value stat-value--sm">${resumen.total}</p></div>
           <div class="stat-card"><p class="stat-label">Recomendados</p><p class="stat-value stat-value--sm stat-value--success">${resumen.rentables}</p></div>
@@ -448,9 +547,9 @@ window.LC = window.LC || {};
       <div class="panel-card mb-5">
         <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div class="flex flex-wrap gap-2">
-            <button id="btn-seleccionar-rentables" class="btn-secondary !text-xs !py-1.5">Seleccionar recomendados</button>
-            <button id="btn-seleccionar-todo" class="btn-secondary !text-xs !py-1.5">Seleccionar toda la tienda</button>
-            <button id="btn-limpiar-seleccion" class="btn-secondary !text-xs !py-1.5">Limpiar selección</button>
+            <button id="btn-seleccionar-rentables" class="btn-secondary btn-sm">Seleccionar recomendados</button>
+            <button id="btn-seleccionar-todo" class="btn-secondary btn-sm">Seleccionar toda la tienda</button>
+            <button id="btn-limpiar-seleccion" class="btn-secondary btn-sm">Limpiar selección</button>
           </div>
           <div class="flex items-center gap-2 text-sm">
             <label class="text-slate-500 dark:text-slate-400">Ordenar por</label>
@@ -487,7 +586,7 @@ window.LC = window.LC || {};
                   </td>
                   <td class="px-3 py-2.5 text-right">${formatCLPReal(p.precio)}</td>
                   <td class="px-3 py-2.5 text-right">${formatCLPReal(p.costo)}</td>
-                  <td class="px-3 py-2.5 text-right font-medium ${margenClpDe(p) != null && margenClpDe(p) < 0 ? "text-red-600 dark:text-red-400" : ""}">${formatCLPReal(margenClpDe(p))}${p.rentabilidadMlProvisional ? `<p class="text-xs font-normal text-slate-400" title="${escapeHtml(p.envioMlMotivo || "")}">Provisional · envío no disponible</p>` : ""}${p.margenTiendaClp != null ? `<p class="text-xs font-normal text-slate-500 dark:text-slate-400 whitespace-nowrap">Venta − compra: ${formatCLPReal(p.margenTiendaClp)}${p.margenTiendaPct != null ? ` (${formatPct(p.margenTiendaPct)})` : ""}</p>` : ""}</td>
+                  <td class="px-3 py-2.5 text-right font-medium ${margenClpDe(p) != null && margenClpDe(p) < 0 ? "text-red-600 dark:text-red-400" : ""}">${formatCLPReal(margenClpDe(p))}${p.envioMlResuelto === false ? `<p class="text-xs font-normal text-slate-400" title="${escapeHtml(p.envioMlMotivo || "")}">Falta el envío de Mercado Libre</p>` : ""}${p.margenTiendaClp != null ? `<p class="text-xs font-normal text-slate-500 dark:text-slate-400 whitespace-nowrap">Venta − compra: ${formatCLPReal(p.margenTiendaClp)}${p.margenTiendaPct != null ? ` (${formatPct(p.margenTiendaPct)})` : ""}</p>` : ""}</td>
                   <td class="px-3 py-2.5 text-right">${formatPct(margenPctDe(p))}</td>
                   <td class="px-3 py-2.5">
                     ${p.tipoPublicacionRecomendadoLabel
@@ -576,7 +675,7 @@ window.LC = window.LC || {};
   async function prepararPublicaciones(main) {
     state.fase = "analizando";
     renderFase(main);
-    document.querySelector(".page-wrap").innerHTML = `<div class="panel-card text-center py-16"><div class="text-4xl mb-4">${icon("document")}</div><p class="font-medium">Preparando publicaciones…</p></div>`;
+    document.querySelector(".page-wrap").innerHTML = `<div class="panel-card text-center py-12"><p class="text-sm font-medium">Preparando publicaciones…</p></div>`;
 
     if (state.modoBackend === "demo") {
       state.preparacion = LC.demoImportResult.preparar;
@@ -613,7 +712,7 @@ window.LC = window.LC || {};
             <div class="flex items-start justify-between gap-4 flex-wrap mb-2">
               <div class="min-w-0">
                 <p class="text-xs text-slate-400 font-mono">${escapeHtml(b.sku || "—")}</p>
-                <h3 class="text-lg font-semibold truncate">${escapeHtml(b.tituloPropuesto)}</h3>
+                <h3 class="text-sm font-semibold truncate">${escapeHtml(b.tituloPropuesto)}</h3>
               </div>
               <span class="reco-badge reco-${b.clasificacion}">${estadoLabel(b.estado)}</span>
             </div>
@@ -671,11 +770,11 @@ window.LC = window.LC || {};
     const selResumen = state.seleccion ? state.seleccion.resumen : null;
     const totalProcesados = state.confirmarResultado ? state.confirmarResultado.creados + state.confirmarResultado.actualizados : null;
     return `
-      <div class="panel-card text-center py-10 mb-5">
-        <div class="text-5xl mb-4">${icon("checkCircle")}</div>
-        <h2 class="text-xl font-semibold mb-2">${resumen.listosParaPublicar + resumen.requierenRevision} publicaciones quedaron guardadas como borrador</h2>
-        <p class="text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-6">Todavía no se envió nada a Mercado Libre — vas a poder publicarlas de verdad en cuanto conectes tu cuenta.</p>
-        <div class="flex items-center justify-center gap-3">
+      <div class="panel-card text-center py-8 mb-5">
+        <div class="text-2xl text-emerald-600 dark:text-emerald-400 mb-2 flex justify-center">${icon("checkCircle")}</div>
+        <h2 class="text-base font-semibold mb-1">${resumen.listosParaPublicar + resumen.requierenRevision} publicaciones quedaron guardadas como borrador</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-5">Todavía no se envió nada a Mercado Libre — vas a poder publicarlas de verdad en cuanto conectes tu cuenta.</p>
+        <div class="flex items-center justify-center gap-2">
           <button id="btn-conectar-ml" class="btn-secondary">Conectar Mercado Libre</button>
           <button id="btn-importar-otro" class="btn-primary">Importar otro catálogo</button>
         </div>

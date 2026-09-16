@@ -117,7 +117,9 @@ window.LC = window.LC || {};
   // igual en claro/oscuro; el texto usa clases con tokens de tema.
   // ------------------------------------------------------------------
 
-  const PALETA = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#a855f7", "#94a3b8"];
+  // 15 de septiembre de 2026 — tonos más sobrios; siguen distinguiéndose
+  // entre sí en la dona de "Ventas por empresa".
+  const PALETA = ["#4f46e5", "#0e7490", "#65a30d", "#b45309", "#be123c", "#7c3aed", "#94a3b8"];
 
   function _escapeXml(s) {
     return String(s == null ? "" : s).replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
@@ -146,12 +148,13 @@ window.LC = window.LC || {};
     const every = n <= 8 ? 1 : n <= 16 ? 2 : Math.ceil(n / 8);
     const labels = points.map((p, i) => (i % every === 0 || i === n - 1)
       ? `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" class="chart-axis-label">${_escapeXml(fmtFecha(p.fecha))}</text>` : "").join("");
-    const dots = points.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.monto).toFixed(1)}" r="${n > 40 ? 0 : 2.5}" fill="#6366f1"><title>${_escapeXml(fmtFecha(p.fecha))}: ${_escapeXml(fmt(p.monto))}</title></circle>`).join("");
+    // Puntos invisibles pero con área para el tooltip nativo (<title>).
+    const dots = points.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.monto).toFixed(1)}" r="5" fill="transparent"><title>${_escapeXml(fmtFecha(p.fecha))}: ${_escapeXml(fmt(p.monto))}</title></circle>`).join("");
 
     return `<svg viewBox="0 0 ${W} ${H}" class="chart-svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Evolución en el tiempo">
-      <defs><linearGradient id="lc-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6366f1" stop-opacity="0.22"/><stop offset="1" stop-color="#6366f1" stop-opacity="0"/></linearGradient></defs>
-      <polygon points="${area}" fill="url(#lc-area)"/>
-      <polyline points="${linea}" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <line x1="${pad.l}" x2="${W - pad.r}" y1="${pad.t + plotH}" y2="${pad.t + plotH}" stroke="#e2e8f0" stroke-width="1"/>
+      <polygon points="${area}" fill="#4f46e5" fill-opacity="0.06"/>
+      <polyline points="${linea}" fill="none" stroke="#4f46e5" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
       ${dots}${labels}
       <text x="${pad.l}" y="12" class="chart-axis-label">${points.every((p) => p.monto === 0) ? "Sin movimientos en el período" : `máx ${_escapeXml(fmt(max))}`}</text>
       ${min < 0 ? `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" stroke="#94a3b8" stroke-dasharray="4 4" stroke-width="1"/>

@@ -95,8 +95,15 @@ def recomendar_precio(
     # mantiene el precio de venta del dueño. Nunca se inventa uno.
     if not costo:
         faltantes.append("costo de compra")
-    if not channel_costs.is_configured():
+    if not channel_costs.is_configured() or channel_costs.commission_pct is None:
+        # Sin comisión conocida no se recomienda un precio: el `or 0.0` de más
+        # abajo la daría por 0 % (ver domain/profitability.py::net_margin).
         faltantes.append("comisión/costos del canal")
+    if channel_costs.shipping_unknown:
+        # 16 de septiembre de 2026 — sin el costo de envío del canal no hay
+        # precio recomendado posible: el que saldría con envío $0 se quedaría
+        # corto justo por lo que falta. Se pide el dato, nunca se asume.
+        faltantes.append("costo de envío de Mercado Libre")
     if margen_objetivo_pct is None:
         faltantes.append("margen objetivo del canal")
     elif margen_objetivo_pct < 0:

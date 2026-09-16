@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/styles.css?v=7" />
+  <link rel="stylesheet" href="css/styles.css?v=9" />
 </head>
 <body class="min-h-screen w-full bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200">
 
@@ -45,15 +45,15 @@
   <!-- ============ AUTH SCREENS ============ -->
   <div id="auth-screens" class="hidden min-h-screen w-full flex items-center justify-center px-4 py-10">
     <div class="w-full max-w-md">
-      <div class="flex items-center justify-center gap-2 mb-8">
-        <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-semibold">NX</div>
-        <span class="text-lg font-semibold">Nexo</span>
+      <div class="flex items-center justify-center gap-2 mb-6">
+        <div class="w-7 h-7 rounded-md bg-indigo-600 flex items-center justify-center text-white text-xs font-semibold">NX</div>
+        <span class="text-base font-semibold">Nexo</span>
       </div>
 
       <!-- ---- LOGIN ---- -->
       <div id="screen-login" class="auth-card">
-        <h1 class="text-xl font-semibold mb-1">Iniciar sesión</h1>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Entra a tu panel de Nexo.</p>
+        <h1 class="text-lg font-semibold mb-1">Iniciar sesión</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-5">Entra a tu panel de Nexo.</p>
 
         <form id="login-form" class="space-y-4" novalidate>
           <div>
@@ -86,8 +86,8 @@
 
       <!-- ---- SIGNUP ---- -->
       <div id="screen-signup" class="auth-card hidden">
-        <h1 class="text-xl font-semibold mb-1">Crear cuenta</h1>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Prueba Nexo sin compromiso.</p>
+        <h1 class="text-lg font-semibold mb-1">Crear cuenta</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-5">Crea la cuenta de tu empresa en Nexo.</p>
 
         <form id="signup-form" class="space-y-4" novalidate>
           <div>
@@ -138,17 +138,17 @@
       <div id="sidebar-overlay" class="hidden fixed inset-0 bg-slate-900/40 z-30 md:hidden"></div>
 
       <!-- Sidebar -->
-      <aside id="sidebar" class="sidebar-panel fixed md:static z-40 -translate-x-full md:translate-x-0 w-72 shrink-0 h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-transform duration-200">
-        <div class="h-16 flex items-center gap-2 px-5 border-b border-slate-200 dark:border-slate-800 shrink-0">
-          <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-semibold text-sm">NX</div>
-          <div class="min-w-0">
+      <aside id="sidebar" class="sidebar-panel fixed md:static z-40 -translate-x-full md:translate-x-0 w-60 shrink-0 h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-transform duration-200">
+        <div class="sidebar-header h-14 flex items-center gap-2.5 px-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+          <div class="w-7 h-7 rounded-md bg-indigo-600 flex items-center justify-center text-white font-semibold text-xs shrink-0">NX</div>
+          <div class="sidebar-brand-text min-w-0">
             <p class="text-sm font-semibold leading-tight">Nexo</p>
             <p id="sidebar-empresa-activa" class="text-xs text-slate-400 dark:text-slate-500 leading-tight truncate">Empresa</p>
           </div>
           <button id="sidebar-close-btn" class="ml-auto md:hidden text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none" aria-label="Cerrar menú">✕</button>
         </div>
 
-        <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto" id="sidebar-nav">
+        <nav class="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto" id="sidebar-nav">
           <a href="#/admin" data-route="admin" id="nav-link-admin" class="nav-link hidden">
             <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5 4 3.5h12l1 5"/><path d="M3 8.5v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/><path d="M7.5 16.5v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4"/></svg></span> Panel Nexo
           </a>
@@ -180,18 +180,14 @@
             <span class="nav-icon"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h4.4M12.6 6H16"/><circle cx="10.5" cy="6" r="1.6" fill="currentColor" stroke="none"/><path d="M4 10.5h2M9 10.5H16"/><circle cx="6.5" cy="10.5" r="1.6" fill="currentColor" stroke="none"/><path d="M4 15h8.4M16 15h.01"/><circle cx="14" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></span> Configuración
           </a>
         </nav>
-
-        <div class="px-4 py-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-400 dark:text-slate-500 shrink-0">
-          Nexo · Centro de automatización
-        </div>
       </aside>
 
       <!-- Main -->
       <div class="flex-1 flex flex-col min-w-0">
-        <header class="h-16 shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-6 gap-3">
+        <header class="h-14 shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-8 gap-3">
           <div class="flex items-center gap-3 min-w-0">
-            <button id="hamburger-btn" class="md:hidden text-slate-500 dark:text-slate-300 text-xl leading-none" aria-label="Abrir menú"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
-            <h1 id="page-title" class="text-lg font-semibold truncate">Dashboard</h1>
+            <button id="hamburger-btn" class="icon-btn -ml-2 text-slate-500 dark:text-slate-300 text-xl leading-none" aria-label="Mostrar u ocultar menú" title="Mostrar u ocultar menú"><svg width="1em" height="1em" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+            <h1 id="page-title" class="text-base font-semibold truncate">Dashboard</h1>
           </div>
 
           <div class="flex items-center gap-2 md:gap-3 shrink-0">
@@ -202,12 +198,12 @@
             </button>
 
             <div class="relative">
-              <button id="user-menu-btn" class="flex items-center gap-2 pl-1 pr-2 py-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                <span id="user-avatar" class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-200 flex items-center justify-center text-xs font-semibold">--</span>
+              <button id="user-menu-btn" class="flex items-center gap-2 pl-1 pr-2 py-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800">
+                <span id="user-avatar" class="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center text-xs font-semibold">--</span>
                 <span id="user-name-label" class="hidden sm:inline text-sm font-medium text-slate-700 dark:text-slate-200">Cargando…</span>
                 <span class="text-slate-400 text-xs">▾</span>
               </button>
-              <div id="user-menu-dropdown" class="hidden absolute right-0 mt-2 w-52 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg py-1.5 z-50">
+              <div id="user-menu-dropdown" class="hidden absolute right-0 mt-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md shadow-md py-1 z-50">
                 <button data-action="account" class="dropdown-item">Mi cuenta</button>
                 <button data-action="subscription" class="dropdown-item">Mi plan</button>
                 <button data-action="settings" class="dropdown-item">Configuración</button>
@@ -221,7 +217,7 @@
         <!-- "Modo soporte" (6 de septiembre de 2026): visible SIEMPRE que un
              administrador de Nexo esté operando la sesión de un cliente —
              nunca silencioso, ver js/app.js::updateUserHeader. -->
-        <div id="soporte-banner" class="hidden bg-amber-500 dark:bg-amber-600 text-amber-950 dark:text-amber-50 text-sm font-medium px-4 py-2 flex items-center justify-between gap-3 shrink-0">
+        <div id="soporte-banner" class="hidden bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-100 border-b border-amber-300 dark:border-amber-800 text-sm px-4 md:px-8 py-2 flex items-center justify-between gap-3 shrink-0">
           <span id="soporte-banner-texto">Estás viendo la cuenta de un cliente.</span>
           <button id="soporte-banner-salir" class="underline font-semibold shrink-0">Salir y volver al panel</button>
         </div>
@@ -232,21 +228,21 @@
   </div>
 
   <script src="js/env.js?v=2"></script>
-  <script src="js/ui.js?v=6"></script>
+  <script src="js/ui.js?v=7"></script>
   <script src="js/theme.js?v=2"></script>
   <script src="js/settings.js?v=4"></script>
-  <script src="js/chart.js?v=5"></script>
+  <script src="js/chart.js?v=6"></script>
   <script src="js/demoData.js?v=5"></script>
   <script src="js/dataSource.js?v=17"></script>
-  <script src="js/backendApi.js?v=36"></script>
+  <script src="js/backendApi.js?v=37"></script>
   <script src="js/demoImportResult.js?v=2"></script>
-  <script src="js/importFlow.js?v=10"></script>
-  <script src="js/mercadolibrePublicar.js?v=20"></script>
-  <script src="js/googleSheetsFlow.js?v=4"></script>
-  <script src="js/adminPanel.js?v=22"></script>
-  <script src="js/soporte.js?v=3"></script>
+  <script src="js/importFlow.js?v=14"></script>
+  <script src="js/mercadolibrePublicar.js?v=24"></script>
+  <script src="js/googleSheetsFlow.js?v=6"></script>
+  <script src="js/adminPanel.js?v=24"></script>
+  <script src="js/soporte.js?v=5"></script>
   <script src="js/auth.js?v=5"></script>
-  <script src="js/app.js?v=59"></script>
+  <script src="js/app.js?v=63"></script>
   <script src="js/router.js?v=8"></script>
 </body>
 </html>

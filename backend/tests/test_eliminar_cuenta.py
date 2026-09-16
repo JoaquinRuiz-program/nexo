@@ -17,6 +17,8 @@ from app.db.models import (
     MarketplaceAccount,
     MarketplaceListing,
     MarketplaceListingVariant,
+    MercadoLibreCategoryFee,
+    MercadoLibreShippingEstimate,
     Order,
     OrderBilling,
     OrderInvoice,
@@ -70,6 +72,12 @@ def _llenar_empresa(db_session, tienda, usuario, *, url_imagen="https://cdn.exte
         OrderInvoice(store_id=tienda.id, order_id=orden.id, pack_id="1", document_ids="x", file_names="f.pdf", uploaded_at=NOW),
         ChannelCostSettings(store=tienda, channel="mercadolibre", commission_pct=15, updated_at=NOW),
         SupportTicket(store_id=tienda.id, user_id=usuario.id, category="otro", subject="Hola", description="Ayuda", created_at=NOW, updated_at=NOW),
+        # Cachés de Mercado Libre de ESTA empresa: también se borran (en
+        # Postgres, dejarlas rompería la clave foránea contra stores).
+        MercadoLibreCategoryFee(store_id=tienda.id, category_id="MLC1", listing_type_id="gold_special", price=10000,
+                                percentage_fee=15, fixed_fee=0, sale_fee_amount=1500, fetched_at=NOW),
+        MercadoLibreShippingEstimate(store_id=tienda.id, category_id="MLC1", price=10000, shipping_cost=3050,
+                                     mandatory=True, dimensions="5x15x15,300", fetched_at=NOW),
     ])
     job = SyncJob(store_id=tienda.id, direction="ml_stock", triggered_by="manual", started_at=NOW, finished_at=NOW, status="success", products_affected=1)
     db_session.add(job)
@@ -81,7 +89,8 @@ def _llenar_empresa(db_session, tienda, usuario, *, url_imagen="https://cdn.exte
 def _conteo(db_session, store_id):
     return {
         modelo.__name__: db_session.query(modelo).filter_by(store_id=store_id).count()
-        for modelo in (Product, ProductVariant, Order, OrderReturn, OrderBilling, OrderInvoice, MarketplaceAccount, ChannelCostSettings, SupportTicket, SyncJob, StoreSettings, Subscription)
+        for modelo in (Product, ProductVariant, Order, OrderReturn, OrderBilling, OrderInvoice, MarketplaceAccount, ChannelCostSettings,
+                       SupportTicket, SyncJob, StoreSettings, Subscription, MercadoLibreCategoryFee, MercadoLibreShippingEstimate)
     }
 
 

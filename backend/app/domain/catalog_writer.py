@@ -31,6 +31,12 @@ def escribir_filas(db: Session, store: Store, rows: list[RowResult], *, fuente: 
     productos nuevos respeta el límite de productos del plan de la tienda
     (nunca lo pasa por alto, sin importar el origen de los datos)."""
     ahora = datetime.now()
+    # 15 de septiembre de 2026 (QA fase 2): en Postgres dos importaciones realmente
+    # simultáneas de la misma empresa contaban los productos a la vez y podían
+    # pasar el límite del plan por unos pocos. Se bloquea la fila de la empresa
+    # hasta el commit, así las importaciones de UNA empresa se hacen de a una (en
+    # SQLite no hace nada: ahí la base ya serializa las escrituras).
+    db.query(Store.id).filter(Store.id == store.id).with_for_update().one()
 
     creados: list[str] = []
     actualizados: list[str] = []

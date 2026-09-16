@@ -13,6 +13,22 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
       `/validar` los sugiere desde el catálogo real de ML, precargados "Por confirmar".
 - [x] Dato del usuario: "repiza de habitacion" — corregido por el dueño (14 sept 2026).
 
+- [x] **Regla estricta del envío** (16 sept 2026, PROGRESS.md #44): sin costo de envío de
+      Mercado Libre, Nexo dice "Faltan datos" en vez de "Conviene"/"No conviene".
+      Consecuencia a revisar: el **envío manual de Configuración ya no decide** nada en
+      Mercado Libre. Si quieres que vuelva a contar como dato válido, es un cambio de una
+      línea; si no, conviene sacar ese campo de Configuración para no ofrecer algo que no se usa.
+- [x] **Obtención automática del envío al importar, con progreso en vivo** (16 sept 2026,
+      PROGRESS.md #45) — al subir el Excel, Nexo intenta solo el costo de envío real/estimado
+      de cada producto, sin pedir peso ni medidas, con pantalla de progreso. Verificado en vivo
+      contra la cuenta real (201/201 productos resueltos). De paso corregido: el botón manual
+      no pasaba `user_id`, así que nunca estimaba el envío.
+      **Límite real de la API, no una falta de Nexo**: un producto sin publicación Y sin
+      categoría que Mercado Libre pueda predecir (`domain_discovery`) no tiene ningún camino
+      para obtener un costo de envío sin dimensiones — Mercado Libre no ofrece una cotización
+      por texto/SKU sola. Ese caso queda en "Faltan datos"; no hay nada más que automatizar ahí
+      sin pedirle una medida al dueño (que es justo lo que se pidió evitar).
+
 ## Admin BI — extensiones opcionales (el spec original quedó cortado en la sección 8)
 - [x] Gráfico dedicado de **evolución del margen** en el tiempo — hecho 14 sept 2026
       (`margenEnElTiempo` en /api/admin/overview + panel en el Overview). Falta verlo
@@ -47,6 +63,18 @@ Prioridad de arriba hacia abajo. Ver `PROGRESS.md` para lo ya hecho.
 - [x] **P1 — Ventas en modo real** — hecho 15 sept 2026 (PROGRESS.md #36). Falta verlo con
       ventas reales importadas de Mercado Libre.
 - [x] Productos sin costo de compra (costo considerado $0) — hecho 15 sept 2026 (PROGRESS.md #37).
+
+## Revisión del sistema (16 sept 2026) — ver `REVISION_SISTEMA.md`
+- [x] Webhook de Mercado Pago idempotente + el período se suma al que quedaba (PROGRESS.md #43).
+- [x] Importación de ventas paginada (antes se perdían los pedidos después del 50).
+- [ ] **Cobro mensual del mes 2 en adelante** (`subscription_authorized_payment`): hoy no se
+      procesa, así que un cliente mensual cuyo cobro falla sigue con acceso completo. Decidir
+      y construir (REVISION_SISTEMA.md §2.1).
+- [ ] Publicación que deja de convenir con el envío real: decidir si Nexo pausa solo, ajusta
+      el precio o solo avisa (REVISION_SISTEMA.md §2.3).
+- [ ] Comisión real cacheada sin vencimiento (el envío estimado ya vence a los 30 días).
+- [ ] Antes de escalar a más de un worker: mover a algo compartido el estado de OAuth y el
+      límite de intentos de login (hoy viven en memoria del proceso).
 
 ## Deploy (día del despliegue, ver backend/DEPLOY.md)
 - [ ] **Servicio de mail** — código listo (`EnviadorResend`, `RESEND_API_KEY`/`EMAIL_FROM` en

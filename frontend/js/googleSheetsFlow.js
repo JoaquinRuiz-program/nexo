@@ -92,12 +92,12 @@ window.LC = window.LC || {};
       conectar: renderPasoConectar,
       vincular: renderPasoVincular,
       listo: renderPasoListo,
-      analizando: () => `<div class="panel-card text-center py-16"><div class="text-4xl mb-4 animate-pulse">${icon("search")}</div><p class="font-medium text-slate-700 dark:text-slate-200">Leyendo tu hoja de cálculo…</p></div>`,
+      analizando: () => `<div class="panel-card text-center py-12"><p class="text-sm font-medium text-slate-700 dark:text-slate-200">Leyendo la hoja de cálculo…</p></div>`,
       revision: renderPasoRevision,
       resultado: renderPasoResultado,
     }[state.fase];
 
-    main.innerHTML = `<div class="page-wrap app-fade max-w-4xl">${contenido()}</div>`;
+    main.innerHTML = `<div class="page-wrap app-fade">${contenido()}</div>`;
     wireFase(main);
   }
 
@@ -119,15 +119,14 @@ window.LC = window.LC || {};
   function renderPasoConectar() {
     const conf = state.estado.credencialesConfiguradas;
     return `
-      <div class="panel-card text-center py-12">
-        <div class="text-4xl mb-4">${icon("link")}</div>
-        <h2 class="text-xl font-semibold mb-2">Conecta Google Sheets</h2>
-        <p class="text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-6">
-          Usa una hoja de cálculo de Google como fuente de tu catálogo — una alternativa a subir un Excel cada vez.
-          Vas a tener que autorizar el acceso de solo lectura a tus hojas de cálculo.
+      <div class="panel-card">
+        <h2 class="panel-title">Conectar Google Sheets</h2>
+        <p class="panel-subtitle mb-4 max-w-2xl">
+          Usa una hoja de cálculo de Google como fuente de tu catálogo, en vez de subir un Excel cada vez.
+          Google te va a pedir autorizar el acceso de solo lectura a tus hojas de cálculo.
         </p>
         <button id="btn-conectar-gs" class="btn-primary" ${conf ? "" : "disabled"}>Conectar con Google</button>
-        ${conf ? "" : `<p class="text-xs text-slate-400 mt-3">Todavía no está lista esta conexión — contáctanos para activarla.</p>`}
+        ${conf ? "" : `<p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Esta conexión todavía no está activa. Escríbenos desde Ayuda y soporte para activarla.</p>`}
       </div>
     `;
   }
@@ -314,7 +313,7 @@ window.LC = window.LC || {};
 
     return `
       <div class="panel-card mb-5">
-        <h2 class="panel-title mb-1">Así entendimos tu hoja de cálculo</h2>
+        <h2 class="panel-title">Columnas de la hoja</h2>
         <p class="panel-subtitle mb-5">${escapeHtml(spreadsheetTitulo || "")} · pestaña "${escapeHtml(hojaUsada)}" — revisa que las columnas estén bien asignadas.</p>
 
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -413,10 +412,10 @@ window.LC = window.LC || {};
   function renderPasoResultado() {
     const r = state.confirmarResultado;
     return `
-      <div class="panel-card text-center py-10 mb-5">
-        <div class="text-5xl mb-4">${icon("checkCircle")}</div>
-        <h2 class="text-xl font-semibold mb-2">Catálogo sincronizado desde Google Sheets</h2>
-        <div class="grid grid-cols-3 gap-4 max-w-md mx-auto my-6">
+      <div class="panel-card text-center py-8 mb-5">
+        <div class="text-2xl text-emerald-600 dark:text-emerald-400 mb-2 flex justify-center">${icon("checkCircle")}</div>
+        <h2 class="text-base font-semibold mb-1">Catálogo sincronizado desde Google Sheets</h2>
+        <div class="grid grid-cols-3 gap-4 max-w-md mx-auto my-5">
           <div><p class="stat-label">Creados</p><p class="stat-value stat-value--sm stat-value--success">${r.creados}</p></div>
           <div><p class="stat-label">Actualizados</p><p class="stat-value stat-value--sm">${r.actualizados}</p></div>
           <div><p class="stat-label">Omitidos</p><p class="stat-value stat-value--sm ${r.omitidos ? "stat-value--warning" : ""}">${r.omitidos}</p></div>

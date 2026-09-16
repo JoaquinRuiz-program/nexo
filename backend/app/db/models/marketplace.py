@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -195,6 +195,46 @@ class MercadoLibreCategoryFee(Base):
     percentage_fee: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
     fixed_fee: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
     sale_fee_amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    store: Mapped["Store"] = relationship()  # noqa: F821
+
+
+class MercadoLibreShippingEstimate(Base):
+    """Costo de envío que Mercado Libre le cobraría al vendedor por un producto
+    de esta categoría a este precio, consultado ANTES de publicar (16 de
+    septiembre de 2026, pedido del dueño: "que al analizar el margen también
+    analice el envío"). Ver app/domain/ml_shipping.py.
+
+    Es una ESTIMACIÓN, nunca un dato de una publicación real: usa las medidas
+    por defecto que Mercado Libre publica para la categoría
+    (/categories/{id}/shipping_preferences), no las del producto. Por eso vive
+    en su propia tabla y no en marketplace_listings, que guarda el costo REAL
+    de una publicación existente y siempre tiene prioridad sobre esto.
+
+    Scopeada por `store_id` igual que MercadoLibreCategoryFee: el costo lleva
+    el descuento por reputación de ESA cuenta vendedora.
+
+    `obligatorio` = Mercado Libre obliga al envío gratis a ese precio (en Chile,
+    desde cierto monto): recién ahí el costo lo paga el vendedor. Bajo ese
+    monto el envío es opcional y lo paga el comprador, así que no se descuenta.
+    """
+
+    __tablename__ = "mercadolibre_shipping_estimates"
+    __table_args__ = (
+        UniqueConstraint("store_id", "category_id", "price", name="uq_ml_shipping_estimate_store_category_price"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    category_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    # NULL = Mercado Libre no entregó un costo válido; el motivo queda en
+    # unavailable_reason. Nunca un valor inventado.
+    shipping_cost: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    mandatory: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    dimensions: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    unavailable_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     store: Mapped["Store"] = relationship()  # noqa: F821

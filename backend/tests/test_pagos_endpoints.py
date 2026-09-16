@@ -320,6 +320,64 @@ def test_webhook_payment_approved_activa_el_plan_anual(client, db_session, a_sto
 
 
 @respx.mock
+def test_webhook_repetido_no_vuelve_a_extender_el_plan(client, db_session, a_store, monkeypatch):
+    """Mercado Pago reintenta el mismo webhook hasta recibir un 200 (y puede
+    mandarlo más de una vez): aplicar el mismo pago dos veces regalaba otro
+    período completo. Revisión del sistema, 16 de septiembre de 2026."""
+    monkeypatch.setattr("app.api.routes.pagos.get_settings", lambda: CONFIGURED_SETTINGS)
+    referencia = f"nexo:{a_store.id}:basico:anual"
+    respx.get("https://api.mercadopago.com/v1/payments/PAY-REPETIDO").mock(
+        return_value=httpx.Response(200, json={"id": "PAY-REPETIDO", "status": "approved", "external_reference": referencia})
+    )
+
+    assert _enviar_webhook(client, tipo="payment", data_id="PAY-REPETIDO").status_code == 200
+    db_session.refresh(a_store.subscription)
+    vencimiento_tras_el_primero = a_store.subscription.current_period_end
+
+    assert _enviar_webhook(client, tipo="payment", data_id="PAY-REPETIDO").status_code == 200
+
+    db_session.refresh(a_store.subscription)
+    assert a_store.subscription.current_period_end == vencimiento_tras_el_primero
+
+
+@respx.mock
+def test_webhook_mensual_repetido_no_vuelve_a_extender_el_plan(client, db_session, a_store, monkeypatch):
+    monkeypatch.setattr("app.api.routes.pagos.get_settings", lambda: CONFIGURED_SETTINGS)
+    referencia = f"nexo:{a_store.id}:basico:mensual"
+    respx.get("https://api.mercadopago.com/preapproval/PA-REPETIDO").mock(
+        return_value=httpx.Response(200, json={"id": "PA-REPETIDO", "status": "authorized", "external_reference": referencia})
+    )
+
+    assert _enviar_webhook(client, tipo="subscription_preapproval", data_id="PA-REPETIDO").status_code == 200
+    db_session.refresh(a_store.subscription)
+    vencimiento_tras_el_primero = a_store.subscription.current_period_end
+
+    assert _enviar_webhook(client, tipo="subscription_preapproval", data_id="PA-REPETIDO").status_code == 200
+
+    db_session.refresh(a_store.subscription)
+    assert a_store.subscription.current_period_end == vencimiento_tras_el_primero
+
+
+@respx.mock
+def test_pagar_antes_de_que_venza_suma_los_dias_que_quedaban(client, db_session, a_store, monkeypatch):
+    """Quien renueva antes de tiempo no pierde lo que ya tenía pagado."""
+    from datetime import date, timedelta as delta
+
+    monkeypatch.setattr("app.api.routes.pagos.get_settings", lambda: CONFIGURED_SETTINGS)
+    a_store.subscription.current_period_end = date.today() + delta(days=10)
+    db_session.commit()
+    referencia = f"nexo:{a_store.id}:basico:anual"
+    respx.get("https://api.mercadopago.com/v1/payments/PAY-ANTICIPADO").mock(
+        return_value=httpx.Response(200, json={"id": "PAY-ANTICIPADO", "status": "approved", "external_reference": referencia})
+    )
+
+    assert _enviar_webhook(client, tipo="payment", data_id="PAY-ANTICIPADO").status_code == 200
+
+    db_session.refresh(a_store.subscription)
+    assert a_store.subscription.current_period_end == date.today() + delta(days=10 + 365)
+
+
+@respx.mock
 def test_webhook_payment_no_aprobado_no_activa_nada(client, db_session, a_store, monkeypatch):
     monkeypatch.setattr("app.api.routes.pagos.get_settings", lambda: CONFIGURED_SETTINGS)
     referencia = f"nexo:{a_store.id}:basico:anual"

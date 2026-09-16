@@ -8,9 +8,11 @@ un margen por su cuenta (eso es trabajo exclusivo de domain/profitability.py).
 
 Ningún umbral vive hardcodeado acá: "rentable" es lo que el usuario decida
 que es rentable (SelectionCriteria), nunca una definición fija del sistema.
-Si el sistema no tiene el dato para evaluar un producto (sin costo, canal
-sin configurar), la clasificación es "sin_datos" — nunca se fuerza una
-respuesta rentable/no rentable con información que no existe.
+Si el sistema no tiene el dato para evaluar un producto (sin precio, canal
+sin configurar, sin costo de envío de Mercado Libre), la clasificación es
+"sin_datos" — nunca se fuerza una respuesta rentable/no rentable con
+información que no existe. Ojo: un costo de compra vacío SÍ es evaluable
+(costo considerado $0, ver rentabilidad.py::_fila); un envío desconocido no.
 """
 
 from __future__ import annotations
@@ -53,6 +55,26 @@ def classify_product(row: dict, criteria: SelectionCriteria) -> dict:
             return {
                 "clasificacion": "sin_datos",
                 "razon": "Los costos del canal Mercado Libre (comisión/envío) todavía no están configurados.",
+            }
+        # 16 de septiembre de 2026 — regla estricta pedida por el dueño ("no
+        # puedes ver el envío antes de decir si es conveniente o no"): sin el
+        # costo de envío de Mercado Libre NO se dice ni "conviene" ni "no
+        # conviene". Antes, un envío que faltaba se calculaba como $0 (ver
+        # domain/profitability.py::net_margin) y el producto salía "rentable"
+        # con solo una nota chica de "provisional". `envioMlResuelto` lo pone
+        # rentabilidad.py::aplicar_envio_real_ml en True únicamente con el
+        # costo REAL de la publicación, con la estimación de Mercado Libre
+        # para esa categoría y precio, o cuando Mercado Libre confirma que el
+        # envío no corre por cuenta del vendedor (un $0 de verdad). Cualquier
+        # otro caso —sin categoría, sin estimación, consulta fallida, todavía
+        # no consultada, estimación vencida— es dato faltante.
+        # Sin precio de venta el mensaje útil es ese, no el del envío (abajo).
+        if row.get("precio") is not None and row.get("envioMlResuelto") is not True:
+            motivo = row.get("envioMlMotivo")
+            return {
+                "clasificacion": "sin_datos",
+                "razon": "Falta el costo de envío de Mercado Libre para calcular la rentabilidad."
+                + (f" {motivo}" if motivo else ""),
             }
         margen_clp = row.get("margenMercadoLibreClp")
         margen_pct = row.get("margenMercadoLibrePct")

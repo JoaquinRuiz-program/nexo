@@ -12,6 +12,7 @@ sincronizar_costos_envio_de_la_cuenta).
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -113,6 +114,8 @@ async def sincronizar_costos_envio(
     adapter: MercadoLibreAdapter,
     access_token: str,
     listings: list[MarketplaceListing] | None = None,
+    *,
+    on_avance: Callable[[], None] | None = None,
 ) -> dict:
     listings = publicaciones_a_sincronizar(db, account) if listings is None else listings
     inicio = datetime.now()
@@ -126,6 +129,11 @@ async def sincronizar_costos_envio(
         if resultado == ERROR_TEMPORAL:
             variant_id = listing.variants[0].variant_id if listing.variants else None
             errores.append((variant_id, f"No se pudo consultar el costo de envío de {listing.external_listing_id}: Mercado Libre no respondió."))
+        # 16 de septiembre de 2026 — mismo aviso opcional que ml_comisiones.py
+        # (ver services/analisis_rentabilidad_stream.py): no cambia qué se
+        # consulta ni qué se guarda.
+        if on_avance is not None:
+            on_avance()
     if sum(conteo.values()):
         # "No disponible" es una respuesta válida de ML, no un error.
         registrar_sincronizacion(
@@ -142,7 +150,8 @@ async def sincronizar_costos_envio(
 
 
 async def sincronizar_costos_envio_de_la_cuenta(
-    db: Session, account: MarketplaceAccount, settings, listings: list[MarketplaceListing] | None = None
+    db: Session, account: MarketplaceAccount, settings, listings: list[MarketplaceListing] | None = None,
+    *, on_avance: Callable[[], None] | None = None,
 ) -> dict | None:
     """Versión "best effort" para enchufar en otros flujos (conectar, importar
     ventas, comisiones, publicar): nunca levanta. None si no se pudo correr
@@ -163,7 +172,7 @@ async def sincronizar_costos_envio_de_la_cuenta(
     try:
         access_token = await _get_valid_access_token(db, account, cfg, settings.token_encryption_key)
         adapter = MercadoLibreAdapter(cfg)
-        return await sincronizar_costos_envio(db, account, adapter, access_token, listings)
+        return await sincronizar_costos_envio(db, account, adapter, access_token, listings, on_avance=on_avance)
     except Exception as err:  # noqa: BLE001 — best effort a propósito
         db.rollback()
         logger.error("No se pudo sincronizar el costo de envío de Mercado Libre (store_id=%s): %s", account.store_id, err)

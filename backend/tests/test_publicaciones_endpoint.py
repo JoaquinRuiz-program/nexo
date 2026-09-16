@@ -25,6 +25,7 @@ from app.db.models import (
     MarketplaceListing,
     MarketplaceListingVariant,
     MercadoLibreCategoryFee,
+    MercadoLibreShippingEstimate,
     Plan,
     Product,
     ProductImage,
@@ -169,17 +170,44 @@ def cuenta_ml_conectada(db_session, a_store):
     return cuenta
 
 
+def _envio_ml_resuelto(db_session, tienda, *, categoria, precio, costo=0.0):
+    """16 de septiembre de 2026 — regla estricta del envío: un producto sin
+    costo de envío de Mercado Libre no se clasifica ni como rentable ni como
+    no rentable, queda en "Faltan datos" (ver domain/catalog_selection.py).
+    Deja resuelto el envío de Mercado Libre para (categoría, precio): con
+    `costo` en $0, el caso real de un producto barato (a ese precio el envío
+    gratis no es obligatorio, lo paga el comprador y al vendedor no le cuesta
+    nada); con un `costo` mayor, el envío obligatorio que paga el vendedor."""
+    fila = db_session.query(MercadoLibreShippingEstimate).filter_by(
+        store_id=tienda.id, category_id=categoria, price=precio
+    ).first()
+    if fila is None:
+        fila = MercadoLibreShippingEstimate(store_id=tienda.id, category_id=categoria, price=precio)
+        db_session.add(fila)
+    fila.shipping_cost = costo if costo else 2500
+    fila.mandatory = bool(costo)
+    fila.dimensions = "5x15x15,300"
+    fila.unavailable_reason = None
+    fila.fetched_at = datetime.now()
+    db_session.commit()
+
+
 def _producto_publicable(
     db_session, tienda, *, sku, nombre="Cuaderno universitario", marca="Torre", categoria="Papelería",
     precio=5000, costo=3000, marketplace_stock=5, barcode=None, con_imagen=True, gtin_confirmado_ausente=False,
+    ml_category_id="MLC180937", envio_ml_resuelto=True,
 ):
     """Como _producto, pero además configurado para pasar el gate de
     rentabilidad real de /confirmar: canal "mercadolibre" con comisión
     cargada + stock reservado para ML (classify_product con
-    require_marketplace_stock=True, channel="mercadolibre")."""
+    require_marketplace_stock=True, channel="mercadolibre") + el costo de
+    envío de Mercado Libre resuelto (ver _envio_ml_resuelto)."""
     if db_session.query(ChannelCostSettings).filter_by(store_id=tienda.id, channel="mercadolibre").first() is None:
         db_session.add(ChannelCostSettings(store=tienda, channel="mercadolibre", commission_pct=15.0, updated_at=NOW))
-    producto = Product(store=tienda, internal_sku=sku, name=nombre, brand=marca, category=categoria, product_type="simple", created_at=NOW, updated_at=NOW)
+    producto = Product(
+        store=tienda, internal_sku=sku, name=nombre, brand=marca, category=categoria, product_type="simple",
+        ml_category_id=ml_category_id, created_at=NOW, updated_at=NOW,
+    )
     db_session.add(producto)
     db_session.flush()
     db_session.add(ProductVariant(
@@ -190,6 +218,8 @@ def _producto_publicable(
     if con_imagen:
         db_session.add(ProductImage(product=producto, url="http://cdn.test/img.png", source="excel_url", position=0, created_at=NOW))
     db_session.commit()
+    if envio_ml_resuelto and ml_category_id and precio is not None:
+        _envio_ml_resuelto(db_session, tienda, categoria=ml_category_id, precio=precio)
     return producto.variants[0].id
 
 
@@ -559,11 +589,12 @@ def test_validar_muestra_rentabilidad_actual_pero_nunca_como_autorizacion(client
     # el gate real es responsabilidad de /confirmar, todavía no construido.
     # marketplace_stock cargado para que el motivo de "no rentable" sea el
     # margen negativo, no la falta de stock reservado (chequeo anterior).
-    producto = Product(store=a_store, internal_sku="NO-RENTABLE", name="Cuaderno", brand="Torre", product_type="simple", created_at=NOW, updated_at=NOW)
+    producto = Product(store=a_store, internal_sku="NO-RENTABLE", name="Cuaderno", brand="Torre", product_type="simple", ml_category_id="MLC180937", created_at=NOW, updated_at=NOW)
     db_session.add(producto)
     db_session.flush()
     db_session.add(ProductVariant(product=producto, store_id=a_store.id, variant_sku="NO-RENTABLE", price=1000, cost_price=5000, marketplace_stock=5, created_at=NOW, updated_at=NOW))
     db_session.commit()
+    _envio_ml_resuelto(db_session, a_store, categoria="MLC180937", precio=1000)
     variant_id = producto.variants[0].id
     respx.get("https://api.mercadolibre.com/categories/MLC180937/attributes").mock(
         return_value=httpx.Response(200, json=[{"id": "BRAND", "name": "Marca", "tags": {"required": True}, "value_type": "string"}])
@@ -1794,6 +1825,7 @@ def test_preparar_expone_fuente_de_comision_real(client, db_session, a_store, cu
     db_session.add(ProductImage(product=producto, url="http://cdn.test/img.png", source="excel_url", position=0, created_at=NOW))
     db_session.commit()
     variant_id = producto.variants[0].id
+    _envio_ml_resuelto(db_session, a_store, categoria="MLC180937", precio=20000)
     _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=20000, listing_type_id="gold_special", percentage_fee=10.0)
     db_session.add(ChannelCostSettings(store=a_store, channel="mercadolibre", commission_pct=50.0, listing_type_pref="classic", updated_at=NOW))  # manual absurda
     db_session.commit()

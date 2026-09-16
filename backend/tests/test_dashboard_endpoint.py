@@ -23,6 +23,7 @@ from app.db.models import ChannelCostSettings, MarketplaceAccount, Order, Produc
 from app.db.session import get_db
 from app.domain.security import hash_password
 from tests.auth_helpers import autenticar
+from tests.test_publicaciones_endpoint import _envio_ml_resuelto
 from app.main import app
 
 NOW = datetime(2026, 8, 24, 12, 0, 0)
@@ -74,8 +75,11 @@ def a_store(client, db_session):
     return tienda
 
 
-def _producto(db_session, tienda, *, sku, nombre, precio=None, costo=None, stock=None, gestiona=True):
-    producto = Product(store=tienda, internal_sku=sku, name=nombre, product_type="simple", created_at=NOW, updated_at=NOW)
+def _producto(db_session, tienda, *, sku, nombre, precio=None, costo=None, stock=None, gestiona=True, envio_ml_resuelto=True):
+    producto = Product(
+        store=tienda, internal_sku=sku, name=nombre, product_type="simple",
+        ml_category_id="MLC180937", created_at=NOW, updated_at=NOW,
+    )
     db_session.add(producto)
     db_session.flush()
     estado_stock = "instock" if (stock or 0) > 0 else "outofstock"
@@ -85,6 +89,11 @@ def _producto(db_session, tienda, *, sku, nombre, precio=None, costo=None, stock
     )
     db_session.add(variante)
     db_session.commit()
+    # 16 de septiembre de 2026 — sin costo de envío de Mercado Libre el
+    # producto queda en "Faltan datos" (regla estricta), que no es lo que
+    # miden estas pruebas. Ver tests/test_publicaciones_endpoint.py.
+    if envio_ml_resuelto and precio is not None:
+        _envio_ml_resuelto(db_session, tienda, categoria="MLC180937", precio=precio)
     return variante
 
 

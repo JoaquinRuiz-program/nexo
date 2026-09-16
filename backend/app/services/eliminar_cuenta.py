@@ -30,6 +30,7 @@ from app.db.models import (
     MarketplaceListing,
     MarketplaceListingVariant,
     MercadoLibreCategoryFee,
+    MercadoLibreShippingEstimate,
     Order,
     OrderBilling,
     OrderInvoice,
@@ -118,6 +119,7 @@ def eliminar_datos_de_la_cuenta(db: Session, usuario: User, uploads_dir: Path) -
         borrar(OrderItem, OrderItem.order_id.in_(order_ids))
         borrar(Order, Order.id.in_(order_ids))
         borrar(MercadoLibreCategoryFee, MercadoLibreCategoryFee.store_id.in_(store_ids))
+        borrar(MercadoLibreShippingEstimate, MercadoLibreShippingEstimate.store_id.in_(store_ids))
         borrar(MarketplaceAccount, MarketplaceAccount.id.in_(account_ids))
         borrar(WooCommerceVariation, WooCommerceVariation.store_id.in_(store_ids))
         borrar(WooCommerceProduct, WooCommerceProduct.store_id.in_(store_ids))

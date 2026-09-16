@@ -54,6 +54,25 @@ def test_prediccion_de_categorias_respeta_el_tope_por_corrida(db_session, a_stor
     assert len(llamadas) == 2
 
 
+def test_choque_de_restriccion_unica_por_operaciones_simultaneas_da_409_no_500(client, a_store, monkeypatch):
+    """Dos importaciones realmente simultáneas en Postgres pueden chocar con la
+    restricción única (empresa, SKU): la segunda recibe un 409 entendible, nunca
+    un 500 ni un producto duplicado."""
+    from sqlalchemy.exc import IntegrityError
+
+    def choque(*args, **kwargs):  # noqa: ARG001
+        raise IntegrityError("INSERT INTO product_variants", {}, Exception("uq_variant_store_sku"))
+
+    monkeypatch.setattr("app.api.routes.catalogo.escribir_filas", choque)
+    archivo = b"SKU,Nombre,Precio\nA-1,Producto,1000\n"
+    res = client.post(
+        "/api/catalogo/importar/confirmar", files={"file": ("c.csv", io.BytesIO(archivo), "text/csv")},
+        data={"mapeo": '{"sku": "SKU", "nombre": "Nombre", "precio": "Precio"}'},
+    )
+    assert res.status_code == 409, res.text
+    assert "al mismo tiempo" in res.json()["detail"]
+
+
 def test_canal_inventado_no_se_puede_configurar(client, a_store):
     assert client.put("/api/configuracion/canales/chancho", json={"commission_pct": 10}).status_code == 404
     assert client.get("/api/configuracion/canales").json() == []

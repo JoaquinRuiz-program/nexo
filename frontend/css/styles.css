@@ -13,18 +13,20 @@
    por una. */
 
 :root {
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.05);
-  --shadow-card-dark: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.35);
+  --border: #e2e8f0;
+  --border-dark: #1e293b;
 }
 
 html {
-  /* 18px en vez de los 16px por defecto del navegador — de acá para abajo,
-     "1rem" de cualquier clase (propia o de Tailwind) ya es más grande. */
-  font-size: 112.5%;
+  /* 15 de septiembre de 2026 — pasada visual B2B: vuelve a los 16px del
+     navegador (antes 18px). Nexo se usa con catálogos de cientos o miles de
+     productos: con 18px las tablas y los números no cabían en pantalla. El
+     contraste alto de texto se mantiene. */
+  font-size: 106.25%; /* 17px: pedido del dueño, un poco más grande que 16px */
 }
 body {
   -webkit-font-smoothing: antialiased;
-  line-height: 1.55;
+  line-height: 1.5;
   color: #1e293b;
 }
 .dark body {
@@ -71,40 +73,68 @@ body {
   .sidebar-panel {
     box-shadow: none;
   }
+  /* Barra lateral achicada a solo íconos (botón del encabezado, se recuerda
+     por navegador). El texto de cada link es un nodo suelto: se oculta con
+     font-size 0 y el ícono conserva su tamaño propio en rem. */
+  #app-shell.sidebar-collapsed #sidebar {
+    width: 3.5rem;
+  }
+  #app-shell.sidebar-collapsed .sidebar-header {
+    padding-left: 0;
+    padding-right: 0;
+    justify-content: center;
+  }
+  #app-shell.sidebar-collapsed .sidebar-brand-text {
+    display: none;
+  }
+  #app-shell.sidebar-collapsed .nav-link {
+    font-size: 0;
+    gap: 0;
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
 }
 .nav-link {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 0.95rem;
-  border-radius: 0.65rem;
-  font-size: 1rem;
+  gap: 0.625rem;
+  padding: 0.4375rem 0.625rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
   font-weight: 500;
-  color: #334155;
-  transition: background-color 120ms ease, color 120ms ease;
+  color: #475569;
 }
 .dark .nav-link {
-  color: #cbd5e1;
+  color: #94a3b8;
 }
 .nav-link:hover {
   background-color: #f1f5f9;
-  color: #1e293b;
+  color: #0f172a;
 }
 .dark .nav-link:hover {
   background-color: #1e293b;
   color: #e2e8f0;
 }
 .nav-link.active-nav {
-  background-color: #eef2ff;
-  color: #4338ca;
+  background-color: #f1f5f9;
+  color: #0f172a;
+  font-weight: 600;
 }
 .dark .nav-link.active-nav {
-  background-color: #312e81;
-  color: #c7d2fe;
+  background-color: #1e293b;
+  color: #f8fafc;
 }
 .nav-icon {
-  font-size: 1.1rem;
+  font-size: 1rem;
   line-height: 1;
+  color: #64748b;
+}
+.nav-link.active-nav .nav-icon {
+  color: #4f46e5;
+}
+.dark .nav-link.active-nav .nav-icon {
+  color: #818cf8;
 }
 
 /* Nota a propósito: NO fijar "display" acá. Este elemento se muestra u
@@ -116,13 +146,13 @@ body {
    en el HTML vía Tailwind; look-and-feel (color, borde, tipografía) vive
    acá. */
 .demo-pill {
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: #92400e;
   background: #fffbeb;
   border: 1px solid #fde68a;
-  padding: 0.3rem 0.75rem;
-  border-radius: 9999px;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
 }
 .dark .demo-pill {
   color: #fbbf24;
@@ -131,14 +161,13 @@ body {
 }
 
 .icon-btn {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.25rem;
+  height: 2.25rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
+  border-radius: 0.375rem;
   color: #475569;
-  transition: background-color 120ms ease;
 }
 .icon-btn:hover {
   background-color: #f1f5f9;
@@ -154,11 +183,10 @@ body {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 0.65rem 1.1rem;
-  font-size: 0.95rem;
-  font-weight: 500;
+  padding: 0.4375rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 400;
   color: #1e293b;
-  transition: background-color 100ms ease;
 }
 .dropdown-item:hover {
   background-color: #f1f5f9;
@@ -180,35 +208,32 @@ body {
 .auth-card {
   background: #fff;
   border: 1px solid #e2e8f0;
-  border-radius: 1.1rem;
-  padding: 2.25rem;
-  box-shadow: var(--shadow-card);
+  border-radius: 0.5rem;
+  padding: 2rem;
 }
 .dark .auth-card {
   background: #0f172a;
   border-color: #1e293b;
-  box-shadow: var(--shadow-card-dark);
 }
 
 .form-label {
   display: block;
-  font-size: 0.92rem;
-  font-weight: 600;
+  font-size: 0.8125rem;
+  font-weight: 500;
   color: #334155;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.3rem;
 }
 .dark .form-label {
   color: #cbd5e1;
 }
 .form-input {
   width: 100%;
-  font-size: 1rem;
-  padding: 0.7rem 0.9rem;
-  border-radius: 0.65rem;
-  border: 1.5px solid #cbd5e1;
+  font-size: 0.875rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  border: 1px solid #cbd5e1;
   background: #fff;
   color: #0f172a;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 .form-input::placeholder {
   color: #94a3b8;
@@ -216,7 +241,7 @@ body {
 .form-input:focus {
   outline: none;
   border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
 }
 /* Los campos de contraseña necesitan más espacio a la derecha para el botón
    de mostrar/ocultar — modificador propio en vez de "pr-10" de Tailwind,
@@ -255,47 +280,59 @@ body {
 }
 
 /* ================= Botones ================= */
-/* CTA grandes, esquinas redondeadas sin exagerar, sin sombra ni degradado —
-   estilo plano de SaaS moderno. El tamaño de fuente y el padding son a
-   propósito más generosos que un dashboard "técnico": son los botones que
-   más se usan, tienen que ser fáciles de encontrar y de tocar. */
+/* Botones planos, del mismo alto que un campo de formulario. Un solo botón
+   primario por zona de trabajo; el resto, secundarios. "btn-sm" es la
+   variante para acciones dentro de filas y listas. */
 .btn-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
+  gap: 0.375rem;
   background: #4f46e5;
   color: #fff;
-  font-size: 1rem;
-  font-weight: 600;
-  padding: 0.8rem 1.4rem;
-  border-radius: 0.75rem;
-  transition: background-color 120ms ease, opacity 120ms ease;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid #4f46e5;
+  border-radius: 0.375rem;
 }
 .btn-primary:hover {
   background: #4338ca;
+  border-color: #4338ca;
 }
 .btn-primary:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 .btn-secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
+  gap: 0.375rem;
   background: #fff;
   color: #334155;
-  border: 1.5px solid #cbd5e1;
-  font-size: 0.95rem;
-  font-weight: 600;
-  padding: 0.7rem 1.25rem;
-  border-radius: 0.75rem;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  border: 1px solid #cbd5e1;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.375rem;
 }
 .btn-secondary:hover {
   background: #f8fafc;
   border-color: #94a3b8;
+}
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-primary.btn-sm,
+.btn-secondary.btn-sm {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  padding: 0.3125rem 0.625rem;
+  white-space: nowrap;
 }
 .dark .btn-secondary {
   background: transparent;
@@ -317,13 +354,15 @@ body {
 .btn-disabled {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.375rem;
   background: #f1f5f9;
   color: #94a3b8;
-  font-size: 0.95rem;
-  font-weight: 600;
-  padding: 0.7rem 1.25rem;
-  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid #f1f5f9;
+  border-radius: 0.375rem;
   cursor: not-allowed;
 }
 .dark .btn-disabled {
@@ -332,52 +371,64 @@ body {
 }
 
 /* ================= Page content ================= */
+/* Sin ancho máximo: el contenido usa todo el ancho de la pantalla. Las
+   pantallas de formularios reparten sus paneles en columnas (.cols-panels). */
 .page-wrap {
-  padding: 1.75rem;
-  max-width: 1400px;
+  padding: 1rem;
+}
+.cols-panels > .panel-card {
+  break-inside: avoid;
+  margin-bottom: 1.25rem;
 }
 @media (min-width: 768px) {
   .page-wrap {
-    padding: 2.25rem 2.5rem;
+    padding: 1.5rem 2rem;
   }
 }
 
+/* Sin animación de entrada: cambiar de pantalla tiene que sentirse inmediato.
+   La clase se conserva porque la usan todas las pantallas. */
 .app-fade {
-  animation: fade-in 180ms ease;
-}
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Tarjetas planas: borde fino + una sombra casi imperceptible en vez de
-   sombras marcadas o degradados — el "estilo elegante y plano" que se pidió,
-   igual que Stripe/Linear/Notion en vez de un dashboard genérico de IA. */
-.stat-card {
+/* Métricas: en vez de una tarjeta flotante por número, una sola franja con
+   divisiones finas (como una fila de tabla). Toda grilla cuyos hijos son
+   .stat-card se dibuja así — sin tocar el markup de cada pantalla. Las líneas
+   internas son sombras de 1px que el borde exterior recorta, así una última
+   fila incompleta no deja huecos grises. */
+.grid:has(> .stat-card) {
+  gap: 0 !important;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
   background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 1.1rem;
-  padding: 1.5rem 1.6rem;
-  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.dark .grid:has(> .stat-card) {
+  border-color: var(--border-dark);
+  background: #0f172a;
+}
+.stat-card {
+  padding: 0.75rem 1rem;
+  box-shadow: -1px 0 0 var(--border), 0 -1px 0 var(--border);
+  min-width: 0;
 }
 .dark .stat-card {
-  background: #0f172a;
-  border-color: #1e293b;
-  box-shadow: var(--shadow-card-dark);
+  box-shadow: -1px 0 0 var(--border-dark), 0 -1px 0 var(--border-dark);
 }
 .stat-label {
-  font-size: 0.92rem;
-  font-weight: 600;
-  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #64748b;
 }
 .dark .stat-label {
   color: #94a3b8;
 }
 .stat-value {
-  font-size: 2.15rem;
-  font-weight: 700;
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 600;
   color: #0f172a;
-  margin-top: 0.25rem;
+  margin-top: 0.125rem;
   font-variant-numeric: tabular-nums;
 }
 .dark .stat-value {
@@ -390,7 +441,8 @@ body {
    garantizado. Estos modificadores viven en el mismo archivo que
    ".stat-value", así que su especificidad siempre gana de forma predecible. */
 .stat-value.stat-value--sm {
-  font-size: 1.3rem;
+  font-size: 1.125rem;
+  line-height: 1.75rem;
 }
 .stat-value.stat-value--success {
   color: #047857;
@@ -411,10 +463,10 @@ body {
   color: #fbbf24;
 }
 .stat-hint {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   color: #64748b;
-  margin-top: 0.45rem;
-  line-height: 1.4;
+  margin-top: 0.125rem;
+  line-height: 1.35;
 }
 .dark .stat-hint {
   color: #94a3b8;
@@ -423,29 +475,27 @@ body {
 .panel-card {
   background: #fff;
   border: 1px solid #e2e8f0;
-  border-radius: 1.1rem;
-  padding: 1.65rem 1.75rem;
-  box-shadow: var(--shadow-card);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
 }
 .dark .panel-card {
   background: #0f172a;
   border-color: #1e293b;
-  box-shadow: var(--shadow-card-dark);
 }
 .panel-title {
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-size: 0.9375rem;
+  line-height: 1.375rem;
+  font-weight: 600;
   color: #0f172a;
-  letter-spacing: -0.01em;
 }
 .dark .panel-title {
   color: #f8fafc;
 }
 .panel-subtitle {
-  font-size: 0.95rem;
+  font-size: 0.8125rem;
   color: #64748b;
-  margin-top: 0.25rem;
-  line-height: 1.5;
+  margin-top: 0.125rem;
+  line-height: 1.45;
 }
 .dark .panel-subtitle {
   color: #94a3b8;
@@ -457,9 +507,9 @@ body {
    de un vistazo que un punto de color + una palabra técnica. */
 .status-row {
   display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  padding: 0.9rem 0;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.5rem 0;
   border-bottom: 1px solid #f1f5f9;
 }
 .dark .status-row {
@@ -474,8 +524,8 @@ body {
    servicios (ej. GitHub, Stripe). */
 .dot {
   display: inline-block;
-  width: 0.7rem;
-  height: 0.7rem;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 9999px;
   flex-shrink: 0;
 }
@@ -492,11 +542,11 @@ body {
 
 .status-dot {
   display: inline-block;
-  width: 0.85rem;
-  height: 0.85rem;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 9999px;
   flex-shrink: 0;
-  margin-top: 0.35rem;
+  margin-top: 0.4375rem;
 }
 .status-dot.status-dot--conectado { background: #059669; }
 .dark .status-dot.status-dot--conectado { background: #34d399; }
@@ -505,17 +555,17 @@ body {
 .status-dot.status-dot--pendiente { background: #94a3b8; }
 .dark .status-dot.status-dot--pendiente { background: #64748b; }
 .status-row-label {
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 0.875rem;
+  font-weight: 500;
   color: #1e293b;
 }
 .dark .status-row-label {
   color: #f1f5f9;
 }
 .status-row-detail {
-  font-size: 0.88rem;
+  font-size: 0.75rem;
   color: #64748b;
-  margin-top: 0.1rem;
+  margin-top: 0.0625rem;
 }
 .dark .status-row-detail {
   color: #94a3b8;
@@ -537,16 +587,19 @@ body {
 .dark .table-wrap tbody tr.row-selected {
   background-color: #1e1b4b;
 }
-#products-table thead th {
-  font-size: 0.82rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: #475569;
+/* Todas las tablas: encabezado chico y gris, números alineados en columna. */
+.table-wrap thead th {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #64748b;
+  white-space: nowrap;
   user-select: none;
 }
-.dark #products-table thead th {
+.dark .table-wrap thead th {
   color: #94a3b8;
+}
+.table-wrap td {
+  font-variant-numeric: tabular-nums;
 }
 .sortable-th {
   cursor: pointer;
@@ -566,7 +619,6 @@ body {
 
 #products-tbody tr {
   border-bottom: 1px solid #f1f5f9;
-  transition: background-color 100ms ease;
 }
 .dark #products-tbody tr {
   border-color: #1e293b;
@@ -584,18 +636,19 @@ body {
   background-color: #1e1b4b;
 }
 #products-tbody td {
-  padding: 0.85rem 0.9rem;
+  padding: 0.5rem 0.75rem;
   vertical-align: middle;
-  font-size: 0.95rem;
+  font-size: 0.875rem;
 }
 
 .badge {
   display: inline-flex;
   align-items: center;
-  font-size: 0.8rem;
-  font-weight: 600;
-  padding: 0.22rem 0.65rem;
-  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.0625rem 0.4375rem;
+  border-radius: 0.25rem;
+  white-space: nowrap;
 }
 .badge-simple { background: #f1f5f9; color: #334155; }
 .dark .badge-simple { background: #1e293b; color: #cbd5e1; }
@@ -611,13 +664,12 @@ body {
 }
 
 .page-btn {
-  border: 1.5px solid #cbd5e1;
+  border: 1px solid #cbd5e1;
   background: #fff;
-  padding: 0.5rem 0.95rem;
-  border-radius: 0.6rem;
-  font-weight: 600;
-  font-size: 0.92rem;
-  transition: background-color 100ms ease, opacity 100ms ease;
+  padding: 0.25rem 0.625rem;
+  border-radius: 0.375rem;
+  font-weight: 500;
+  font-size: 0.8125rem;
 }
 .dark .page-btn {
   border-color: #334155;
@@ -637,12 +689,11 @@ body {
 
 /* Row action menu */
 .row-menu-btn {
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: 0.5rem;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
   color: #64748b;
-  font-size: 1.1rem;
-  transition: background-color 100ms ease;
+  font-size: 1rem;
 }
 .row-menu-btn:hover {
   background-color: #e2e8f0;
@@ -657,11 +708,12 @@ body {
   right: 0;
   top: 100%;
   margin-top: 0.3rem;
-  width: 13rem;
+  width: 12rem;
   background: #fff;
   border: 1px solid #e2e8f0;
-  border-radius: 0.75rem;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+  border-radius: 0.375rem;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  padding: 0.25rem 0;
   z-index: 20;
   overflow: hidden;
 }
@@ -677,26 +729,32 @@ body {
    flex se aplica con utilidades de Tailwind en el HTML/JS ("flex flex-col
    items-center text-center") en cada lugar donde se usa. */
 .empty-state {
-  padding: 3.75rem 1.5rem;
+  padding: 2.5rem 1rem;
 }
 .empty-state-icon {
-  font-size: 3rem;
-  margin-bottom: 1.1rem;
+  /* flex: el SVG es display:block (preflight de Tailwind) y sin esto queda
+     a la izquierda en los contenedores centrados con text-align. */
+  display: flex;
+  justify-content: center;
+  font-size: 1.5rem;
+  line-height: 1;
+  margin-bottom: 0.75rem;
+  color: #94a3b8;
 }
 .empty-state-title {
-  font-size: 1.2rem;
-  font-weight: 700;
+  font-size: 0.9375rem;
+  font-weight: 600;
   color: #0f172a;
 }
 .dark .empty-state-title {
   color: #f1f5f9;
 }
 .empty-state-desc {
-  font-size: 0.98rem;
-  color: #475569;
+  font-size: 0.875rem;
+  color: #64748b;
   max-width: 30rem;
-  margin-top: 0.5rem;
-  line-height: 1.55;
+  margin-top: 0.25rem;
+  line-height: 1.5;
 }
 .dark .empty-state-desc {
   color: #94a3b8;
@@ -707,7 +765,7 @@ body {
    sin adornos artificiales. */
 .progress-track {
   width: 100%;
-  height: 0.65rem;
+  height: 0.375rem;
   background: #e2e8f0;
   border-radius: 9999px;
   overflow: hidden;
@@ -732,22 +790,19 @@ body {
 .plan-card {
   background: #fff;
   border: 1px solid #e2e8f0;
-  border-radius: 1.1rem;
-  padding: 1.6rem;
+  border-radius: 0.5rem;
+  padding: 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  box-shadow: var(--shadow-card);
-  transition: border-color 150ms ease;
+  gap: 0.75rem;
 }
 .dark .plan-card {
   background: #0f172a;
   border-color: #1e293b;
-  box-shadow: var(--shadow-card-dark);
 }
 .plan-card.plan-current {
   border-color: #6366f1;
-  border-width: 2px;
+  box-shadow: inset 0 0 0 1px #6366f1;
 }
 
 /* ================= Sync timeline ================= */
@@ -786,11 +841,11 @@ body {
 .order-status {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  padding: 0.25rem 0.7rem;
-  border-radius: 9999px;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.0625rem 0.4375rem;
+  border-radius: 0.25rem;
   white-space: nowrap;
 }
 .order-status.order-status--pendiente { background: #fffbeb; color: #92400e; }
@@ -810,40 +865,40 @@ body {
 .chart-tabs {
   display: inline-flex;
   background: #f1f5f9;
-  border-radius: 0.65rem;
-  padding: 0.25rem;
-  gap: 0.2rem;
+  border-radius: 0.375rem;
+  padding: 0.125rem;
+  gap: 0.125rem;
 }
 .dark .chart-tabs {
   background: #1e293b;
 }
 .chart-tab {
-  font-size: 0.88rem;
-  font-weight: 600;
-  padding: 0.45rem 0.9rem;
-  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.25rem;
   color: #475569;
-  transition: background-color 120ms ease, color 120ms ease;
 }
 .dark .chart-tab {
   color: #94a3b8;
 }
 .chart-tab.chart-tab-active {
   background: #fff;
-  color: #4338ca;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+  box-shadow: 0 0 0 1px #e2e8f0;
 }
 .dark .chart-tab.chart-tab-active {
   background: #0f172a;
-  color: #c7d2fe;
+  color: #f1f5f9;
+  box-shadow: 0 0 0 1px #334155;
 }
 
 /* ================= Ranking de productos más vendidos ================= */
 .rank-row {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
-  padding: 0.7rem 0;
+  gap: 0.75rem;
+  padding: 0.4375rem 0;
   border-bottom: 1px solid #f1f5f9;
 }
 .dark .rank-row {
@@ -853,38 +908,12 @@ body {
   border-bottom: none;
 }
 .rank-number {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.85rem;
-  height: 1.85rem;
-  border-radius: 0.55rem;
-  background: #f1f5f9;
-  color: #334155;
-  font-size: 0.88rem;
-  font-weight: 700;
+  width: 1.25rem;
+  color: #94a3b8;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
   flex-shrink: 0;
-}
-.dark .rank-number {
-  background: #1e293b;
-  color: #cbd5e1;
-}
-.rank-row:nth-child(1) .rank-number { background: #fef3c7; color: #92400e; }
-.dark .rank-row:nth-child(1) .rank-number { background: #451a03; color: #fbbf24; }
-.rank-bar-track {
-  flex: 1;
-  height: 0.5rem;
-  background: #f1f5f9;
-  border-radius: 9999px;
-  overflow: hidden;
-}
-.dark .rank-bar-track {
-  background: #1e293b;
-}
-.rank-bar-fill {
-  height: 100%;
-  background: #4f46e5;
-  border-radius: 9999px;
 }
 
 /* Pill neutro para "estado de conexión" — distinto del ".demo-pill" ámbar
@@ -893,13 +922,13 @@ body {
    dueño: dato de demostración y estado de conexión NUNCA deben mezclarse
    en un solo indicador). */
 .connection-pill {
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: #475569;
   background: #f1f5f9;
   border: 1px solid #e2e8f0;
-  padding: 0.3rem 0.75rem;
-  border-radius: 9999px;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -912,36 +941,30 @@ body {
 
 /* ================= Skeleton ================= */
 .skeleton-line {
-  background: linear-gradient(90deg, #eef1f5 25%, #f6f8fa 37%, #eef1f5 63%);
-  background-size: 400% 100%;
-  animation: skeleton-shimmer 1.4s ease infinite;
-  border-radius: 0.5rem;
+  background: #eef1f5;
+  border-radius: 0.375rem;
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
 }
 .dark .skeleton-line {
-  background: linear-gradient(90deg, #1e293b 25%, #263449 37%, #1e293b 63%);
-  background-size: 400% 100%;
+  background: #1e293b;
 }
-@keyframes skeleton-shimmer {
-  0% { background-position: 100% 50%; }
-  100% { background-position: 0 50%; }
+@keyframes skeleton-pulse {
+  50% { opacity: 0.55; }
 }
 
 /* ================= Toasts ================= */
 .toast-item {
   opacity: 0;
-  transform: translateY(8px) scale(0.98);
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition: opacity 120ms ease;
   pointer-events: auto;
-  font-size: 0.95rem;
-  line-height: 1.5;
+  font-size: 0.875rem;
+  line-height: 1.45;
 }
 .toast-item.toast-in {
   opacity: 1;
-  transform: translateY(0) scale(1);
 }
 .toast-item.toast-out {
   opacity: 0;
-  transform: translateY(8px) scale(0.98);
 }
 
 /* ================= Scrollbar ================= */
@@ -964,29 +987,31 @@ main::-webkit-scrollbar-track {
 .wizard-steps {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.375rem;
   overflow-x: auto;
-  padding-bottom: 0.3rem;
+  scrollbar-width: none;
+}
+.wizard-steps::-webkit-scrollbar {
+  display: none;
 }
 .wizard-step {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.4375rem;
   flex-shrink: 0;
 }
 .wizard-step-dot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
+  width: 1.375rem;
+  height: 1.375rem;
   border-radius: 9999px;
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: 0.6875rem;
+  font-weight: 600;
   background: #f1f5f9;
   color: #64748b;
   flex-shrink: 0;
-  transition: background-color 150ms ease, color 150ms ease;
 }
 .dark .wizard-step-dot {
   background: #1e293b;
@@ -1005,8 +1030,8 @@ main::-webkit-scrollbar-track {
   color: #34d399;
 }
 .wizard-step-label {
-  font-size: 0.92rem;
-  font-weight: 600;
+  font-size: 0.8125rem;
+  font-weight: 500;
   color: #64748b;
   white-space: nowrap;
 }
@@ -1027,25 +1052,24 @@ main::-webkit-scrollbar-track {
 }
 
 .dropzone {
-  border: 2px dashed #cbd5e1;
-  border-radius: 1.1rem;
-  padding: 3.25rem 1.5rem;
+  border: 1px dashed #94a3b8;
+  border-radius: 0.5rem;
+  padding: 2rem 1rem;
   text-align: center;
   cursor: pointer;
-  transition: border-color 150ms ease, background-color 150ms ease;
 }
 .dropzone:hover,
 .dropzone.dropzone-active {
   border-color: #6366f1;
-  background: #eef2ff;
+  background: #f8fafc;
 }
 .dark .dropzone {
-  border-color: #334155;
+  border-color: #475569;
 }
 .dark .dropzone:hover,
 .dark .dropzone.dropzone-active {
   border-color: #6366f1;
-  background: #1e1b4b;
+  background: #111c31;
 }
 
 /* Estado recomendado por el motor de rentabilidad — deliberadamente
@@ -1055,11 +1079,11 @@ main::-webkit-scrollbar-track {
 .reco-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-  font-weight: 700;
-  padding: 0.3rem 0.75rem;
-  border-radius: 9999px;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.0625rem 0.4375rem;
+  border-radius: 0.25rem;
   white-space: nowrap;
 }
 .reco-badge.reco-rentable { background: #ecfdf5; color: #047857; }
@@ -1110,8 +1134,8 @@ main::-webkit-scrollbar-track {
 
 .draft-card {
   border: 1px solid #e2e8f0;
-  border-radius: 1rem;
-  padding: 1.25rem;
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
   background: #fff;
 }
 .dark .draft-card {
@@ -1128,10 +1152,10 @@ main::-webkit-scrollbar-track {
 /* Indica claramente si lo que se ve viene del backend real o son datos de
    ejemplo — nunca se mezclan (ver sección 7 del pedido del dueño). */
 .source-pill {
-  font-size: 0.82rem;
-  font-weight: 700;
-  padding: 0.3rem 0.75rem;
-  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -1152,35 +1176,35 @@ main::-webkit-scrollbar-track {
 }
 .ov-filtro-group { display: flex; flex-direction: column; gap: 0.3rem; }
 .ov-filtro-label {
-  font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.04em; color: #94a3b8;
+  font-size: 0.75rem; font-weight: 500; color: #64748b;
 }
 .ov-select {
-  font-size: 0.9rem; padding: 0.5rem 0.75rem; border-radius: 0.6rem;
-  border: 1px solid #e2e8f0; background: #fff; color: #0f172a; min-width: 9rem;
+  font-size: 0.875rem; padding: 0.375rem 0.625rem; border-radius: 0.375rem;
+  border: 1px solid #cbd5e1; background: #fff; color: #0f172a; min-width: 9rem;
 }
 .dark .ov-select { border-color: #334155; background: #1e293b; color: #e2e8f0; }
 
-/* Tarjetas KPI */
+/* KPIs: misma franja con divisiones finas que .stat-card (ver arriba). */
 .kpi-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 1rem; margin-bottom: 1.5rem;
+  gap: 0; margin-bottom: 1.5rem;
+  border: 1px solid var(--border); border-radius: 0.5rem; background: #fff; overflow: hidden;
 }
+.dark .kpi-grid { border-color: var(--border-dark); background: #0f172a; }
 .kpi-card {
-  border: 1px solid #e9edf3; border-radius: 1rem; padding: 1.1rem 1.2rem;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
-  box-shadow: 0 1px 2px rgba(15,23,42,0.04); transition: transform 140ms ease, box-shadow 140ms ease;
+  padding: 0.75rem 1rem;
+  box-shadow: -1px 0 0 var(--border), 0 -1px 0 var(--border);
 }
-.kpi-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(79,70,229,0.10); }
-.dark .kpi-card { border-color: #24304a; background: linear-gradient(180deg, #172033 0%, #131b2b 100%); }
+.dark .kpi-card { box-shadow: -1px 0 0 var(--border-dark), 0 -1px 0 var(--border-dark); }
 .kpi-label {
-  font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-  color: #94a3b8; display: flex; align-items: center; gap: 0.35rem;
+  font-size: 0.75rem; font-weight: 500;
+  color: #64748b; display: flex; align-items: center; gap: 0.25rem;
 }
-.kpi-value { font-size: 1.7rem; font-weight: 700; color: #0f172a; margin-top: 0.35rem; line-height: 1.1; }
+.dark .kpi-label { color: #94a3b8; }
+.kpi-value { font-size: 1.375rem; font-weight: 600; color: #0f172a; margin-top: 0.125rem; line-height: 1.3; font-variant-numeric: tabular-nums; }
 .dark .kpi-value { color: #f1f5f9; }
-.kpi-value.kpi-value--muted { color: #94a3b8; font-size: 1.05rem; font-weight: 600; }
-.kpi-delta { font-size: 0.8rem; font-weight: 600; margin-top: 0.4rem; display: inline-flex; align-items: center; gap: 0.2rem; }
+.kpi-value.kpi-value--muted { color: #94a3b8; font-size: 0.9375rem; font-weight: 500; }
+.kpi-delta { font-size: 0.75rem; font-weight: 500; margin-top: 0.125rem; display: inline-flex; align-items: center; gap: 0.2rem; }
 .kpi-delta--up { color: #059669; }
 .kpi-delta--down { color: #dc2626; }
 .kpi-delta--flat { color: #94a3b8; }
@@ -1199,10 +1223,9 @@ main::-webkit-scrollbar-track {
 
 /* Leyenda del pie */
 .ov-legend { display: flex; flex-direction: column; gap: 0.55rem; }
-.ov-legend-item { display: flex; align-items: center; gap: 0.6rem; font-size: 0.88rem; cursor: pointer; }
-.ov-legend-item:hover { color: #4f46e5; }
-.dark .ov-legend-item:hover { color: #a5b4fc; }
-.ov-legend-dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+.ov-legend-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; cursor: pointer; }
+.ov-legend-item:hover { text-decoration: underline; }
+.ov-legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 .ov-legend-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-legend-val { font-variant-numeric: tabular-nums; color: #64748b; }
 .dark .ov-legend-val { color: #94a3b8; }

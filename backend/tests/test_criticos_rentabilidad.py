@@ -6,13 +6,17 @@ regla que Oportunidades y envío manual desde un precio de venta.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from app.api.routes.rentabilidad import aplicar_envio_real_ml, preferencia_efectiva
-from app.db.models import ChannelCostSettings, ProductVariant
+from app.db.models import ChannelCostSettings, MercadoLibreShippingEstimate, ProductVariant
 from app.domain.ml_fees import ListingFee
+from app.domain.ml_shipping import MOTIVO_BAJO_EL_MINIMO_DEL_DUENO
 from app.domain.profitability import ChannelCosts
 from tests.test_publicaciones_endpoint import (  # noqa: F401 — fixtures
     _agregar_comision_ml_real,
     _configurar_margen,
+    _envio_ml_resuelto,
     _producto_publicable,
     a_store,
     client,
@@ -82,19 +86,36 @@ def test_dashboard_cuenta_solo_los_que_convienen_en_mercado_libre(client, db_ses
 # ------------------------------------------------------------------
 
 
-def test_envio_manual_no_se_descuenta_bajo_el_precio_indicado():
+def _estimacion_ml(costo: float, obligatorio: bool = True) -> MercadoLibreShippingEstimate:
+    """Estimación vigente de Mercado Libre, sin pasar por la base."""
+    return MercadoLibreShippingEstimate(
+        category_id="MLC180937", price=0, shipping_cost=costo, mandatory=obligatorio,
+        dimensions="5x15x15,300", fetched_at=datetime.now(),
+    )
+
+
+def test_el_envio_de_ml_no_se_descuenta_bajo_el_precio_indicado():
+    """El umbral "envío desde $X" se aplica al envío que informa Mercado Libre.
+    16 de septiembre de 2026: el envío manual de Configuración ya no completa
+    el cálculo — sin dato de Mercado Libre, el envío queda desconocido."""
     costos = ChannelCosts(commission_pct=14.0, shipping_cost=3500.0)
-    bajo, datos_bajo = aplicar_envio_real_ml(costos, None, precio=4990.0, envio_desde_clp=20000.0)
-    alto, _ = aplicar_envio_real_ml(costos, None, precio=29990.0, envio_desde_clp=20000.0)
-    sin_umbral, _ = aplicar_envio_real_ml(costos, None, precio=4990.0)
+    bajo, datos_bajo = aplicar_envio_real_ml(costos, None, precio=4990.0, envio_desde_clp=20000.0, estimacion=_estimacion_ml(3500.0))
+    alto, _ = aplicar_envio_real_ml(costos, None, precio=29990.0, envio_desde_clp=20000.0, estimacion=_estimacion_ml(3500.0))
+    sin_umbral, _ = aplicar_envio_real_ml(costos, None, precio=4990.0, estimacion=_estimacion_ml(3500.0))
     assert bajo.shipping_cost == 0.0
-    assert datos_bajo["envioMlManualAplicado"] is None
+    assert datos_bajo["envioMlMotivo"] == MOTIVO_BAJO_EL_MINIMO_DEL_DUENO
     assert alto.shipping_cost == 3500.0
     assert sin_umbral.shipping_cost == 3500.0
+
+    # Solo el envío manual: dato faltante, no un envío de $0.
+    solo_manual, datos = aplicar_envio_real_ml(costos, None, precio=29990.0)
+    assert solo_manual.shipping_unknown is True and solo_manual.shipping_cost is None
+    assert datos["envioMlResuelto"] is False
 
 
 def test_oportunidades_aplica_el_umbral_de_envio(client, db_session, a_store):
     _producto_publicable(db_session, a_store, sku="ENV-BARATO", costo=2000, precio=4990)
+    _envio_ml_resuelto(db_session, a_store, categoria="MLC180937", precio=4990, costo=3500)
     canal = db_session.query(ChannelCostSettings).filter_by(store_id=a_store.id, channel="mercadolibre").one()
     canal.shipping_cost = 3500
     db_session.commit()

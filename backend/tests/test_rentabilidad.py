@@ -27,13 +27,18 @@ from app.db.models import (
     StoreSettings,
     User,
 )
-from app.domain.ml_shipping import MOTIVO_NO_PUBLICADO, MOTIVO_PUBLICACION_CERRADA, MOTIVO_SIN_MERCADO_ENVIOS
+from app.domain.ml_shipping import MOTIVO_ESTIMACION_NO_CONSULTADA, MOTIVO_PUBLICACION_CERRADA, MOTIVO_SIN_MERCADO_ENVIOS
 from app.db.session import get_db
 from app.domain.security import hash_password
 from tests.auth_helpers import autenticar
+from tests.test_publicaciones_endpoint import _envio_ml_resuelto
 from app.main import app
 
 NOW = datetime(2026, 8, 22, 12, 0, 0)
+
+# Categoría de Mercado Libre de los productos de prueba (la misma que usa el
+# resto de la suite), necesaria para que el envío se pueda resolver.
+CATEGORIA_ML_PRUEBA = "MLC180937"
 
 
 @event.listens_for(Engine, "connect")
@@ -84,8 +89,16 @@ def a_store(client, db_session):
     return tienda
 
 
-def _producto_con_precio_y_costo(db_session, tienda, *, sku, nombre, precio, costo):
-    producto = Product(store=tienda, internal_sku=sku, name=nombre, product_type="simple", created_at=NOW, updated_at=NOW)
+def _producto_con_precio_y_costo(db_session, tienda, *, sku, nombre, precio, costo, envio_resuelto=True):
+    """16 de septiembre de 2026 — desde la regla estricta del envío, un producto
+    sin costo de envío de Mercado Libre queda en "Faltan datos" y sin margen del
+    canal. Salvo que la prueba pida lo contrario (envio_resuelto=False), el envío
+    queda resuelto en $0 con la categoría de prueba, así lo que se mide es lo que
+    cada prueba quiere medir (ver tests/test_publicaciones_endpoint.py)."""
+    producto = Product(
+        store=tienda, internal_sku=sku, name=nombre, product_type="simple",
+        ml_category_id=CATEGORIA_ML_PRUEBA, created_at=NOW, updated_at=NOW,
+    )
     db_session.add(producto)
     db_session.flush()
     db_session.add(
@@ -95,6 +108,8 @@ def _producto_con_precio_y_costo(db_session, tienda, *, sku, nombre, precio, cos
         )
     )
     db_session.commit()
+    if envio_resuelto and precio is not None:
+        _envio_ml_resuelto(db_session, tienda, categoria=CATEGORIA_ML_PRUEBA, precio=precio)
 
 
 def test_rentabilidad_vacia_sin_productos(client, a_store):
@@ -146,6 +161,8 @@ def test_producto_con_costo_tiene_margen_tienda_pero_no_ml_sin_configurar(client
 
 def test_configurar_canal_mercado_libre_habilita_el_margen_neto(client, db_session, a_store):
     _producto_con_precio_y_costo(db_session, a_store, sku="LIB-003", nombre="Libro B", precio=10000, costo=7000)
+    # El envío del cálculo es el de Mercado Libre, no el manual (16/09/2026).
+    _envio_ml_resuelto(db_session, a_store, categoria=CATEGORIA_ML_PRUEBA, precio=10000, costo=1500)
 
     put_res = client.put(
         "/api/configuracion/canales/mercadolibre",
@@ -258,12 +275,14 @@ def test_producto_con_costo_y_sin_precio_no_rompe_el_reporte(client, db_session,
     assert {p["sku"] for p in body["productos"]} == {"CON-PRECIO", "SIN-PRECIO", "SIN-COSTO"}
 
 
-def _producto_con_categoria_ml(db_session, tienda, *, sku, nombre, precio, costo, category_id="MLC180937"):
-    _producto_con_precio_y_costo(db_session, tienda, sku=sku, nombre=nombre, precio=precio, costo=costo)
+def _producto_con_categoria_ml(db_session, tienda, *, sku, nombre, precio, costo, category_id="MLC180937", envio_resuelto=True):
+    _producto_con_precio_y_costo(db_session, tienda, sku=sku, nombre=nombre, precio=precio, costo=costo, envio_resuelto=False)
     producto = db_session.query(Product).filter_by(store_id=tienda.id, internal_sku=sku).one()
     producto.ml_category_id = category_id
     producto.ml_category_name = "Categoría de prueba"
     db_session.commit()
+    if envio_resuelto and precio is not None:
+        _envio_ml_resuelto(db_session, tienda, categoria=category_id, precio=precio)
     return producto
 
 
@@ -321,14 +340,17 @@ def test_costo_de_envio_real_de_ml_entra_en_el_margen_neto(client, db_session, a
     assert fila["envioMlFuente"] == "mercadolibre"
     # precio - costo - comisión real (12%) - envío real = 10000 - 6000 - 1200 - 1500
     assert fila["margenMercadoLibreClp"] == 1300.0
-    assert fila["rentabilidadMlProvisional"] is False
+    assert fila["envioMlResuelto"] is True
     assert fila["publicacionMlEstado"] == "active"
 
 
-def test_sin_costo_de_envio_de_ml_no_se_inventa_y_la_rentabilidad_es_provisional(client, db_session, a_store):
-    _producto_con_categoria_ml(db_session, a_store, sku="SIN-PUBLICAR", nombre="Sin publicar", precio=10000, costo=6000)
-    publicado = _producto_con_categoria_ml(db_session, a_store, sku="SIN-ME2", nombre="Publicado sin Mercado Envíos", precio=10000, costo=6000)
-    cerrado = _producto_con_categoria_ml(db_session, a_store, sku="CERRADA", nombre="Publicación cerrada en ML", precio=10000, costo=6000)
+def test_sin_costo_de_envio_de_ml_no_se_inventa_y_no_hay_rentabilidad(client, db_session, a_store):
+    """16 de septiembre de 2026 — antes el margen se calculaba igual (con el
+    envío en $0) y solo se marcaba "provisional"; ahora sin envío no hay
+    margen de Mercado Libre que mostrar."""
+    _producto_con_categoria_ml(db_session, a_store, sku="SIN-PUBLICAR", nombre="Sin publicar", precio=10000, costo=6000, envio_resuelto=False)
+    publicado = _producto_con_categoria_ml(db_session, a_store, sku="SIN-ME2", nombre="Publicado sin Mercado Envíos", precio=10000, costo=6000, envio_resuelto=False)
+    cerrado = _producto_con_categoria_ml(db_session, a_store, sku="CERRADA", nombre="Publicación cerrada en ML", precio=10000, costo=6000, envio_resuelto=False)
     _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_special", percentage_fee=12.0)
     _configurar_canal_manual(client, commission_pct=30.0, listing_type_pref="classic")
     _publicacion_ml(db_session, a_store, publicado, motivo=MOTIVO_SIN_MERCADO_ENVIOS)
@@ -337,7 +359,9 @@ def test_sin_costo_de_envio_de_ml_no_se_inventa_y_la_rentabilidad_es_provisional
 
     filas = {f["sku"]: f for f in client.get("/api/rentabilidad").json()["productos"]}
     for sku, motivo in (
-        ("SIN-PUBLICAR", MOTIVO_NO_PUBLICADO),
+        # Nunca publicado y sin estimación consultada: lo que falta es la
+        # consulta del envío estimado, no publicarlo (16 sept 2026).
+        ("SIN-PUBLICAR", MOTIVO_ESTIMACION_NO_CONSULTADA),
         ("SIN-ME2", MOTIVO_SIN_MERCADO_ENVIOS),
         ("CERRADA", MOTIVO_PUBLICACION_CERRADA),
     ):
@@ -345,8 +369,8 @@ def test_sin_costo_de_envio_de_ml_no_se_inventa_y_la_rentabilidad_es_provisional
         assert fila["costoEnvioMl"] is None
         assert fila["envioMlFuente"] == "no_disponible"
         assert fila["envioMlMotivo"] == motivo
-        assert fila["margenMercadoLibreClp"] == 2800.0  # sin envío estimado: 10000 - 6000 - 1200
-        assert fila["rentabilidadMlProvisional"] is True
+        assert fila["margenMercadoLibreClp"] is None  # no se calcula con un envío supuesto de $0
+        assert fila["envioMlResuelto"] is False
     assert filas["SIN-PUBLICAR"]["publicacionMlEstado"] is None
     assert filas["SIN-ME2"]["publicacionMlEstado"] == "active"
     assert filas["CERRADA"]["publicacionMlEstado"] == "closed"
@@ -461,6 +485,7 @@ def test_comision_ml_real_informativa_usa_el_costo_de_cada_variante_no_el_de_la_
     db_session.add(ProductVariant(product=producto, store_id=a_store.id, variant_sku="DOS-VAR-A", variant_label="Azul", price=10000, cost_price=4000, created_at=NOW, updated_at=NOW))
     db_session.add(ProductVariant(product=producto, store_id=a_store.id, variant_sku="DOS-VAR-B", variant_label="Rojo", price=10000, cost_price=7000, created_at=NOW, updated_at=NOW))
     db_session.commit()
+    _envio_ml_resuelto(db_session, a_store, categoria="MLC180937", precio=10000)
     _agregar_comision_ml_real(db_session, a_store, category_id="MLC180937", price=10000, listing_type_id="gold_special", percentage_fee=10.0)
 
     body = client.get("/api/rentabilidad").json()

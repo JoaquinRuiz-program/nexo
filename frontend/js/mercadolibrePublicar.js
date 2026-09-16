@@ -173,10 +173,10 @@ window.LC = window.LC || {};
   function renderFase(main) {
     const contenido = { decision: renderPasoDecision, preparar: renderPasoPreparar, revisar: renderPasoRevisar, publicado: renderPasoPublicado }[state.fase];
     main.innerHTML = `
-      <div class="page-wrap app-fade max-w-4xl">
+      <div class="page-wrap app-fade">
         <button id="ml-back" class="text-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 mb-4 inline-flex items-center gap-1">← Volver al producto</button>
         <div class="flex items-center gap-2 mb-1">
-          <h2 class="text-xl font-semibold">${escapeHtml(state.producto.nombre)}</h2>
+          <h2 class="text-lg font-semibold">${escapeHtml(state.producto.nombre)}</h2>
         </div>
         <p class="text-sm text-slate-500 dark:text-slate-400 font-mono mb-5">${escapeHtml(state.producto.sku) || "Sin SKU"}</p>
         ${stepper()}
@@ -310,19 +310,23 @@ window.LC = window.LC || {};
   // resolver_costos_ml en el backend), el precio/margen mostrados arriba
   // se calcularon con esa; si no, con la comisión manual configurada a
   // mano. Nunca se oculta cuál de las dos se usó.
-  // Costo de envío (14 de septiembre de 2026) — solo el REAL que informa
-  // Mercado Libre para la publicación. Sin ese dato: "No disponible" y la
-  // ganancia en Mercado Libre queda marcada como provisional.
+  // Costo de envío: el REAL de la publicación o el ESTIMADO por Mercado Libre
+  // para esta categoría y precio. Sin ninguno de los dos no hay rentabilidad
+  // que mostrar (16 de septiembre de 2026): se dice qué falta, nunca se
+  // calcula con un envío de $0 supuesto.
   function etiquetaEnvioMl(r) {
     if (!r || !r.envioMlFuente) return "";
     const origen = r.envioMlFuente === "mercadolibre"
-      ? `<p class="flex items-center gap-1.5"><span class="dot dot--green"></span>Costo de envío: ${formatCLPReal(r.costoEnvioMl)} · Obtenido de Mercado Libre</p>`
+      ? `<p class="flex items-center gap-1.5"><span class="dot dot--green"></span>Costo de envío: ${formatCLPReal(r.costoEnvioMl)} · De tu publicación en Mercado Libre</p>`
+      : r.envioMlFuente === "estimado_ml"
+      ? `<p class="flex items-center gap-1.5"><span class="dot dot--blue"></span>Costo de envío: ${formatCLPReal(r.costoEnvioMl)} · Estimado por Mercado Libre para esta categoría y este precio</p>
+         <p class="text-slate-400 mt-1">Usa las medidas típicas de la categoría. Al publicar se reemplaza por el costo real de tu publicación.</p>`
       : `<p class="flex items-center gap-1.5"><span class="dot dot--gray"></span>Costo de envío: No disponible</p>
          ${r.envioMlMotivo ? `<p class="text-slate-400 mt-1">${escapeHtml(r.envioMlMotivo)}</p>` : ""}`;
-    const provisional = r.rentabilidadMlProvisional
-      ? `<p class="text-amber-600 dark:text-amber-400 mt-1">Rentabilidad provisional: todavía no incluye el costo de envío real de Mercado Libre${r.envioMlManualAplicado ? ` (se usó el envío manual de Configuración, ${formatCLPReal(r.envioMlManualAplicado)})` : ""}.</p>`
+    const faltaElEnvio = r.envioMlResuelto === false
+      ? `<p class="text-amber-600 dark:text-amber-400 mt-1">Sin el costo de envío no se puede calcular la rentabilidad: hasta tenerlo, Nexo no dice si conviene ni si no conviene.</p>`
       : "";
-    return `<div class="text-xs text-slate-600 dark:text-slate-300 mb-3">${origen}${provisional}</div>`;
+    return `<div class="text-xs text-slate-600 dark:text-slate-300 mb-3">${origen}${faltaElEnvio}</div>`;
   }
 
   function etiquetaComisionMl(fuente) {
@@ -371,7 +375,7 @@ window.LC = window.LC || {};
     if (!p) return skeletonInner();
 
     return `
-      <div class="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950 px-4 py-3 mb-5 text-sm text-indigo-800 dark:text-indigo-200">
+      <div class="rounded-md border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950 px-4 py-3 mb-5 text-sm text-indigo-800 dark:text-indigo-200">
         Esto es un borrador — todavía no se envía nada a Mercado Libre.
       </div>
 
@@ -407,7 +411,7 @@ window.LC = window.LC || {};
       </div>
 
       ${p.advertencias && p.advertencias.length ? `
-        <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 mb-5 text-sm text-amber-800 dark:text-amber-200 space-y-1">
+        <div class="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 mb-5 text-sm text-amber-800 dark:text-amber-200 space-y-1">
           ${p.advertencias.map((a) => `<p>${escapeHtml(a)}</p>`).join("")}
         </div>` : ""}
 
@@ -518,7 +522,7 @@ window.LC = window.LC || {};
     if (!pv) return skeletonInner();
 
     return `
-      <div class="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950 px-4 py-3 mb-5 text-sm text-indigo-800 dark:text-indigo-200">
+      <div class="rounded-md border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950 px-4 py-3 mb-5 text-sm text-indigo-800 dark:text-indigo-200">
         Esto es exactamente lo que se va a enviar a Mercado Libre si confirmas. Todavía no se publicó nada.
       </div>
 
@@ -858,9 +862,9 @@ window.LC = window.LC || {};
   function renderGestion(main) {
     const g = state.gestion;
     main.innerHTML = `
-      <div class="page-wrap app-fade max-w-2xl">
+      <div class="page-wrap app-fade">
         <button id="ml-back" class="text-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 mb-4 inline-flex items-center gap-1">← Volver al producto</button>
-        <h2 class="text-xl font-semibold mb-1">${escapeHtml(state.producto.nombre)}</h2>
+        <h2 class="text-lg font-semibold mb-1">${escapeHtml(state.producto.nombre)}</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400 font-mono mb-5">${escapeHtml(state.producto.sku) || "Sin SKU"}</p>
         <div class="panel-card">
           <h3 class="panel-title mb-3">Publicación en Mercado Libre</h3>

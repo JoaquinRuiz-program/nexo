@@ -26,7 +26,7 @@ mezclan las dos responsabilidades.
 | Resultado | Qué significa para el dueño |
 |---|---|
 | `conviene` | Con el precio real, la venta no deja pérdida y alcanza el margen mínimo % o la ganancia neta mínima $ (o no hay ninguno configurado). |
-| `revisar` | Faltan datos para calcular la ganancia (precio o costos del canal). Sin costo de compra registrado se calcula con costo $0. |
+| `revisar` | Faltan datos para calcular la ganancia (precio, costos del canal, o el costo de envío de Mercado Libre). Sin costo de compra registrado se calcula con costo $0; sin costo de envío, en cambio, no se calcula nada. |
 | `no_conviene` | La venta deja pérdida, o no alcanza ni el margen mínimo ni la ganancia neta mínima. |
 
 `razon` siempre trae una explicación en texto plano de por qué se llegó a
@@ -42,11 +42,19 @@ clasificación que Oportunidades (`classify_product`, vía
 `/validar` y el gate de `/confirmar`):
 
 1. Ganancia neta = precio real − costo − comisión (real de ML si existe) −
-   envío (real de ML si existe) − otros costos. Sin costo de compra registrado
+   envío de Mercado Libre − otros costos. Sin costo de compra registrado
    (un producto que la empresa ya tiene, ej. un repuesto retirado) el costo
    considerado es $0: la ganancia es lo que queda después de los costos de ML.
    Sin costo tampoco hay precio para el margen objetivo: se publica al precio
    de venta del dueño.
+   **Sin costo de envío no hay decisión** (regla estricta del dueño, 16 de
+   septiembre de 2026): si Mercado Libre no informó el envío real de la
+   publicación ni una estimación vigente para la categoría y el precio, la
+   clasificación es `sin_datos` → `revisar` ("Faltan datos"), nunca
+   `conviene` ni `no_conviene` calculados con un envío supuesto de $0. El
+   envío manual de Configuración no reemplaza al de Mercado Libre. Un $0
+   sí vale cuando Mercado Libre confirma que el envío no corre por cuenta
+   del vendedor.
 2. Ganancia < 0 → `no_conviene`.
 3. Ganancia ≥ 0 → `conviene` si margen % ≥ margen mínimo **o** ganancia ≥
    ganancia neta mínima $; si no cumple ninguna → `no_conviene`.

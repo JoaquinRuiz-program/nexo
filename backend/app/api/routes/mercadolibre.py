@@ -56,6 +56,7 @@ precisamente para este momento.
 
 from __future__ import annotations
 
+import json
 import logging
 import secrets
 import time
@@ -64,7 +65,7 @@ from typing import Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.adapters.mercadolibre import (
@@ -83,6 +84,7 @@ from app.domain.marketplace_stock import MarketplaceStockError, apply_sale
 from app.domain.token_crypto import TokenEncryptionNotConfigured, decrypt_token, encrypt_token
 from app.services.ml_shipping_sync import sincronizar_costos_envio_de_la_cuenta
 from app.services.sync_registro import DIRECCION_ML_VENTAS, registrar_fallo, registrar_sincronizacion
+from app.services.analisis_rentabilidad_stream import analizar_catalogo_stream
 from app.services.ml_comisiones import actualizar_comisiones_en_segundo_plano, actualizar_comisiones_reales
 from app.services.ml_devoluciones_sync import fila_devolucion, sincronizar_devoluciones_de_la_cuenta
 from app.services.ml_conciliacion import conciliacion_de_la_tienda, conciliar_comisiones_de_la_cuenta
@@ -92,6 +94,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/mercadolibre", tags=["mercadolibre"])
 
 MARKETPLACE = "mercadolibre"
+
+# Importación de ventas: cuántos pedidos se piden por página y cuántas páginas
+# como máximo por corrida (50 × 20 = 1.000 pedidos). Los más nuevos primero:
+# lo que no entre en una corrida entra en la siguiente.
+LIMITE_PEDIDOS_POR_PAGINA = 50
+MAX_PAGINAS_PEDIDOS = 20
 
 # Estados pendientes de OAuth (protección CSRF + PKCE) — en memoria del
 # proceso, con expiración corta. Alcanza para un solo backend en
@@ -421,7 +429,24 @@ async def importar_ventas(db: Session = Depends(get_db), store: Store = Depends(
 
     adapter = MercadoLibreAdapter(cfg)
     try:
-        resultado = await adapter.search_orders(access_token, seller_id=account.external_account_id)
+        # 16 de septiembre de 2026 (revisión del sistema) — antes se pedía UNA
+        # sola página: un vendedor con más de 50 pedidos nuevos entre dos
+        # importaciones perdía el resto en silencio. Ahora se pagina, con los
+        # más nuevos primero y un tope por corrida (lo que no entre, entra en
+        # la siguiente).
+        pedidos_crudos: list[dict] = []
+        offset = 0
+        for _ in range(MAX_PAGINAS_PEDIDOS):
+            resultado = await adapter.search_orders(
+                access_token, seller_id=account.external_account_id,
+                offset=offset, limit=LIMITE_PEDIDOS_POR_PAGINA, sort="date_desc",
+            )
+            pagina = resultado.get("results") or []
+            pedidos_crudos.extend(pagina)
+            total = (resultado.get("paging") or {}).get("total") or 0
+            offset += LIMITE_PEDIDOS_POR_PAGINA
+            if not pagina or offset >= total:
+                break
     except MercadoLibreAuthError as err:
         # Nunca el texto crudo de Mercado Libre en la respuesta al cliente
         # (puede traer hasta 500 caracteres de la respuesta del proveedor,
@@ -443,7 +468,7 @@ async def importar_ventas(db: Session = Depends(get_db), store: Store = Depends(
     desajustes_stock_reservado: list[str] = []
     ahora = datetime.now()
 
-    for raw_order in resultado.get("results", []):
+    for raw_order in pedidos_crudos:
         fila = map_ml_order(raw_order)
         existente = db.query(Order).filter_by(
             store_id=store.id, channel=MARKETPLACE, external_order_id=fila["external_order_id"]
@@ -592,7 +617,15 @@ async def recalcular_comisiones(db: Session = Depends(get_db), store: Store = De
     try:
         # Mismo cálculo que corre solo al importar el catálogo y al conectar
         # Mercado Libre (services/ml_comisiones.py).
-        resultado = await actualizar_comisiones_reales(db, store.id, adapter, access_token, site_id)
+        # 16 de septiembre de 2026 — bug encontrado en esta revisión: faltaba
+        # `account.external_account_id` (user_id), así que este botón nunca
+        # estimaba el envío (_actualizar_estimaciones_envio corta de
+        # inmediato sin user_id) aunque sí actualizaba las comisiones. El
+        # disparo automático al importar SÍ lo pasaba bien (ver
+        # actualizar_comisiones_reales_de_la_tienda).
+        resultado = await actualizar_comisiones_reales(
+            db, store.id, adapter, access_token, site_id, account.external_account_id
+        )
     except MercadoLibreAuthError as err:
         raise HTTPException(
             status_code=502,
@@ -608,3 +641,30 @@ async def recalcular_comisiones(db: Session = Depends(get_db), store: Store = De
     costos_envio = await sincronizar_costos_envio_de_la_cuenta(db, account, settings)
 
     return {**resultado, "costosEnvio": costos_envio}
+
+
+# ------------------------------------------------------------------
+# POST /analisis-rentabilidad/stream — 16 de septiembre de 2026, pedido del
+# dueño: al subir el Excel, obtener SOLO el costo de envío real de Mercado
+# Libre para cada producto antes de decidir si conviene, sin pedirle peso ni
+# medidas, y sin que la pantalla parezca congelada mientras tanto.
+#
+# Hace exactamente el mismo trabajo que POST /comisiones/recalcular de
+# arriba (comisiones reales + envío estimado de lo no publicado + envío real
+# de lo publicado) — nunca dos formas de conseguir el mismo dato — pero
+# reporta avance línea a línea (NDJSON) en vez de esperar todo el catálogo
+# antes de responder. Ver services/analisis_rentabilidad_stream.py.
+# ------------------------------------------------------------------
+
+
+@router.post("/analisis-rentabilidad/stream")
+async def analizar_rentabilidad_stream(
+    db: Session = Depends(get_db), store: Store = Depends(get_current_store)
+) -> StreamingResponse:
+    settings = get_settings()
+
+    async def lineas():
+        async for evento in analizar_catalogo_stream(db, store, settings):
+            yield json.dumps(evento, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(lineas(), media_type="application/x-ndjson")

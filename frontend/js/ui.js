@@ -109,7 +109,7 @@ window.LC = window.LC || {};
     const container = document.getElementById("toast-container");
     if (!container) return;
     const node = document.createElement("div");
-    node.className = `toast-item flex items-start gap-2 border rounded-xl px-4 py-3 shadow-lg text-sm max-w-sm ${TOAST_CLASSES[type] || TOAST_CLASSES.info}`;
+    node.className = `toast-item flex items-start gap-2 border rounded-md px-3 py-2.5 shadow-sm text-sm max-w-sm ${TOAST_CLASSES[type] || TOAST_CLASSES.info}`;
     node.innerHTML = `
       <span class="dot ${TOAST_DOT_CLASS[type] || TOAST_DOT_CLASS.info} mt-2"></span>
       <span class="flex-1">${escapeHtml(message)}</span>
@@ -134,15 +134,15 @@ window.LC = window.LC || {};
     if (!root) return;
     root.innerHTML = `
       <div class="modal-overlay fixed inset-0 bg-slate-900/50 dark:bg-slate-950/70 flex items-center justify-center z-[60] p-4">
-        <div class="modal-card bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full p-6">
-          <div class="flex items-start justify-between gap-4 mb-3">
-            <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">${escapeHtml(title)}</h3>
-            <button class="modal-close text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 leading-none text-xl" aria-label="Cerrar">✕</button>
+        <div class="modal-card bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-w-md w-full p-5">
+          <div class="flex items-start justify-between gap-4 mb-2">
+            <h3 class="text-base font-semibold text-slate-900 dark:text-slate-100">${escapeHtml(title)}</h3>
+            <button class="modal-close text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 leading-none" aria-label="Cerrar">✕</button>
           </div>
-          <div class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed mb-6">${body}</div>
-          <div class="flex justify-end gap-3">
-            ${secondaryLabel ? `<button class="modal-secondary px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition">${escapeHtml(secondaryLabel)}</button>` : ""}
-            <button class="modal-primary px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition">${escapeHtml(primaryLabel)}</button>
+          <div class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed mb-5">${body}</div>
+          <div class="flex justify-end gap-2">
+            ${secondaryLabel ? `<button class="modal-secondary btn-secondary">${escapeHtml(secondaryLabel)}</button>` : ""}
+            <button class="modal-primary btn-primary">${escapeHtml(primaryLabel)}</button>
           </div>
         </div>
       </div>

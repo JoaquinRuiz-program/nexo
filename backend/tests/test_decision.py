@@ -15,10 +15,13 @@ from app.domain.profitability import ChannelCosts
 CHANNEL = ChannelCosts(commission_pct=15.0, shipping_cost=500.0)
 
 
-def _fila(*, precio=20000.0, ganancia=9000.0, margen_pct=45.0, tiene_costo=True):
+def _fila(*, precio=20000.0, ganancia=9000.0, margen_pct=45.0, tiene_costo=True, envio_resuelto=True):
     return {
         "precio": precio, "tieneCosto": tiene_costo, "mercadoLibreConfigurado": True,
         "margenMercadoLibreClp": ganancia, "margenMercadoLibrePct": margen_pct,
+        # 16 de septiembre de 2026 — sin el envío de Mercado Libre no hay
+        # decisión posible (ver test de más abajo y catalog_selection.py).
+        "envioMlResuelto": envio_resuelto,
     }
 
 
@@ -44,6 +47,15 @@ def test_conviene_si_alcanza_el_margen_minimo_con_el_precio_real():
     assert resultado.precio_actual == 20000.0 and resultado.ganancia_actual == 9000.0
     assert "$20.000" in resultado.razon and "$9.000" in resultado.razon
     assert resultado.aviso_margen_objetivo is None
+
+
+def test_sin_el_envio_de_mercado_libre_no_se_decide_nunca_conviene():
+    """Regla estricta del dueño (16 de septiembre de 2026): con el envío sin
+    resolver la respuesta es "revisar" (Faltan datos), aunque los números
+    calculados sin envío dieran de sobra."""
+    resultado = _decidir(_fila(envio_resuelto=False), _ml(min_margin_pct=20.0), RECO_OK)
+    assert resultado.decision == REVISAR
+    assert "costo de envío de Mercado Libre" in resultado.razon
 
 
 def test_no_conviene_si_no_alcanza_margen_minimo_ni_ganancia_minima():

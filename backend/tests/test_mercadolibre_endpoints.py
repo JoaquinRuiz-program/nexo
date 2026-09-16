@@ -25,6 +25,7 @@ from app.db.base import Base
 from app.db.models import (
     MarketplaceAccount,
     MercadoLibreCategoryFee,
+    MercadoLibreShippingEstimate,
     Order,
     OrderItem,
     Product,
@@ -804,6 +805,20 @@ def test_recalcular_comisiones_predice_categoria_y_guarda_la_comision_real(clien
             ],
         )
     )
+    # 16 de septiembre de 2026 — bug encontrado en esta revisión: este botón
+    # nunca estimaba el envío porque faltaba pasar user_id (ver
+    # routes/mercadolibre.py::recalcular_comisiones). Ahora sí lo consulta.
+    respx.get("https://api.mercadolibre.com/categories/MLC180937/shipping_preferences").mock(
+        return_value=httpx.Response(200, json={
+            "dimensions": {"height": 5, "width": 15, "length": 15, "weight": 300},
+            "logistics": [{"types": ["drop_off"], "mode": "me2"}],
+        })
+    )
+    respx.get(url__regex=r"https://api\.mercadolibre\.com/users/555/shipping_options/free.*").mock(
+        return_value=httpx.Response(200, json={
+            "coverage": {"all_country": {"list_cost": 3050, "currency_id": "CLP", "discount": {"rate": 0.5, "type": "mandatory"}}},
+        })
+    )
 
     res = client.post("/api/mercadolibre/comisiones/recalcular")
 
@@ -812,6 +827,8 @@ def test_recalcular_comisiones_predice_categoria_y_guarda_la_comision_real(clien
     assert body["productosRevisados"] == 1
     assert body["productosSinCategoriaDetectada"] == []
     assert body["combinacionesComisionActualizadas"] == 1
+    assert body["estimacionesEnvioActualizadas"] == 1
+    assert body["costosEnvio"] is not None
 
     producto = db_session.get(Product, variante.product_id)
     assert producto.ml_category_id == "MLC180937"
@@ -839,20 +856,28 @@ def test_recalcular_comisiones_no_repite_la_llamada_si_ya_esta_cacheada(client, 
     db_session.add_all([
         MercadoLibreCategoryFee(store_id=a_store.id, category_id="MLC180937", listing_type_id="gold_special", price=5000, percentage_fee=15, fixed_fee=0, sale_fee_amount=750, fetched_at=NOW),
         MercadoLibreCategoryFee(store_id=a_store.id, category_id="MLC180937", listing_type_id="gold_pro", price=5000, percentage_fee=19, fixed_fee=0, sale_fee_amount=950, fetched_at=NOW),
+        # 16 de septiembre de 2026 — con el bug de user_id corregido, este
+        # endpoint también consulta el envío estimado; ya cacheado tampoco
+        # debe volver a pedirse (mismo espíritu del test).
+        MercadoLibreShippingEstimate(store_id=a_store.id, category_id="MLC180937", price=5000, shipping_cost=3050, mandatory=True, dimensions="5x15x15,300", fetched_at=NOW),
     ])
     db_session.commit()
 
     ruta_categoria = respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/domain_discovery/search.*")
     ruta_comision = respx.get(url__regex=r"https://api\.mercadolibre\.com/sites/MLC/listing_prices.*")
+    ruta_envio = respx.get("https://api.mercadolibre.com/categories/MLC180937/shipping_preferences")
 
     res = client.post("/api/mercadolibre/comisiones/recalcular")
 
     assert res.status_code == 200
-    assert res.json()["combinacionesComisionActualizadas"] == 0
-    # Ya tenía categoría Y ya estaban cacheados los dos tipos -> ninguna
-    # llamada nueva a Mercado Libre.
+    body = res.json()
+    assert body["combinacionesComisionActualizadas"] == 0
+    assert body["estimacionesEnvioActualizadas"] == 0
+    # Ya tenía categoría Y ya estaban cacheados los dos tipos Y el envío ->
+    # ninguna llamada nueva a Mercado Libre.
     assert ruta_categoria.calls.call_count == 0
     assert ruta_comision.calls.call_count == 0
+    assert ruta_envio.calls.call_count == 0
 
 
 @respx.mock

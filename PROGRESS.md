@@ -291,11 +291,105 @@ catálogo (52).
     repetidos; solo se puede configurar el canal `mercadolibre`; stock para Mercado Libre
     máx. 1.000.000; la predicción de categorías elige los productos al azar para que los que
     nunca se pueden predecir no bloqueen a los demás.
+40. **Concurrencia en Postgres** (15 sept 2026): un choque con una restricción única de la base
+    (p. ej. dos importaciones del mismo archivo al mismo tiempo) responde 409 "Otra operación
+    modificó estos datos al mismo tiempo" en vez de 500; la importación bloquea la fila de la
+    empresa hasta el commit, así dos importaciones simultáneas no pasan el límite del plan.
+41. **Pasada visual B2B** (15 sept 2026, solo frontend, sin cambios de lógica): base de texto
+    16px (antes 18px), bordes y radios discretos, sin sombras en tarjetas, botones del alto de
+    un campo (`btn-sm` para acciones en filas), badges rectangulares chicos, sin animación de
+    entrada ni shimmer. Toda grilla de `.stat-card` (y los KPI del admin) se dibuja como una
+    franja con divisiones finas en vez de tarjetas sueltas. Dashboard reordenado: franja de
+    métricas → qué hacer / primeros pasos → ventas | rentabilidad, alertas y conexiones; se
+    quitó "Accesos rápidos" (repetía la barra lateral) y "Ventas importadas" pasó a una línea
+    del panel de ventas. Mercado Libre oculta las métricas que ML no informa (antes "—").
+    Estados vacíos y títulos con texto funcional; gráficos del admin sin degradado.
+    Después, a pedido del dueño: texto a 17px; la barra lateral se achica a solo íconos con el
+    botón del encabezado (se recuerda por navegador); las pantallas ya no tienen ancho máximo
+    — Configuración y el detalle de cliente del admin reparten sus paneles en dos columnas,
+    y el detalle de producto, Ayuda y soporte y el detalle de solicitudes usan dos columnas.
+42. **Costo de envío estimado antes de publicar** (16 sept 2026, pedido del dueño: "que mientras
+    analiza los márgenes también analice el costo de envío y lo agregue"). Al actualizar las
+    comisiones reales, `services/ml_comisiones.py` estima además el envío de cada (categoría,
+    precio) con las medidas por defecto que publica Mercado Libre para esa categoría
+    (`/categories/{id}/shipping_preferences`) y su calculadora de envío gratis
+    (`/users/{id}/shipping_options/free?dimensions=...&item_price=...`); ambas verificadas en
+    vivo contra MLC. Se cachea en `mercadolibre_shipping_estimates` (migración d1f3b5a7c9e2).
+    Prioridad en el margen: costo REAL de la publicación > estimación > envío manual de
+    Configuración. Solo se descuenta si a ese precio el envío gratis es obligatorio (en Chile,
+    sobre cierto monto); si no, lo paga el comprador y el costo es $0. Nuevo campo
+    `envioMlResuelto`: con envío real, estimado o confirmado que no aplica, el margen deja de
+    marcarse como provisional. En la interfaz el envío estimado se muestra como "Estimado".
+    De paso, "Eliminar cuenta" ahora borra también esa caché (y la prueba cubre las dos tablas
+    de caché de Mercado Libre: en Postgres, dejarlas rompería la clave foránea contra stores).
+    Las estimaciones se vuelven a consultar a los 30 días (las tarifas de envío cambian).
+43. **Revisión del sistema** (16 sept 2026, ver `REVISION_SISTEMA.md`): lectura completa de
+    dominio, rutas, servicios, adaptadores, modelos y frontend. Corregido:
+    (a) el webhook de Mercado Pago no era idempotente — el mismo aviso aplicado dos veces
+    sumaba otro mes/año de plan (Mercado Pago reintenta hasta recibir un 200);
+    (b) al pagar, el período se contaba desde hoy y borraba los días ya pagados: ahora se suma
+    a lo que quedaba; (c) la importación de ventas pedía una sola página de 50 pedidos y el
+    resto se perdía en silencio: ahora pagina (50 × 20 = 1.000 por corrida, `sort=date_desc`
+    verificado en vivo contra MLC). Pruebas nuevas para los tres casos.
+    Pendiente de decisión del dueño: el cobro mensual del mes 2 en adelante
+    (`subscription_authorized_payment`) sigue sin procesarse, así que un cliente mensual cuyo
+    cobro falla conserva acceso; ver REVISION_SISTEMA.md §2.1.
+44. **Regla estricta del envío: sin envío no hay veredicto** (16 sept 2026, pedido del dueño:
+    "no puedes ver el envío antes de decir si es conveniente o no"). Antes, un envío que faltaba
+    se calculaba como $0 y el producto igual salía "Conviene", con una nota chica que decía
+    "Provisional". Ahora:
+    (a) `ChannelCosts.shipping_unknown` y `net_margin` devuelve None — un envío que falta no es
+    un envío de $0. Mismo criterio para la comisión: sin comisión conocida tampoco hay margen
+    neto (antes alcanzaba con tener cualquier otro costo cargado para calcular con 0 %).
+    (b) `classify_product` responde "Faltan datos" con el motivo ("Falta el costo de envío de
+    Mercado Libre para calcular la rentabilidad.") en Oportunidades, Dashboard, "¿Conviene?",
+    `/validar`, la columna Decisión y el gate de `/confirmar`, que no deja publicar.
+    (c) El precio recomendado tampoco se calcula: `faltantes` trae "costo de envío de Mercado
+    Libre" (con envío $0 supuesto recomendaba un precio que no cubría el envío).
+    (d) Una estimación vencida (30 días) que no se pudo actualizar vuelve a ser dato faltante,
+    con su propio motivo — antes se seguía usando una tarifa vieja como si fuera la de hoy.
+    (e) El envío manual de Configuración ya NO completa el cálculo de Mercado Libre: es un
+    promedio del dueño, no el envío de esa publicación. El umbral "envío desde $X" ahora se
+    aplica al envío que informa Mercado Libre.
+    (f) Un costo de compra vacío sigue siendo dato válido (costo considerado $0) — la distinción
+    que pidió el dueño: costo vacío = $0, envío desconocido = no se puede determinar.
+    Interfaz: se fue la etiqueta "Provisional"; el vocabulario único es "Faltan datos" y la fila
+    ofrece "Actualizar envíos" (la misma consulta que trae comisiones y envíos).
+    Pruebas nuevas en `tests/test_envio_faltante_rentabilidad.py` (envío disponible, sin costo de
+    compra, envío real $0, sin estimación, consulta fallida, estimación vencida, no publicable y
+    ninguna pantalla diciendo "Conviene"). Los productos de prueba de la suite ahora dejan el
+    envío resuelto explícitamente (`_envio_ml_resuelto`).
 11. **Stock de Mercado Libre sincronizado** (14 sept 2026, sin commitear) — antes el stock
     reservado solo se usaba al crear la publicación. Ahora `PUT /{id}/stock-mercadolibre` y
     `/stock-mercadolibre/lote` también mandan `available_quantity` a las publicaciones vivas
     (`services/ml_stock_sync.py`, best effort, doc oficial "Distributed Stock": sin
     multi-origen). Detalle de producto: nuevo campo "Unidades para Mercado Libre".
+45. **Obtención automática del envío al importar, con progreso en vivo** (16 sept 2026, pedido
+    del dueño: resolver el origen del dato de envío sin pedirle peso ni medidas). No agrega
+    ningún mecanismo nuevo de envío: orquesta con progreso los tres que ya existían —
+    `actualizar_comisiones_reales` (comisión real + envío ESTIMADO de lo no publicado, medidas
+    por defecto de la categoría) y `sincronizar_costos_envio_de_la_cuenta` (envío REAL de lo ya
+    publicado, por `item_id`) — y al final clasifica cada producto con la MISMA regla de
+    Oportunidades (`classify_product`, sin cambios). Nuevo:
+    `POST /api/mercadolibre/analisis-rentabilidad/stream` (NDJSON) en
+    `services/analisis_rentabilidad_stream.py`, disparado por el asistente de importación justo
+    después de confirmar el Excel — pantalla "Analizando productos… X/Y" con el producto actual,
+    comisión/envío/rentabilidad marcados a medida que se resuelven, y el resumen final
+    (Conviene/No conviene/Faltan datos). Los tres servicios reusados ganaron un parámetro
+    opcional `on_avance` (default `None`, sin efecto en los llamadores existentes) para reportar
+    avance sin duplicar ninguna consulta a Mercado Libre ni cambiar qué se guarda.
+    Bug encontrado de paso: el botón manual "Actualizar comisiones y envíos" nunca estimaba el
+    envío — faltaba pasar `account.external_account_id` (user_id) a `actualizar_comisiones_reales`
+    (`routes/mercadolibre.py::recalcular_comisiones`); corregido, con prueba.
+    Verificado en vivo contra la cuenta real conectada (201 productos, Empresa Demo): primera
+    corrida resolvió el envío de los 201 (0 Faltan datos), 196 Conviene / 5 No conviene,
+    coincidiendo con `/api/seleccion`; segunda corrida (todo cacheado) tardó ~5 s. Probado también
+    con dos productos nuevos subidos por Excel desde la interfaz real (categoría, comisión y
+    envío resueltos de punta a punta) — datos de prueba borrados al terminar.
+    Pruebas nuevas en `tests/test_analisis_rentabilidad_stream.py`. Pendiente (documentado en
+    `TODO.md`, no construido a propósito): para un producto SIN publicación y sin categoría
+    detectable por Mercado Libre, no existe ningún endpoint que dé un costo de envío sin
+    dimensiones — ese caso queda en "Faltan datos", nunca inventado.
 
 ## En progreso
 - Nada a medias. El Admin BI cubre lo pedido (secciones 1–8); ver `TODO.md` para las

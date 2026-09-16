@@ -40,14 +40,10 @@ window.LC = window.LC || {};
     const solicitudes = res.ok ? res.data : [];
 
     main.innerHTML = `
-      <div class="page-wrap app-fade max-w-4xl">
-        <div class="panel-card mb-6 text-center py-8">
-          <h2 class="text-xl font-semibold mb-2">¿Necesitas ayuda?</h2>
-          <p class="text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto">Estamos aquí para ayudarte. Cuéntanos qué problema tienes y te ayudaremos a resolverlo.</p>
-        </div>
-
-        <div class="panel-card mb-6">
-          <h3 class="panel-title mb-4">Enviar una solicitud</h3>
+      <div class="page-wrap app-fade grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        <div class="panel-card">
+          <h3 class="panel-title">Enviar una solicitud</h3>
+          <p class="panel-subtitle mb-4">Describe el problema. Vas a ver el estado y nuestra respuesta en "Mis solicitudes".</p>
           <form id="soporte-form" class="space-y-4">
             <div>
               <label class="form-label" for="soporte-categoria">Categoría del problema</label>
@@ -138,9 +134,10 @@ window.LC = window.LC || {};
     }
     const s = res.data;
     main.innerHTML = `
-      <div class="page-wrap app-fade max-w-2xl">
+      <div class="page-wrap app-fade">
         <button id="soporte-volver" class="text-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 mb-4 inline-flex items-center gap-1">← Volver a Ayuda y soporte</button>
-        <div class="panel-card mb-5">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        <div class="panel-card">
           <div class="flex flex-wrap items-start justify-between gap-4 mb-3">
             <h2 class="text-lg font-semibold">${escapeHtml(s.asunto)}</h2>
             <span class="reco-badge ${ESTADO_CLASE[s.estado] || ""}">${escapeHtml(ESTADO_LABEL[s.estado] || s.estado)}</span>
@@ -155,6 +152,7 @@ window.LC = window.LC || {};
           <p class="text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap">${escapeHtml(s.respuestaAdmin)}</p>
         </div>
         ` : `<div class="panel-card text-sm text-slate-500 dark:text-slate-400">Todavía no hay respuesta — te vamos a avisar cuando la tengamos.</div>`}
+        </div>
       </div>
     `;
     document.getElementById("soporte-volver").addEventListener("click", () => LC.router.navigate("/soporte"));

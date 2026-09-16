@@ -33,6 +33,7 @@ from app.db.base import Base
 from app.db.models import ChannelCostSettings, MarketplaceAccount, MarketplaceListing, ProductImage, ProductVariant, Store
 from app.db.session import get_db
 from app.domain.token_crypto import encrypt_token
+from tests.test_publicaciones_endpoint import _envio_ml_resuelto
 from app.main import app
 
 TEST_ENCRYPTION_KEY = Fernet.generate_key().decode("utf-8")
@@ -461,9 +462,11 @@ def _hacer_publicable(db_session, variant_id: int, *, costo: float, marketplace_
     """_crear_producto (importador CSV) solo carga sku/nombre/precio — para
     que classify_product pueda devolver "rentable" hace falta además costo,
     stock reservado para ML y el canal "mercadolibre" configurado, más al
-    menos una imagen (gate real de /confirmar)."""
+    menos una imagen (gate real de /confirmar) y el costo de envío de Mercado
+    Libre resuelto (regla estricta del 16 de septiembre de 2026)."""
     variante = db_session.get(ProductVariant, variant_id)
     variante.cost_price = costo
+    variante.product.ml_category_id = "MLC1"
     variante.marketplace_stock = marketplace_stock
     if not variante.product.images:
         db_session.add(
@@ -477,6 +480,7 @@ def _hacer_publicable(db_session, variant_id: int, *, costo: float, marketplace_
             ChannelCostSettings(store_id=variante.store_id, channel="mercadolibre", commission_pct=15.0, updated_at=datetime(2026, 8, 24))
         )
     db_session.commit()
+    _envio_ml_resuelto(db_session, variante.product.store, categoria="MLC1", precio=float(variante.price))
 
 
 def test_empresa_a_publica_su_producto_y_nunca_puede_publicar_ni_usar_la_cuenta_de_empresa_b(
